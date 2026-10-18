@@ -1931,6 +1931,24 @@ class _MapTabState extends State<MapTab> {
           ),
         ),
 
+      // ── Map data attribution (required by the OSM tile usage policy) ─────────
+      if (!_showResourcePicker)
+        Positioned(
+          bottom: MediaQuery.of(context).padding.bottom + 82,
+          right: 8,
+          child: IgnorePointer(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: const Text('© OpenStreetMap contributors',
+                  style: TextStyle(color: Colors.white54, fontSize: 9)),
+            ),
+          ),
+        ),
+
       // ── Bottom panel (scan + build) ─────────────────────────────────────────
       Positioned(
         bottom: 0, left: 0, right: 0,

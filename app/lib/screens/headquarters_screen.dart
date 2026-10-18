@@ -707,6 +707,17 @@ class _HQPlaceScreenState extends State<_HQPlaceScreen> {
                 maxNativeZoom: 19,
               ),
             ),
+            // Map data attribution (required by the OSM tile usage policy)
+            const Align(
+              alignment: Alignment.bottomRight,
+              child: IgnorePointer(
+                child: Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Text('© OpenStreetMap contributors',
+                      style: TextStyle(color: Colors.white54, fontSize: 9)),
+                ),
+              ),
+            ),
             // Mine markers — geo-scaled hex like the main map
             (() {
               final refLat = _liveUserPos.latitude * pi / 180;
