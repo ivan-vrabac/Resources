@@ -13,7 +13,7 @@ endorsed by UN3X, the developer of the original Resources game.
 
 - **Third-party dependencies**: their own licenses, see `THIRD_PARTY_NOTICES.md`.
 - **Original game artwork**: this project began as a compatible re-implementation of
-  a discontinued commercial location-based game. Its original images (resource
+  a discontinued? commercial location-based game. Its original images (resource
   icons, mine/HQ/building art, launcher icon, backgrounds, UI graphics, country
   flags, illustrations) were never licensed for redistribution and are **not
   included in this repository or its Git history**. Every such asset was swapped for
