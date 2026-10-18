@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -17,6 +18,8 @@ import 'leaderboard_screen.dart';
 import 'headquarters_screen.dart';
 import 'special_buildings_screen.dart';
 import 'chat_screen.dart';
+import 'contacts_screen.dart';
+import 'profile_screen.dart';
 import 'placeholder_screen.dart';
 import 'settings_screen.dart';
 import 'login_screen.dart';
@@ -64,9 +67,9 @@ final Map<GameTabId, _TabMeta> tabMeta = {
   GameTabId.quests: _TabMeta(label: 'Quests', icon: Icons.emoji_events_outlined,
       build: () => const PlaceholderScreen(title: 'Quests', icon: Icons.emoji_events, subtitle: 'Complete challenges for rewards')),
   GameTabId.stats: _TabMeta(label: 'Stats', icon: Icons.bar_chart_outlined,
-      build: () => const PlaceholderScreen(title: 'Stats', icon: Icons.bar_chart, subtitle: 'Track your progress')),
+      build: () => const ProfileScreen(embedded: true), needsScaffold: true),
   GameTabId.contacts: _TabMeta(label: 'Contacts', icon: Icons.contacts_outlined,
-      build: () => const PlaceholderScreen(title: 'Contacts', icon: Icons.contacts, subtitle: 'Manage your business contacts')),
+      build: () => const ContactsScreen(), needsScaffold: true),
 };
 
 class GameScreen extends StatefulWidget {
@@ -90,12 +93,21 @@ class _GameScreenState extends State<GameScreen> {
       if (mounted) setState(() { _config = cfg; _configLoaded = true; });
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<PlayerProvider>().addListener(_onProviderChanged);
+      if (!mounted) return;
+      final prov = context.read<PlayerProvider>();
+      prov.addListener(_onProviderChanged);
+      prov.pollChatUnread();
+    });
+    _chatPoll = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) context.read<PlayerProvider>().pollChatUnread();
     });
   }
 
+  Timer? _chatPoll;
+
   @override
   void dispose() {
+    _chatPoll?.cancel();
     context.read<PlayerProvider>().removeListener(_onProviderChanged);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _pageCtrl.dispose();
@@ -247,8 +259,9 @@ class _GameScreenState extends State<GameScreen> {
                 final id         = isMore ? null : _config.bottomTabs[i];
                 final icon       = isMore ? Icons.menu : tabMeta[id]!.icon;
                 final label      = isMore ? 'More' : tabMeta[id]!.label;
-                final hasBadge   = !isMore && id == GameTabId.chat
-                    && prov.chatUnreadMentions > 0;
+                final isChat     = !isMore && id == GameTabId.chat;
+                final unread     = isChat ? prov.chatUnread : 0;
+                final hasBadge   = isChat && (prov.chatUnreadMentions > 0 || unread > 0);
 
                 final iconColor = isSelected ? cs.primary : cs.onSurfaceVariant;
                 Widget iconWidget = Icon(icon, size: 22, color: iconColor);
@@ -256,14 +269,19 @@ class _GameScreenState extends State<GameScreen> {
                   iconWidget = Stack(clipBehavior: Clip.none, children: [
                     iconWidget,
                     Positioned(
-                      top: -3, right: -3,
+                      top: -4, right: unread > 0 ? -10 : -3,
                       child: Container(
-                        width: 9, height: 9,
+                        constraints: const BoxConstraints(minWidth: 9, minHeight: 9),
+                        padding: unread > 0 ? const EdgeInsets.symmetric(horizontal: 3) : EdgeInsets.zero,
                         decoration: BoxDecoration(
                           color: Colors.redAccent,
-                          shape: BoxShape.circle,
+                          borderRadius: BorderRadius.circular(8),
                           border: Border.all(color: cs.surface, width: 1.5),
                         ),
+                        child: unread > 0
+                            ? Text(unread > 99 ? '99+' : '$unread',
+                                style: const TextStyle(fontSize: 9, color: Colors.white, height: 1.2))
+                            : null,
                       ),
                     ),
                   ]);

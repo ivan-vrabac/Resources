@@ -28,6 +28,7 @@ import '../../screens/settings_screen.dart' show kCloudOpacity,
     paletteColorAt;
 import '../../services/api_service.dart';
 import '../../widgets/top_banner.dart';
+import '../../widgets/foreign_target_sheet.dart';
 import 'mines_tab.dart' show TechUpgradeSheet;
 
 // ── Heatmap data from server ───────────────────────────────────────────────────
@@ -1217,6 +1218,32 @@ class _MapTabState extends State<MapTab> {
   void _snack(String msg, {bool error = false}) =>
       AppNotify.show(context, msg, isError: error);
 
+  /// Another player's mine (within 15 m) or HQ (within 40 m) under the tap → owner sheet.
+  void _onForeignTap(LatLng tapped) {
+    Map<String, dynamic>? best;
+    double bestD = double.infinity;
+    for (final m in _markers) {
+      if (m['type'] == 'hq' || m['isMine'] == true || m['wip'] == true) continue;
+      final lat = (m['lat'] as num?)?.toDouble(), lng = (m['lng'] as num?)?.toDouble();
+      if (lat == null || lng == null) continue;
+      final d = _distM(tapped, LatLng(lat, lng));
+      if (d <= 15 && d < bestD) { best = m; bestD = d; }
+    }
+    if (best == null) {
+      for (final h in _hqMarkers.cast<Map<String, dynamic>>()) {
+        if (h['isMine'] == true) continue;
+        final d = _distM(tapped, LatLng((h['lat'] as num).toDouble(), (h['lng'] as num).toDouble()));
+        if (d <= 40 && d < bestD) { best = {...h, 'type': 'hq'}; bestD = d; }
+      }
+    }
+    if (best == null) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A2E),
+      builder: (_) => ForeignTargetSheet(target: best!, onChanged: _loadMarkers, playerPos: _pos),
+    );
+  }
+
   Future<void> _onMapTap(LatLng tapped) async {
     if (_showResourcePicker) {
       setState(() => _showResourcePicker = false);
@@ -1235,7 +1262,10 @@ class _MapTabState extends State<MapTab> {
     final candidates = near.where((mine) {
       return _distM(tapped, LatLng(mine.lat, mine.lng)) <= 15;
     }).toList();
-    if (candidates.isEmpty) return;
+    if (candidates.isEmpty) {
+      _onForeignTap(tapped);
+      return;
+    }
     candidates.sort((a, b) {
       final da = _distM(tapped, LatLng(a.lat, a.lng));
       final db = _distM(tapped, LatLng(b.lat, b.lng));

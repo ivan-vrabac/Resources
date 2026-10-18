@@ -5,9 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import '../models/player_provider.dart';
-import '../services/api_service.dart';
+import '../services/game_api.dart';
 import '../services/storage_service.dart';
 import '../widgets/top_banner.dart';
+import 'profile_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -26,8 +27,9 @@ class _ChatScreenState extends State<ChatScreen> {
   int  _lastId  = 0;
   Timer? _pollTimer;
 
-  Set<String> _mutedHids   = {};
-  Set<String> _blockedHids = {};
+  Set<String> _mutedHids   = {};   // muted player ids (pid), local: no mention alerts
+  bool _loadingOlder = false;
+  bool _noOlder      = false;
 
   // @ autocomplete
   bool         _showSuggestions = false;
@@ -55,30 +57,26 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _loadMuteBlock() async {
     final m = await StorageService.getMutedHids();
-    final b = await StorageService.getBlockedHids();
-    if (mounted) setState(() { _mutedHids = m; _blockedHids = b; });
+    if (mounted) setState(() => _mutedHids = m);
   }
 
   Future<void> _fetchMessages({bool initial = false}) async {
     final sid = context.read<PlayerProvider>().sid;
     if (sid.isEmpty) return;
-    final since = initial ? 0 : _lastId;
-    final data  = await ApiService.chatGetMessages(sid, since);
+    final r = await GameApi.call('/api/v1/chat/messages', sid,
+        {'after': initial ? null : _lastId, 'limit': 50});
     if (!mounted) return;
-    if (data == null) { if (mounted) setState(() => _loading = false); return; }
+    if (!r.ok) { if (mounted) setState(() => _loading = false); return; }
 
     final myName = context.read<PlayerProvider>().player?.name ?? '';
-    final newMsgs = data
-        .cast<Map<String, dynamic>>()
-        .where((m) => !_blockedHids.contains(m['hid'] as String? ?? ''))
-        .toList();
+    final newMsgs = r.list('messages');
 
     bool hasMention = false;
     for (final m in newMsgs) {
       final msg = m['msg'] as String? ?? '';
       if (myName.isNotEmpty && msg.contains('@$myName')) {
-        final mHid = m['hid'] as String? ?? '';
-        if (!_mutedHids.contains(mHid)) hasMention = true;
+        final mPid = m['pid'] as String? ?? '';
+        if (!_mutedHids.contains(mPid) && m['isMe'] != true) hasMention = true;
       }
     }
 
@@ -97,10 +95,26 @@ class _ChatScreenState extends State<ChatScreen> {
         _rebuildHints();
       });
       if (hasMention) context.read<PlayerProvider>().addChatMention();
+      context.read<PlayerProvider>().markChatSeen(_lastId);
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollBottom());
     } else {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _loadOlder() async {
+    if (_loadingOlder || _noOlder || _messages.isEmpty) return;
+    setState(() => _loadingOlder = true);
+    final r = await GameApi.call('/api/v1/chat/messages', context.read<PlayerProvider>().sid,
+        {'before': _messages.first['id'], 'limit': 50});
+    if (!mounted) return;
+    final older = r.ok ? r.list('messages') : <Map<String, dynamic>>[];
+    setState(() {
+      _loadingOlder = false;
+      if (older.isEmpty) _noOlder = true;
+      _messages = [...older, ..._messages];
+      _rebuildHints();
+    });
   }
 
   void _scrollBottom() {
@@ -162,22 +176,21 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() => _sending = true);
     _input.clear();
     setState(() => _showSuggestions = false);
-    final res = await ApiService.chatSendMessage(sid, text);
+    final res = await GameApi.call('/api/v1/chat/send', sid, {'msg': text});
     if (mounted) setState(() => _sending = false);
-    if (res != null && res['err'] == 0) {
+    if (res.ok) {
       await _fetchMessages();
     } else if (mounted) {
-      AppNotify.show(context, 'Failed to send message', isError: true);
+      AppNotify.show(context, res.message ?? 'Failed to send message', isError: true);
       _input.text = text;
     }
   }
 
   void _showMuteBlockMenu(Map<String, dynamic> msg) {
-    final hid  = msg['hid']  as String? ?? '';
+    final hid  = msg['pid']  as String? ?? '';   // public player id
     final name = msg['name'] as String? ?? '';
     if (hid.isEmpty) return;
     final isMuted   = _mutedHids.contains(hid);
-    final isBlocked = _blockedHids.contains(hid);
 
     showModalBottomSheet(
       context: context,
@@ -188,6 +201,14 @@ class _ChatScreenState extends State<ChatScreen> {
             padding: const EdgeInsets.all(16),
             child: Text(name,
                 style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+          ),
+          ListTile(
+            leading: const Icon(Icons.person_outline, color: Colors.tealAccent),
+            title: const Text('View profile', style: TextStyle(color: Colors.white)),
+            onTap: () {
+              Navigator.pop(context);
+              ProfileScreen.open(context, hid);
+            },
           ),
           ListTile(
             leading: Icon(isMuted ? Icons.notifications_active : Icons.notifications_off,
@@ -207,23 +228,20 @@ class _ChatScreenState extends State<ChatScreen> {
             },
           ),
           ListTile(
-            leading: Icon(isBlocked ? Icons.visibility : Icons.block,
-                color: isBlocked ? Colors.greenAccent : Colors.red),
-            title: Text(isBlocked ? 'Unblock' : 'Block',
-                style: const TextStyle(color: Colors.white)),
-            subtitle: Text(isBlocked
-                ? 'Show messages from this player again'
-                : 'Hide all messages and notifications from this player',
-                style: const TextStyle(color: Colors.white54, fontSize: 11)),
+            leading: const Icon(Icons.block, color: Colors.red),
+            title: const Text('Block', style: TextStyle(color: Colors.white)),
+            subtitle: const Text('Hide all messages from this player (undo in Contacts)',
+                style: TextStyle(color: Colors.white54, fontSize: 11)),
             onTap: () async {
-              final newSet = Set<String>.from(_blockedHids);
-              isBlocked ? newSet.remove(hid) : newSet.add(hid);
-              await StorageService.saveBlockedHids(newSet);
-              if (mounted) setState(() {
-                _blockedHids = newSet;
-                if (!isBlocked) _messages.removeWhere((m) => m['hid'] == hid);
-              });
-              if (mounted) Navigator.pop(context);
+              Navigator.pop(context);
+              final r = await GameApi.call('/api/v1/social/contact',
+                  context.read<PlayerProvider>().sid, {'pid': hid, 'kind': 'blacklist'});
+              if (!mounted) return;
+              if (r.ok) {
+                setState(() => _messages.removeWhere((m) => m['pid'] == hid));
+              } else {
+                AppNotify.show(context, r.message ?? 'Failed', isError: true);
+              }
             },
           ),
           const SizedBox(height: 8),
@@ -234,14 +252,14 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _showMutedList() {
     final mutedNames = _messages
-        .where((m) => _mutedHids.contains(m['hid'] as String? ?? ''))
-        .map((m) => (m['hid'] as String, m['name'] as String? ?? ''))
+        .where((m) => _mutedHids.contains(m['pid'] as String? ?? ''))
+        .map((m) => (m['pid'] as String, m['name'] as String? ?? ''))
         .toSet()
         .toList();
     final allMuted = {
       ..._mutedHids.map((h) {
         final nm = _messages
-            .where((m) => m['hid'] == h)
+            .where((m) => m['pid'] == h)
             .map((m) => m['name'] as String? ?? '')
             .firstOrNull ?? h.substring(0, 8);
         return (h, nm);
@@ -318,8 +336,14 @@ class _ChatScreenState extends State<ChatScreen> {
                     : ListView.builder(
                         controller: _scroll,
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        itemCount: _messages.length,
-                        itemBuilder: (_, i) => _buildMsgTile(_messages[i], myHid),
+                        itemCount: _messages.length + 1,
+                        itemBuilder: (_, i) => i == 0
+                            ? (_noOlder
+                                ? const SizedBox(height: 4)
+                                : TextButton(
+                                    onPressed: _loadingOlder ? null : _loadOlder,
+                                    child: Text(_loadingOlder ? 'Loading…' : 'Load older messages')))
+                            : _buildMsgTile(_messages[i - 1], myHid),
                       ),
           ),
 
@@ -385,11 +409,11 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildMsgTile(Map<String, dynamic> msg, String myHid) {
-    final hid  = msg['hid']  as String? ?? '';
+    final pid  = msg['pid']  as String? ?? '';
     final name = msg['name'] as String? ?? '';
     final text = msg['msg']  as String? ?? '';
     final ts   = msg['ts']   as String? ?? '';
-    final isMe = hid == myHid;
+    final isMe = msg['isMe'] == true;
 
     String timeStr = '';
     try {
@@ -421,11 +445,14 @@ class _ChatScreenState extends State<ChatScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(children: [
-                    Text(name,
-                        style: TextStyle(
-                            color: isMe ? Colors.tealAccent : Colors.white70,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold)),
+                    GestureDetector(
+                      onTap: pid.isEmpty ? null : () => ProfileScreen.open(context, pid),
+                      child: Text(name,
+                          style: TextStyle(
+                              color: isMe ? Colors.tealAccent : Colors.white70,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold)),
+                    ),
                     const SizedBox(width: 6),
                     Text(timeStr,
                         style: const TextStyle(color: Colors.white30, fontSize: 10)),

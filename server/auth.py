@@ -37,6 +37,17 @@ MIN_PASSWORD_LEN = 6
 MAX_PASSWORD_LEN = 128
 
 _secret: bytes = b""
+_db_connect = None  # set by init(): opens a DB connection (for password lookups)
+
+
+def _has_password(hid: str) -> bool:
+    if _db_connect is None:
+        return False
+    conn = _db_connect()
+    try:
+        return conn.execute("SELECT 1 FROM player_auth WHERE hid=?", (hid,)).fetchone() is not None
+    finally:
+        conn.close()
 
 
 def secure() -> bool:
@@ -49,9 +60,12 @@ def legacy_allowed() -> bool:
     return AUTH_MODE in ("legacy", "mixed")
 
 
-def init(conn) -> None:
-    """Create auth tables and load the signing secret (env SESSION_SECRET, else stored in the DB)."""
-    global _secret
+def init(conn, db_connect=None) -> None:
+    """Create auth tables and load the signing secret (env SESSION_SECRET, else stored in the DB).
+    db_connect: callable returning a new connection (used to check for passwords per request)."""
+    global _secret, _db_connect
+    if db_connect is not None:
+        _db_connect = db_connect
     conn.execute("""CREATE TABLE IF NOT EXISTS player_auth (
         hid        TEXT PRIMARY KEY,
         pw_hash    TEXT NOT NULL,
@@ -154,7 +168,11 @@ def hid_from_sid(sid: str) -> str:
         return hid
     iat, sig = data.get("iat"), data.get("sig")
     if iat is None and sig is None and legacy_allowed():
-        return hid  # unsigned session from an old client (mixed mode)
+        # Unsigned session from an old client (mixed mode) — only for accounts that have
+        # not set a password yet; a password-protected account needs a signed session.
+        if AUTH_MODE == "mixed" and _has_password(hid):
+            return ""
+        return hid
     if not isinstance(iat, int) or not isinstance(sig, str):
         return ""
     if iat + SESSION_TTL_S < time.time() or iat > time.time() + 300:

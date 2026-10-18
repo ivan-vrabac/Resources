@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:latlong2/latlong.dart';
 import 'player.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
+import '../services/game_api.dart';
 import '../services/notification_service.dart';
 import '../services/storage_service.dart';
 
@@ -24,6 +26,45 @@ class PlayerProvider extends ChangeNotifier {
   void addChatMention() {
     _chatUnreadMentions++;
     notifyListeners();
+  }
+
+  // ── Unread chat messages (server-counted, excludes blocked players) ──
+  int _chatUnread = 0;
+  int _chatSeenId = -1; // -1 = not loaded yet
+  int get chatUnread => _chatUnread;
+
+  Future<void> _loadChatSeen() async {
+    if (_chatSeenId >= 0) return;
+    final p = await SharedPreferences.getInstance();
+    _chatSeenId = p.getInt('chat_seen_id') ?? 0;
+  }
+
+  Future<void> pollChatUnread() async {
+    if (sid.isEmpty) return;
+    await _loadChatSeen();
+    final r = await GameApi.call('/api/v1/chat/unread', sid, {'seen': _chatSeenId});
+    if (r.ok) {
+      final n = (r.data['unread'] as num? ?? 0).toInt();
+      if (n != _chatUnread) {
+        _chatUnread = n;
+        notifyListeners();
+      }
+    }
+  }
+
+  /// Called by the chat screen with the newest message id it has shown.
+  Future<void> markChatSeen(int id) async {
+    await _loadChatSeen();
+    if (id <= _chatSeenId && _chatUnread == 0) return;
+    if (id > _chatSeenId) {
+      _chatSeenId = id;
+      final p = await SharedPreferences.getInstance();
+      await p.setInt('chat_seen_id', id);
+    }
+    if (_chatUnread != 0) {
+      _chatUnread = 0;
+      notifyListeners();
+    }
   }
 
   void clearChatMentions() {

@@ -1089,7 +1089,7 @@ def init_db():
 
 init_db()
 with get_db() as _conn:
-    auth.init(_conn)
+    auth.init(_conn, db_connect=get_db)
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -2222,6 +2222,7 @@ async def mine_new(request: Request):
             "INSERT INTO mines(mine_id,owner_hid,lat,lng,item_id,quality,last_coll,created_at) "
             "VALUES(?,?,?,?,?,?,?,?)",
             (mid, hid, lat, lng, item_id, final_quality, utcnow_iso(), utcnow_iso()))
+        econ.emit(conn, "mine_built", hid, {"mID": mid, "itemID": item_id}, public=False)
         conn.execute("UPDATE players SET credits=credits-? WHERE hID=?", (actual_cost, hid))
         if is_remote:
             wh_remove(conn, hid, DRONE_ITEM_ID, 1)
@@ -2384,12 +2385,13 @@ async def mine_load_markers(request: Request):
             "WHERE m.lat BETWEEN ? AND ? AND m.lng BETWEEN ? AND ? "
             "LIMIT 1000",
             (lat1, lat2, lng1, lng2)).fetchall()
+        refs = public_refs(conn, {m["owner_hid"] for m in mines}, hid)
     markers = []
     for m in mines:
         mt = MINE_TYPES.get(m["item_id"], {})
         markers.append({
             "mID":       m["mine_id"],
-            "ownerHID":  m["owner_hid"],
+            "ownerHID":  refs[m["owner_hid"]],   # public id for other players (see public_refs)
             "ownerName": m["owner_name"],
             "lat":       m["lat"],
             "lng":       m["lng"],
@@ -2710,8 +2712,9 @@ async def hq_get_markers(request: Request):
             "WHERE h.lat BETWEEN ? AND ? AND h.lng BETWEEN ? AND ? "
             "AND (h.hid = ? OR h.level >= ?)",
             (lat1,lat2,lng1,lng2,hid,min_level)).fetchall()
+        refs = public_refs(conn, {r["hid"] for r in rows}, hid)
     return zlib_resp([{
-        "ownerHID": r["hid"], "ownerName": r["company_name"],
+        "ownerHID": refs[r["hid"]], "ownerName": r["company_name"],
         "lat": r["lat"], "lng": r["lng"], "lvl": r["level"], "isMine": r["hid"]==hid
     } for r in rows])
 
@@ -3388,8 +3391,9 @@ async def market_get_data(request: Request):
                 "SELECT r.*,p.company_name FROM market_req r JOIN players p ON r.seller_hid=p.hID "
                 "WHERE r.active=1 AND r.expires_at > ? ORDER BY r.created_at DESC LIMIT 50",
                 (utcnow_iso(),)).fetchall()
+        refs = public_refs(conn, {r["seller_hid"] for r in reqs}, hid)
     return zlib_resp([{
-        "reqID": r["req_id"], "sellerHID": r["seller_hid"], "sellerName": r["company_name"],
+        "reqID": r["req_id"], "sellerHID": refs[r["seller_hid"]], "sellerName": r["company_name"],
         "itemID": r["item_id"], "qty": r["qty"], "priceUnit": r["price_unit"],
         "total": round(r["qty"] * r["price_unit"]),
         "expiresAt": r["expires_at"], "isMine": r["seller_hid"] == hid,
@@ -3505,11 +3509,16 @@ async def protokoll_get_data(request: Request):
             total = conn.execute(
                 "SELECT COUNT(*) FROM proto_log WHERE hid=? AND created_at>=?",
                 (hid, cutoff)).fetchone()[0]
+        entries = []
+        for r in rows:
+            data = json.loads(r["data_json"] or "{}")
+            for key in ("buyerHID", "sellerHID", "attackerHID", "defenderHID"):
+                if isinstance(data.get(key), str):  # never show other players' internal ids
+                    data[key] = public_refs(conn, {data[key]}, hid)[data[key]]
+            entries.append({"logID": r["log_id"], "type": r["log_type"], "data": data,
+                            "ts": r["created_at"]})
     return zlib_resp({
-        "entries": [{
-            "logID": r["log_id"], "type": r["log_type"],
-            "data": json.loads(r["data_json"] or "{}"), "ts": r["created_at"],
-        } for r in rows],
+        "entries": entries,
         "total": total,
         "offset": offset,
     })
@@ -3654,7 +3663,7 @@ async def leaderboard(request: Request):
             activity = min(1.0, activity)
             score = round(xp * 2 * activity)
             scored.append({
-                "hID": r["hID"],
+                "hID": public_refs(conn, {r["hID"]}, hid)[r["hID"]],
                 "name": r["company_name"],
                 "xp": xp,
                 "level": r["level"],
@@ -3926,7 +3935,8 @@ async def chat_get(request: Request):
             "SELECT id, hid, name, msg, ts FROM chat_messages WHERE id > ? ORDER BY id DESC LIMIT 50",
             (since,)
         ).fetchall()
-    return zlib_resp([dict(r) for r in reversed(rows)])
+        refs = public_refs(conn, {r["hid"] for r in rows}, hid)
+    return zlib_resp([{**dict(r), "hid": refs[r["hid"]]} for r in reversed(rows)])
 
 @app.post("/flut23/chatNewMsg2.php")
 async def chat_send(request: Request):
@@ -3937,6 +3947,9 @@ async def chat_send(request: Request):
     msg = (form.get("msg", "") or "").strip()
     if not msg or len(msg) > 500:
         return zlib_resp({"err": 2, "msg": "invalid"})
+    from systems import social as _social  # shared spam protection with /api/v1/chat/send
+    if not (_social.chat_limit_burst.allow(hid) and _social.chat_limit_minute.allow(hid)):
+        return zlib_resp({"err": 4, "msg": "You're sending messages too fast"})
     with get_db() as conn:
         row = conn.execute("SELECT company_name FROM players WHERE hID=?", (hid,)).fetchone()
         if not row:
@@ -3949,7 +3962,7 @@ async def chat_send(request: Request):
         conn.commit()
         conn.execute(
             "DELETE FROM chat_messages WHERE id NOT IN "
-            "(SELECT id FROM chat_messages ORDER BY id DESC LIMIT 500)"
+            "(SELECT id FROM chat_messages ORDER BY id DESC LIMIT 5000)"
         )
         conn.commit()
     return zlib_resp({"err": 0})
@@ -4206,6 +4219,51 @@ async def casino_use_diamond(request: Request):
         "jackpot":       jackpot,
     })
 
+
+# ── Game systems (server/systems/*) ───────────────────────────────────────────────
+
+import types as _types
+import econ
+import systems
+
+def public_refs(conn, hids, viewer_hid: str) -> dict:
+    """Map internal player ids to what other players may see: the viewer's own id stays as is
+    (old clients compare it), everyone else gets their public id. Internal ids must never leak:
+    in AUTH_MODE=mixed an id still opens accounts that have no password yet."""
+    from systems.social import pid_of
+    out = {h: (h if h == viewer_hid else pid_of(conn, h)) for h in hids}
+    if conn.in_transaction:
+        conn.commit()
+    return out
+
+def building_level(conn, hid: str, item_id: int) -> int:
+    """Level of a special building / factory the player owns (0 if not built)."""
+    r = conn.execute("SELECT MAX(level) FROM factories WHERE hid=? AND item_id=?", (hid, item_id)).fetchone()
+    return int(r[0] or 0) if r else 0
+
+def mine_rate_hr(conn, hid: str, mine) -> float:
+    """Effective production per hour of one mine (same formula as playerGetData rateHr)."""
+    mt = MINE_TYPES.get(mine["item_id"], {})
+    hq = conn.execute("SELECT lat,lng,level FROM hq WHERE hid=?", (mine["owner_hid"],)).fetchone()
+    tech = 1.0 + ((mine["tu1"] or 0) * 1.0 + (mine["tu2"] or 0) * 1.0 +
+                  (mine["tu3"] or 0) * 1.5 + (mine["tu4"] or 0) * 1.5) / 100.0
+    return (mt.get("rate", 0) * mine["quality"] / 100.0 * max(0.1, mine["condition"] / 100.0)
+            * tech * float(mine["level"]) * _hq_boost_from(hq, mine))
+
+with get_db() as _conn:
+    econ.init(_conn, capacity_fn=lambda p: wh_capacity(p["wh_level"]),
+              non_warehouse_items=set(SPECIAL_BUILDINGS))
+
+SYSTEM_HELPERS = _types.SimpleNamespace(
+    get_db=get_db, hid_from_sid=hid_from_sid, read_form=read_form, zlib_resp=zlib_resp,
+    get_player=get_player, wh_capacity=wh_capacity, building_level=building_level,
+    mine_rate_hr=mine_rate_hr, collect_mine=collect_mine, collect_mines_bulk=collect_mines_bulk,
+    award_xp=award_xp, add_proto=add_proto, level_from_xp=level_from_xp, push=_push_to_player,
+    mine_stats=mine_stats, mine_rows=mine_rows,
+    MINE_TYPES=MINE_TYPES, SPECIAL_BUILDINGS=SPECIAL_BUILDINGS, HQ_BOOST_RADIUS=HQ_BOOST_RADIUS,
+    DRONE_SCAN_RANGES=DRONE_SCAN_RANGES, new_id=new_id,
+)
+INSTALLED_SYSTEMS = systems.install_all(app, SYSTEM_HELPERS)
 
 # ── Stub routes ───────────────────────────────────────────────────────────────────
 

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../constants.dart' show fmtNum;
 import '../models/player_provider.dart';
 import '../services/api_service.dart';
+import 'profile_screen.dart';
 
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
@@ -99,8 +100,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                       final xp = (r['xp'] as num? ?? 0).toInt();
                       final activity = (r['activity'] as num? ?? 0).toInt();
                       final level = r['level'] as int? ?? 1;
+                      // hID is the public id for other players; your own row opens your stats.
+                      final pid = isMe ? null : r['hID'] as String?;
 
-                      return Container(
+                      return GestureDetector(
+                        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => ProfileScreen(pid: pid))),
+                        child: Container(
                         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
                         decoration: BoxDecoration(
                           color: isMe
@@ -189,7 +195,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                             ]),
                           ]),
                         ),
-                      );
+                      ));
                     },
                   ),
                 ),

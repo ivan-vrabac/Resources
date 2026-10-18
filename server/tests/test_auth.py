@@ -146,6 +146,37 @@ def test_mixed_mode_keeps_old_clients_and_protects_passwords(monkeypatch):
     assert auth.hid_from_sid(base64.b64encode(json.dumps(d).encode()).decode()) == ""
 
 
+def test_mixed_mode_unsigned_sid_rejected_for_password_accounts(monkeypatch):
+    monkeypatch.setattr(auth, "AUTH_MODE", "mixed")
+    monkeypatch.setattr(auth, "LEGACY_CLAIM", True)
+    old_hid = client.post("/flut23/playerNew.php", data={"userEmail": "Xi Corp"}).text
+    assert auth.hid_from_sid(forged_sid(old_hid)) == old_hid       # no password yet: still works
+    signin("Xi Corp", "now-protected")                              # player sets a password
+    assert auth.hid_from_sid(forged_sid(old_hid)) == ""            # unsigned sid no longer opens it
+    assert player_data(forged_sid(old_hid)) == []
+
+
+def test_other_players_internal_ids_not_exposed():
+    a = signin("Omicron Corp", "password1").json()
+    b = signin("Pi Corp", "password1").json()
+    with main.get_db() as conn:
+        conn.execute("INSERT INTO mines(mine_id, owner_hid, lat, lng, item_id, quality, last_coll, created_at) "
+                     "VALUES('omimine', ?, 10.0, 10.0, 4, 50, '2026-01-01', '2026-01-01')", (a["hID"],))
+        conn.execute("INSERT OR REPLACE INTO hq(hid, lat, lng, level) VALUES(?, 10.0, 10.0, 3)", (a["hID"],))
+        conn.commit()
+    box = {"sid": b["sid"], "lat1": 9.9, "lng1": 9.9, "lat2": 10.1, "lng2": 10.1}
+    markers = json.loads(zlib.decompress(client.post("/flut23/mineLoadMarkers.php", data=box).content))
+    hqs = json.loads(zlib.decompress(client.post("/flut23/HQGetMarkers.php", data=box).content))
+    lb = json.loads(zlib.decompress(client.post("/flut23/leaderboard.php", data={"sid": b["sid"]}).content))
+    blob = json.dumps([markers, hqs, lb])
+    assert a["hID"] not in blob
+    assert any(m["ownerName"] == "omicron corp" for m in markers)
+    # the owner still sees their own id (old clients compare it)
+    own = json.loads(zlib.decompress(client.post("/flut23/mineLoadMarkers.php",
+                                                 data={**box, "sid": a["sid"]}).content))
+    assert any(m["ownerHID"] == a["hID"] and m["isMine"] for m in own)
+
+
 def test_password_hash_roundtrip():
     h = auth.hash_password("s3cret!")
     assert h.startswith("scrypt$") and "s3cret" not in h
