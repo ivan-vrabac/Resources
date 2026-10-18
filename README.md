@@ -1,7 +1,13 @@
 # Resources
 
+[![CI](https://github.com/ivan-vrabac/Resources/actions/workflows/ci.yml/badge.svg)](https://github.com/ivan-vrabac/Resources/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 An open-source, self-hostable GPS resource-mining game. You walk around the real
 world, scan for deposits, build mines, run factories, and trade on a player market.
+
+Made by **NOT-UN3X** and contributors. Not affiliated with UN3X or the original
+Resources game ([COPYRIGHT.md](COPYRIGHT.md)).
 
 - **`app/`**: Flutter client (Android)
 - **`server/`**: FastAPI + SQLite game server
@@ -10,7 +16,7 @@ world, scan for deposits, build mines, run factories, and trade on a player mark
 - **`tools/`**: asset and repository checks
 
 > **Artwork notice**: the repository ships with generated placeholder art (flat
-> coloured shapes). See [COPYRIGHT.md](COPYRIGHT.md) and
+> coloured shapes with short labels). See [COPYRIGHT.md](COPYRIGHT.md) and
 > [copyrightreplace/README.md](copyrightreplace/README.md) to add your own.
 
 ## Quick start
@@ -37,7 +43,9 @@ For a phone on your LAN, set `BIND_ADDRESS=0.0.0.0` in `deploy/.env`, then copy
 - [docs/BRANDING.md](docs/BRANDING.md): app name, icon, theme, application ID, launcher icon variants
 - [docs/FIREBASE.md](docs/FIREBASE.md): optional push notifications
 - [copyrightreplace/README.md](copyrightreplace/README.md): replacing images
-- [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md)
+- [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [CHANGELOG.md](CHANGELOG.md)
+
+Players sign in with a company name and password. A new name creates the account.
 
 ## Tests
 
