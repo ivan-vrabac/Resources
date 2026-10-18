@@ -16,10 +16,14 @@ class SignInResult {
 class ApiService {
   /// Signs in, or creates the account if the company name is free.
   /// Returns the server-signed session; on failure [SignInResult.error] is set.
-  static Future<SignInResult> signIn(String companyName, String password) async {
+  /// [register]: true = create a new account (fails if the name is taken),
+  /// false = log in to an existing one.
+  static Future<SignInResult> signIn(String companyName, String password,
+      {bool register = false}) async {
     try {
-      final r = await http.post(Uri.parse('$kBaseUrl/api/v1/auth/session'),
-          body: {'name': companyName, 'password': password}).timeout(const Duration(seconds: 15));
+      final r = await http.post(Uri.parse('$kBaseUrl/api/v1/auth/session'), body: {
+        'name': companyName, 'password': password, 'mode': register ? 'register' : 'login',
+      }).timeout(const Duration(seconds: 15));
       final m = jsonDecode(r.body) as Map<String, dynamic>;
       final sid = m['sid'] as String?;
       final hid = m['hID'] as String?;

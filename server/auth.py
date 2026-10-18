@@ -4,6 +4,12 @@ AUTH_MODE=secure (default): players sign in with company name + password through
 /api/v1/auth/session and receive a signed session token (`sid`). Unsigned or forged
 sids are rejected. The legacy name-only endpoints are disabled.
 
+AUTH_MODE=mixed: transition mode. Password sign-in and signed sessions work as in
+secure mode, but old clients keep working: the name-only endpoints stay enabled and
+unsigned sids are accepted. Accounts that have set a password can no longer be opened
+through the name-only login. Combine with AUTH_LEGACY_CLAIM=1 so existing players choose
+their password at their first password sign-in.
+
 AUTH_MODE=legacy: original protocol (name-only login, unsigned sid). Only for private
 servers with trusted players and old clients.
 
@@ -34,7 +40,13 @@ _secret: bytes = b""
 
 
 def secure() -> bool:
+    """Sessions are signed (secure and mixed)."""
     return AUTH_MODE != "legacy"
+
+
+def legacy_allowed() -> bool:
+    """Name-only endpoints and unsigned sids are accepted (legacy and mixed)."""
+    return AUTH_MODE in ("legacy", "mixed")
 
 
 def init(conn) -> None:
@@ -128,7 +140,11 @@ def make_session(hid: str) -> str:
 def hid_from_sid(sid: str) -> str:
     """Return the player ID for a session, or "" if it is missing, malformed, forged or expired."""
     try:
-        data = json.loads(base64.b64decode(sid + "=" * (-len(sid) % 4)).decode())
+        padded = sid + "=" * (-len(sid) % 4)
+        # Older clients encode with the URL-safe alphabet.
+        raw = (base64.urlsafe_b64decode(padded) if ("-" in sid or "_" in sid)
+               else base64.b64decode(padded))
+        data = json.loads(raw.decode())
         hid = data.get("hID", "")
     except Exception:
         return ""
@@ -137,6 +153,8 @@ def hid_from_sid(sid: str) -> str:
     if not secure():
         return hid
     iat, sig = data.get("iat"), data.get("sig")
+    if iat is None and sig is None and legacy_allowed():
+        return hid  # unsigned session from an old client (mixed mode)
     if not isinstance(iat, int) or not isinstance(sig, str):
         return ""
     if iat + SESSION_TTL_S < time.time() or iat > time.time() + 300:

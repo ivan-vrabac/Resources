@@ -12,9 +12,11 @@ void main() {
   final name = 'E2E ${Random().nextInt(1 << 30)}';
 
   test('register, sign in, fetch player, reject wrong password', () async {
-    final created = await ApiService.signIn(name, 'e2e-password');
+    expect((await ApiService.signIn(name, 'e2e-password')).error, isNotNull); // not registered yet
+    final created = await ApiService.signIn(name, 'e2e-password', register: true);
     expect(created.error, isNull);
     expect(created.created, isTrue);
+    expect((await ApiService.signIn(name, 'other-pass', register: true)).error, isNotNull); // taken
 
     final again = await ApiService.signIn(name, 'e2e-password');
     expect(again.hid, created.hid);

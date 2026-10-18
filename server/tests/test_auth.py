@@ -110,6 +110,42 @@ def test_legacy_mode_accepts_unsigned_sessions(monkeypatch):
     assert r.json() == [{"hID": hid, "active": 1}]
 
 
+def test_login_and_register_modes():
+    r = client.post("/api/v1/auth/session", data={"name": "Mu Corp", "password": "password1", "mode": "login"})
+    assert r.json()["error"] == "not_found"
+    r = client.post("/api/v1/auth/session", data={"name": "Mu Corp", "password": "password1", "mode": "register"})
+    assert r.status_code == 200 and r.json()["created"] is True
+    r = client.post("/api/v1/auth/session", data={"name": "mu corp", "password": "other-pass", "mode": "register"})
+    assert r.json()["error"] == "name_taken"
+    r = client.post("/api/v1/auth/session", data={"name": "Mu Corp", "password": "password1", "mode": "login"})
+    assert r.status_code == 200 and r.json()["created"] is False
+
+
+def test_mixed_mode_keeps_old_clients_and_protects_passwords(monkeypatch):
+    monkeypatch.setattr(auth, "AUTH_MODE", "mixed")
+    monkeypatch.setattr(auth, "LEGACY_CLAIM", True)
+    # an old client registers and plays name-only
+    hid = client.post("/flut23/playerNew.php", data={"userEmail": "Nu Corp"}).text
+    assert len(hid) == 32
+    assert player_data(forged_sid(hid))[0]["hID"] == hid          # unsigned sid accepted
+    urlsafe = base64.urlsafe_b64encode(json.dumps({"hID": hid}).encode()).decode().rstrip("=")
+    assert auth.hid_from_sid(urlsafe) == hid                      # old app's URL-safe encoding
+    assert client.post("/flut23/playerLogin.php", data={"userEmail": "Nu Corp"}).json()[0]["hID"] == hid
+    # the player opens the new app and logs in, choosing a password (legacy claim)
+    r = signin("Nu Corp", "my-new-pass")
+    assert r.status_code == 200 and r.json()["hID"] == hid
+    # now the name-only paths no longer open the account
+    assert client.post("/flut23/playerLogin.php", data={"userEmail": "Nu Corp"}).json() == []
+    assert client.post("/flut23/playerNew.php", data={"userEmail": "Nu Corp"}).text == ""
+    assert signin("Nu Corp", "wrong-pass").status_code == 401
+    # signed sessions still verified; tampering still rejected
+    sid = r.json()["sid"]
+    assert auth.hid_from_sid(sid) == hid
+    d = json.loads(base64.b64decode(sid + "=" * (-len(sid) % 4)))
+    d["hID"] = "0" * 32
+    assert auth.hid_from_sid(base64.b64encode(json.dumps(d).encode()).decode()) == ""
+
+
 def test_password_hash_roundtrip():
     h = auth.hash_password("s3cret!")
     assert h.startswith("scrypt$") and "s3cret" not in h

@@ -17,6 +17,8 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _ctrl = TextEditingController();
   final _pwCtrl = TextEditingController();
+  final _pw2Ctrl = TextEditingController();
+  bool _register = false;
   bool _loading = false;
   bool _showPw = false;
   String? _error;
@@ -25,14 +27,23 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _ctrl.dispose();
     _pwCtrl.dispose();
+    _pw2Ctrl.dispose();
     super.dispose();
   }
 
   static final _validName = RegExp(r'^[a-zA-Z0-9 .,\[\]()\-]+$');
 
+  void _setMode(bool register) => setState(() {
+    _register = register;
+    _error = null;
+  });
+
   Future<void> _submit() async {
     final name = _ctrl.text.trim();
-    if (name.isEmpty) return;
+    if (name.isEmpty) {
+      setState(() => _error = 'Enter your company name');
+      return;
+    }
     if (name.length > 20) {
       setState(() => _error = 'Name must be 20 characters or less');
       return;
@@ -46,14 +57,23 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _error = 'Enter a password');
       return;
     }
+    if (_register) {
+      if (password.length < 6) {
+        setState(() => _error = 'Password must be at least 6 characters');
+        return;
+      }
+      if (password != _pw2Ctrl.text) {
+        setState(() => _error = 'Passwords do not match');
+        return;
+      }
+    }
     setState(() {
       _loading = true;
       _error = null;
     });
 
     try {
-      // Signs in, or registers the company name if it is still free.
-      final res = await ApiService.signIn(name, password);
+      final res = await ApiService.signIn(name, password, register: _register);
       if (res.error != null) {
         setState(() {
           _error = res.error;
@@ -80,78 +100,102 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Widget _passwordField(TextEditingController c, String label, TextInputAction action) =>
+      TextField(
+        controller: c,
+        obscureText: !_showPw,
+        textInputAction: action,
+        autofillHints: [_register ? AutofillHints.newPassword : AutofillHints.password],
+        onSubmitted: action == TextInputAction.go ? (_) => _submit() : null,
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+          suffixIcon: IconButton(
+            icon: Icon(_showPw ? Icons.visibility_off : Icons.visibility),
+            onPressed: () => setState(() => _showPw = !_showPw),
+          ),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (Branding.logoAsset.isNotEmpty) ...[
-                Image.asset(Branding.logoAsset, height: 96),
-                const SizedBox(height: 16),
-              ],
-              Text(
-                Branding.appTitle,
-                style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Sign in, or pick a new company name and password to start playing',
-                style: TextStyle(color: Colors.white54),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 48),
-              TextField(
-                controller: _ctrl,
-                autofocus: true,
-                textInputAction: TextInputAction.next,
-                maxLength: 20,
-                autofillHints: const [AutofillHints.username],
-                decoration: const InputDecoration(
-                  labelText: 'Company name',
-                  border: OutlineInputBorder(),
-                  counterText: '',
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _pwCtrl,
-                obscureText: !_showPw,
-                textInputAction: TextInputAction.go,
-                autofillHints: const [AutofillHints.password],
-                onSubmitted: (_) => _submit(),
-                decoration: InputDecoration(
-                  labelText: 'Password (min. 6 characters)',
-                  border: const OutlineInputBorder(),
-                  suffixIcon: IconButton(
-                    icon: Icon(_showPw ? Icons.visibility_off : Icons.visibility),
-                    onPressed: () => setState(() => _showPw = !_showPw),
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+            child: AutofillGroup(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (Branding.logoAsset.isNotEmpty) ...[
+                    Image.asset(Branding.logoAsset, height: 96),
+                    const SizedBox(height: 16),
+                  ],
+                  Text(
+                    Branding.appTitle,
+                    style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center,
                   ),
-                ),
+                  const SizedBox(height: 32),
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(value: false, label: Text('Log in'), icon: Icon(Icons.login)),
+                      ButtonSegment(value: true, label: Text('Register'), icon: Icon(Icons.person_add)),
+                    ],
+                    selected: {_register},
+                    onSelectionChanged: _loading ? null : (s) => _setMode(s.first),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _register
+                        ? 'Pick a company name and a password to start playing.'
+                        : 'Playing since before passwords? Log in with your company name '
+                          'and choose a password now — it will protect your account.',
+                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: _ctrl,
+                    autofocus: true,
+                    textInputAction: TextInputAction.next,
+                    maxLength: 20,
+                    autofillHints: [_register ? AutofillHints.newUsername : AutofillHints.username],
+                    decoration: const InputDecoration(
+                      labelText: 'Company name',
+                      border: OutlineInputBorder(),
+                      counterText: '',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _passwordField(_pwCtrl,
+                      _register ? 'Password (min. 6 characters)' : 'Password',
+                      _register ? TextInputAction.next : TextInputAction.go),
+                  if (_register) ...[
+                    const SizedBox(height: 12),
+                    _passwordField(_pw2Ctrl, 'Repeat password', TextInputAction.go),
+                  ],
+                  const SizedBox(height: 16),
+                  if (_error != null) ...[
+                    Text(_error!,
+                        style: const TextStyle(color: Colors.redAccent),
+                        textAlign: TextAlign.center),
+                    const SizedBox(height: 8),
+                  ],
+                  FilledButton(
+                    onPressed: _loading ? null : _submit,
+                    child: _loading
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white))
+                        : Text(_register ? 'Create account' : 'Log in'),
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
-              if (_error != null) ...[
-                Text(_error!,
-                    style: const TextStyle(color: Colors.redAccent),
-                    textAlign: TextAlign.center),
-                const SizedBox(height: 8),
-              ],
-              FilledButton(
-                onPressed: _loading ? null : _submit,
-                child: _loading
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white))
-                    : const Text('Sign in / Register'),
-              ),
-            ],
+            ),
           ),
         ),
       ),

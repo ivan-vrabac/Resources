@@ -18,6 +18,11 @@ within 7 days.
   for the rest of the window.
 - The original name-only endpoints (`playerLogin.php`, `playerNew.php`) are disabled.
 
+`AUTH_MODE=mixed` is for upgrading a live server: it adds everything above but keeps the
+name-only endpoints and unsigned sessions working for old clients. An account is only
+protected once its player has set a password, so move to `secure` once your players
+have updated.
+
 `AUTH_MODE=legacy` restores the original protocol: no passwords, unsigned sessions.
 Use it only on a private server for trusted players running old clients.
 

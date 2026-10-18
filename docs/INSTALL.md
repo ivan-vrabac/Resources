@@ -43,7 +43,7 @@ All settings are environment variables; see `deploy/.env.example`.
 | `DB_PATH` | `/data/game.db` | SQLite database file |
 | `LOG_FILE` | `/logs/requests.log` | JSON-lines request log (contains player names: treat as personal data) |
 | `FORWARDED_ALLOW_IPS` | `127.0.0.1` | Proxies whose `X-Forwarded-*` headers are trusted |
-| `AUTH_MODE` | `secure` | `secure`: name + password, signed sessions. `legacy`: original name-only login (trusted players only) |
+| `AUTH_MODE` | `secure` | `secure`: name + password, signed sessions. `mixed`: transition, so old name-only apps keep working until each player sets a password. `legacy`: original name-only login (trusted players only) |
 | `SESSION_SECRET` | generated, stored in DB | HMAC key for session tokens; changing it signs everyone out |
 | `SESSION_TTL_DAYS` | `90` | Session lifetime |
 | `AUTH_LEGACY_CLAIM` | `0` | `1`: passwordless (pre-upgrade) accounts adopt the password from their first sign-in |
@@ -57,6 +57,13 @@ On startup the server creates any missing tables (`CREATE TABLE IF NOT EXISTS`) 
 adds missing columns (idempotent `ALTER TABLE … ADD COLUMN`). A fresh `DB_PATH` gives
 an empty, working game. Upgrading in place keeps existing data. **Back up `game.db`
 before upgrading** (stop the server, copy the file).
+
+### Moving an existing game.db into Docker
+
+The server keeps its database in a Docker volume. To bring over a `game.db` from a folder
+(for example an older bind-mounted setup), stop the server and run `deploy/import_db.py`
+as described at the top of that file. The source is opened read-only, so keep it as a
+backup until you're happy.
 
 ### Accounts on an upgraded database
 

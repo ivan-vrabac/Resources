@@ -13,6 +13,14 @@
 - Hourly disease spread uses a spatial grid instead of comparing every mine pair;
   index on `mines(owner_hid)`.
 
+### Accounts
+- Login screen with separate **Log in** and **Register** tabs (register asks for the
+  password twice); `POST /api/v1/auth/session` takes `mode=login|register`.
+- `AUTH_MODE=mixed` for upgrading live servers: old name-only apps keep working, players
+  pick a password at their next login, and from then on name-only login can't open
+  their account. Old clients' URL-safe session encoding is accepted.
+- `deploy/import_db.py` moves an existing `game.db` into the Docker volume.
+
 ### Changed
 - Map clouds: one smoke puff per mine (GPU sprite batch) that merges smoothly when
   zooming out, instead of zoom-bucketed cluster blobs that jumped between levels.

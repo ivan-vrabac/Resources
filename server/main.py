@@ -1677,10 +1677,13 @@ def _client_ip(request: Request) -> str:
 
 @app.post("/api/v1/auth/session")
 async def auth_session(request: Request):
-    """Sign in, or create the account if the company name is free. Returns {hID, sid, created}."""
+    """mode=login: sign in to an existing account. mode=register: create a new account
+    (fails if the name is taken). No mode: sign in, or register if the name is free.
+    Returns {hID, sid, created}."""
     _, form = await read_form(request)
     name = (form.get("name") or "").strip()
     password = form.get("password") or ""
+    mode = form.get("mode", "")
     if not _VALID_NAME.match(name):
         return json_resp({"error": "invalid_name",
                           "message": "Name: 1-20 letters, digits, spaces and . , [ ] ( ) -"})
@@ -1694,6 +1697,12 @@ async def auth_session(request: Request):
     with get_db() as conn:
         row = conn.execute("SELECT hID FROM players WHERE company_name=?", (canon,)).fetchone()
         created = False
+        if row and mode == "register":
+            return json_resp({"error": "name_taken",
+                              "message": "That company name is taken. Choose another, or log in."})
+        if not row and mode == "login":
+            return json_resp({"error": "not_found",
+                              "message": "No company with that name. Check the name or register."})
         if not row:
             if problem:
                 return json_resp({"error": "weak_password", "message": problem})
@@ -1752,20 +1761,23 @@ async def auth_change_password(request: Request):
 
 @app.post("/flut23/playerLogin.php")
 async def player_login(request: Request):
-    if auth.secure():
+    if not auth.legacy_allowed():
         return json_resp([])  # name-only login disabled; use /api/v1/auth/session
     _, form = await read_form(request)
     raw_name = (form.get("userEmail") or "").strip()
     key = norm_name(raw_name)
     with get_db() as conn:
         row = conn.execute("SELECT hID FROM players WHERE company_name=?", (key,)).fetchone()
+        # Once a player has set a password, name-only login can't open the account.
+        if row and auth.secure() and auth.get_hash(conn, row["hID"]) is not None:
+            row = None
     if not row:
         return json_resp([])
     return json_resp([{"hID": row["hID"], "active": 1}])
 
 @app.post("/flut23/playerNew.php")
 async def player_new(request: Request):
-    if auth.secure():
+    if not auth.legacy_allowed():
         return plain_resp("")  # passwordless registration disabled; use /api/v1/auth/session
     _, form = await read_form(request)
     display = (form.get("userName") or "").strip()
@@ -1776,6 +1788,8 @@ async def player_new(request: Request):
     with get_db() as conn:
         ex = conn.execute("SELECT hID FROM players WHERE company_name=?", (canon,)).fetchone()
         if ex:
+            if auth.secure() and auth.get_hash(conn, ex["hID"]) is not None:
+                return plain_resp("")  # password-protected account
             return plain_resp(ex["hID"])
         hid = new_hid()
         conn.execute("INSERT INTO players(hID,company_name) VALUES(?,?)", (hid, canon))
