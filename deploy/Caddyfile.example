@@ -1,0 +1,4 @@
+# Example reverse proxy with automatic HTTPS. Replace the hostname with your own.
+game.example.com {
+	reverse_proxy 127.0.0.1:8000
+}

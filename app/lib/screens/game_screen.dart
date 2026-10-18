@@ -1,0 +1,491 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import '../models/tab_config.dart';
+import '../models/player_provider.dart';
+import '../services/api_service.dart';
+import '../services/storage_service.dart';
+import '../widgets/player_hud.dart';
+import 'tabs/map_tab.dart';
+import 'tabs/mines_tab.dart';
+import 'tabs/warehouse_tab.dart';
+import 'factory_screen.dart';
+import 'market_screen.dart';
+import 'shop_screen.dart';
+import 'log_screen.dart';
+import 'leaderboard_screen.dart';
+import 'headquarters_screen.dart';
+import 'special_buildings_screen.dart';
+import 'chat_screen.dart';
+import 'placeholder_screen.dart';
+import 'settings_screen.dart';
+import 'login_screen.dart';
+
+class _TabMeta {
+  final String label;
+  final IconData icon;
+  final Widget Function() build;
+  // true for tabs that are raw content widgets (no Scaffold of their own)
+  // — they need one when pushed standalone from the More menu.
+  final bool needsScaffold;
+  const _TabMeta({required this.label, required this.icon, required this.build, this.needsScaffold = false});
+}
+
+final Map<GameTabId, _TabMeta> tabMeta = {
+  GameTabId.map: _TabMeta(label: 'Map', icon: Icons.map_outlined,
+      build: () => const MapTab(), needsScaffold: true),
+  GameTabId.mines: _TabMeta(label: 'Mines', icon: Icons.construction_outlined,
+      build: () => const MinesTab(), needsScaffold: true),
+  GameTabId.warehouse: _TabMeta(label: 'Warehouse', icon: Icons.inventory_2_outlined,
+      build: () => const WarehouseTab(), needsScaffold: true),
+  GameTabId.factories: _TabMeta(label: 'Factories', icon: Icons.factory_outlined,
+      build: () => const FactoryScreen()),
+  GameTabId.market: _TabMeta(label: 'Market', icon: Icons.storefront_outlined,
+      build: () => const MarketScreen()),
+  GameTabId.shop: _TabMeta(label: 'Shop', icon: Icons.shopping_bag_outlined,
+      build: () => const ShopScreen()),
+  GameTabId.log: _TabMeta(label: 'Log', icon: Icons.history,
+      build: () => const LogScreen()),
+  // Leaderboard accessible from the More tab profile card — not a standalone tab
+  GameTabId.headquarters: _TabMeta(label: 'HQ', icon: Icons.location_city_outlined,
+      build: () => const HeadquartersScreen()),
+  GameTabId.specialBuildings: _TabMeta(label: 'Buildings', icon: Icons.account_balance_outlined,
+      build: () => const SpecialBuildingsScreen()),
+  GameTabId.auctions: _TabMeta(label: 'Auctions', icon: Icons.gavel,
+      build: () => const PlaceholderScreen(title: 'Auctions', icon: Icons.gavel, subtitle: 'Bid on rare items and resources')),
+  GameTabId.archeology: _TabMeta(label: 'Archeology', icon: Icons.museum_outlined,
+      build: () => const PlaceholderScreen(title: 'Archeology', icon: Icons.museum, subtitle: 'Discover ancient artifacts')),
+  GameTabId.chat: _TabMeta(label: 'Chat', icon: Icons.chat_bubble_outline,
+      build: () => const ChatScreen()),
+  GameTabId.loans: _TabMeta(label: 'Loans', icon: Icons.account_balance_wallet_outlined,
+      build: () => const PlaceholderScreen(title: 'Loans', icon: Icons.account_balance_wallet, subtitle: 'Borrow and lend credits')),
+  GameTabId.news: _TabMeta(label: 'News', icon: Icons.newspaper_outlined,
+      build: () => const PlaceholderScreen(title: 'News', icon: Icons.newspaper, subtitle: 'Latest game updates')),
+  GameTabId.quests: _TabMeta(label: 'Quests', icon: Icons.emoji_events_outlined,
+      build: () => const PlaceholderScreen(title: 'Quests', icon: Icons.emoji_events, subtitle: 'Complete challenges for rewards')),
+  GameTabId.stats: _TabMeta(label: 'Stats', icon: Icons.bar_chart_outlined,
+      build: () => const PlaceholderScreen(title: 'Stats', icon: Icons.bar_chart, subtitle: 'Track your progress')),
+  GameTabId.contacts: _TabMeta(label: 'Contacts', icon: Icons.contacts_outlined,
+      build: () => const PlaceholderScreen(title: 'Contacts', icon: Icons.contacts, subtitle: 'Manage your business contacts')),
+};
+
+class GameScreen extends StatefulWidget {
+  const GameScreen({super.key});
+  @override
+  State<GameScreen> createState() => _GameScreenState();
+}
+
+class _GameScreenState extends State<GameScreen> {
+  TabConfig _config = const TabConfig(kDefaultBottomTabs);
+  bool _configLoaded = false;
+  late PageController _pageCtrl;
+  int _currentIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    _pageCtrl = PageController(initialPage: 1);
+    TabConfig.load().then((cfg) {
+      if (mounted) setState(() { _config = cfg; _configLoaded = true; });
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<PlayerProvider>().addListener(_onProviderChanged);
+    });
+  }
+
+  @override
+  void dispose() {
+    context.read<PlayerProvider>().removeListener(_onProviderChanged);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    _pageCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onProviderChanged() {
+    if (!mounted) return;
+    final nav = context.read<PlayerProvider>().chatNavigateTo;
+    if (nav != null) {
+      final mapIdx = _config.bottomTabs.indexOf(GameTabId.map);
+      if (mapIdx >= 0 && mapIdx != _currentIndex) _goToTab(mapIdx);
+    }
+  }
+
+  int get _totalTabs => _config.bottomTabs.length + 1; // +1 for More
+
+  List<GameTabId> get _overflowIds => GameTabId.values
+      .where((t) => tabMeta.containsKey(t) && !_config.bottomTabs.contains(t))
+      .toList();
+
+  Widget _tabBody(int i) {
+    if (i == _totalTabs - 1) {
+      return _MoreTab(overflowIds: _overflowIds, onOpenSettings: _openSettings);
+    }
+    final id = _config.bottomTabs[i];
+    return tabMeta[id]?.build() ??
+        PlaceholderScreen(title: id.name, icon: Icons.help_outline, subtitle: '');
+  }
+
+  // Keep state alive so tab icons/data don't reload on every switch.
+  // Warehouse and Mines are now included — their data is stable enough between switches.
+  static const _kKeepAlive = {
+    GameTabId.map,
+    GameTabId.factories,
+    GameTabId.warehouse,
+    GameTabId.mines,
+  };
+
+  Widget _wrapPage(int i) {
+    final w = _tabBody(i);
+    final isMore = i == _totalTabs - 1;
+    if (isMore) {
+      return _KeepAliveTab(key: const ValueKey('__more__'), child: w);
+    }
+    final id = _config.bottomTabs[i];
+    if (_kKeepAlive.contains(id)) {
+      return _KeepAliveTab(key: ValueKey(id), child: w);
+    }
+    return w;
+  }
+
+  // Page layout: [lastDup(0), tab0(1)..tabN(N), firstDup(N+1)]
+  // Real pages 1..N correspond to _currentIndex 0..N-1
+  List<Widget> _buildPages() {
+    final n = _totalTabs;
+    return [
+      _tabBody(n - 1), // sentinel: last tab duplicate
+      for (int i = 0; i < n; i++) _wrapPage(i),
+      _tabBody(0), // sentinel: first tab duplicate
+    ];
+  }
+
+  void _onPageChanged(int page) {
+    final n = _totalTabs;
+    if (page == 0) {
+      // Swiped right past first — jump to real last tab
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _pageCtrl.hasClients) _pageCtrl.jumpToPage(n);
+      });
+      setState(() => _currentIndex = n - 1);
+    } else if (page == n + 1) {
+      // Swiped left past last — jump to real first tab
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _pageCtrl.hasClients) _pageCtrl.jumpToPage(1);
+      });
+      setState(() => _currentIndex = 0);
+    } else {
+      setState(() => _currentIndex = page - 1);
+    }
+  }
+
+  void _goToTab(int index) {
+    if (index == _currentIndex) return;
+    _pageCtrl.animateToPage(
+      index + 1,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+    setState(() => _currentIndex = index);
+  }
+
+  void _onConfigSaved(TabConfig cfg) {
+    setState(() { _config = cfg; _currentIndex = 0; });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _pageCtrl.hasClients) _pageCtrl.jumpToPage(1);
+    });
+  }
+
+  void _openSettings() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SettingsScreen(config: _config, onSave: _onConfigSaved),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_configLoaded) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    final cs   = Theme.of(context).colorScheme;
+    final prov = context.watch<PlayerProvider>();
+
+    return Scaffold(
+      body: SafeArea(
+        bottom: false,
+        child: Column(children: [
+        const PlayerHud(),
+        Expanded(
+          child: PageView(
+            controller: _pageCtrl,
+            physics: const NeverScrollableScrollPhysics(),
+            onPageChanged: _onPageChanged,
+            children: _buildPages(),
+          ),
+        ),
+      ]),
+      ),
+      bottomNavigationBar: Material(
+        color: cs.surface,
+        elevation: 3,
+        child: SafeArea(
+          child: SizedBox(
+            height: 60,
+            child: LayoutBuilder(builder: (context, constraints) {
+              const double minTabW = 68;
+              final n = _totalTabs;
+              final natural = constraints.maxWidth / n;
+              final tabW = natural < minTabW ? minTabW : natural;
+              final scrollable = tabW * n > constraints.maxWidth;
+
+              Widget buildTab(int i) {
+                final isMore     = i == n - 1;
+                final isSelected = i == _currentIndex;
+                final id         = isMore ? null : _config.bottomTabs[i];
+                final icon       = isMore ? Icons.menu : tabMeta[id]!.icon;
+                final label      = isMore ? 'More' : tabMeta[id]!.label;
+                final hasBadge   = !isMore && id == GameTabId.chat
+                    && prov.chatUnreadMentions > 0;
+
+                final iconColor = isSelected ? cs.primary : cs.onSurfaceVariant;
+                Widget iconWidget = Icon(icon, size: 22, color: iconColor);
+                if (hasBadge) {
+                  iconWidget = Stack(clipBehavior: Clip.none, children: [
+                    iconWidget,
+                    Positioned(
+                      top: -3, right: -3,
+                      child: Container(
+                        width: 9, height: 9,
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: cs.surface, width: 1.5),
+                        ),
+                      ),
+                    ),
+                  ]);
+                }
+
+                return SizedBox(
+                  width: tabW,
+                  child: InkWell(
+                    onTap: () => _goToTab(i),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        iconWidget,
+                        const SizedBox(height: 2),
+                        Text(label,
+                            style: TextStyle(
+                                fontSize: 10,
+                                color: isSelected ? cs.primary : cs.onSurfaceVariant),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              final tabs = List.generate(n, buildTab);
+              if (scrollable) {
+                return SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(children: tabs),
+                );
+              }
+              return Row(children: tabs);
+            }),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _KeepAliveTab extends StatefulWidget {
+  final Widget child;
+  const _KeepAliveTab({super.key, required this.child});
+  @override
+  State<_KeepAliveTab> createState() => _KeepAliveTabState();
+}
+
+class _KeepAliveTabState extends State<_KeepAliveTab>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
+  }
+}
+
+class _MoreTab extends StatefulWidget {
+  final List<GameTabId> overflowIds;
+  final VoidCallback onOpenSettings;
+  const _MoreTab({required this.overflowIds, required this.onOpenSettings});
+  @override
+  State<_MoreTab> createState() => _MoreTabState();
+}
+
+class _MoreTabState extends State<_MoreTab> {
+  String? _countryCode;
+  int? _rank;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCountry();
+    _loadRank();
+  }
+
+  Future<void> _loadCountry() async {
+    final code = await ApiService.getCountryCode();
+    if (mounted && code != null) {
+      setState(() => _countryCode = code);
+      final sid = context.read<PlayerProvider>().sid;
+      ApiService.setCountryCode(sid, code);
+    }
+  }
+
+  Future<void> _loadRank() async {
+    final sid = context.read<PlayerProvider>().sid;
+    if (sid.isEmpty) return;
+    final result = await ApiService.getLeaderboard(sid);
+    if (!mounted) return;
+    final rows = result?['leaderboard'] as List? ?? [];
+    final me = rows.where((r) => r['isMe'] == true).firstOrNull;
+    if (me != null) setState(() => _rank = me['rank'] as int?);
+  }
+
+  Color _waColor(int wa) {
+    if (wa >= 70) return Colors.greenAccent;
+    if (wa >= 40) return Colors.amber;
+    return Colors.redAccent;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final player = context.watch<PlayerProvider>().player;
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        if (player != null) ...[
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(children: [
+                if (_countryCode != null)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: Image.asset(
+                      'assets/images_countryflags/$_countryCode.png',
+                      width: 60, height: 40, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _fallbackAvatar(player),
+                    ),
+                  )
+                else
+                  _fallbackAvatar(player),
+                const SizedBox(width: 16),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  if (_rank != null)
+                    Text('Rank #$_rank',
+                        style: const TextStyle(
+                            color: Colors.teal, fontSize: 13,
+                            fontWeight: FontWeight.bold))
+                  else
+                    const Text('Loading rank...',
+                        style: TextStyle(color: Colors.white38, fontSize: 12)),
+                  const SizedBox(height: 2),
+                  Row(children: [
+                    const Text('WA ', style: TextStyle(color: Colors.white38, fontSize: 11)),
+                    Text('${player.wa}%',
+                        style: TextStyle(
+                            color: _waColor(player.wa),
+                            fontSize: 11, fontWeight: FontWeight.bold)),
+                  ]),
+                ])),
+                FilledButton.tonal(
+                  onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const LeaderboardScreen())),
+                  child: const Text('Leaderboard'),
+                ),
+              ]),
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+
+        if (widget.overflowIds.isNotEmpty) ...[
+          _sectionTitle('Game'),
+          ...widget.overflowIds.map((id) {
+            final meta = tabMeta[id]!;
+            return ListTile(
+              leading: Icon(meta.icon, color: Colors.teal),
+              title: Text(meta.label),
+              trailing: const Icon(Icons.chevron_right, color: Colors.white38),
+              onTap: () {
+                final content = meta.build();
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => meta.needsScaffold
+                        ? Scaffold(
+                            backgroundColor: const Color(0xFF0D0D0D),
+                            appBar: AppBar(title: Text(meta.label), toolbarHeight: 44),
+                            body: content,
+                          )
+                        : content,
+                  ),
+                );
+              },
+            );
+          }),
+          const SizedBox(height: 16),
+        ],
+
+        _sectionTitle('System'),
+        ListTile(
+          leading: const Icon(Icons.settings, color: Colors.teal),
+          title: const Text('Settings'),
+          trailing: const Icon(Icons.chevron_right, color: Colors.white38),
+          onTap: widget.onOpenSettings,
+        ),
+
+        const SizedBox(height: 16),
+        _sectionTitle('Account'),
+        ListTile(
+          leading: const Icon(Icons.logout, color: Colors.red),
+          title: const Text('Log out'),
+          subtitle: const Text('Sign in as a different company'),
+          onTap: () async {
+            await StorageService.clearHid();
+            if (!context.mounted) return;
+            context.read<PlayerProvider>().clear();
+            Navigator.of(context).pushReplacement(
+                MaterialPageRoute(builder: (_) => const LoginScreen()));
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _fallbackAvatar(dynamic player) => CircleAvatar(
+    backgroundColor: Colors.teal, radius: 24,
+    child: Text(
+      player.name.isNotEmpty ? player.name[0].toUpperCase() : '?',
+      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+    ),
+  );
+
+  Widget _sectionTitle(String title) => Padding(
+    padding: const EdgeInsets.only(left: 4, bottom: 8),
+    child: Text(title.toUpperCase(),
+        style: const TextStyle(fontSize: 11, color: Colors.white38, letterSpacing: 1.2)),
+  );
+}

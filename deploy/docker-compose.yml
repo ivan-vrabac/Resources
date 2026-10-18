@@ -1,0 +1,35 @@
+# Development / self-hosting template. Uses its own named volumes, so it can never
+# touch an existing deployment's database. Copy .env.example to .env first.
+#
+#   cd deploy && cp .env.example .env && docker compose up -d --build
+#
+name: resources-dev
+
+services:
+  server:
+    build: ../server
+    container_name: resources-dev-server
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_PATH: /data/game.db
+      LOG_FILE: /logs/requests.log
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${SERVER_PORT:-8000}:8000"
+    volumes:
+      - resources-dev-data:/data
+      - resources-dev-logs:/logs
+    # Push notifications (optional): place the service-account JSON at
+    # deploy/secrets/firebase-service-account.json (gitignored), set
+    # FIREBASE_PROJECT_ID in .env and uncomment both blocks below.
+    # secrets:
+    #   - firebase_sa
+    # (and set GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/firebase_sa in .env)
+
+# secrets:
+#   firebase_sa:
+#     file: ./secrets/firebase-service-account.json
+
+volumes:
+  resources-dev-data:
+  resources-dev-logs:

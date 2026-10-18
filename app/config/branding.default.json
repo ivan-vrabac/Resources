@@ -1,0 +1,10 @@
+{
+  "APP_NAME": "Resources",
+  "APP_TITLE": "Resources",
+  "APP_ID": "com.example.resources",
+  "API_BASE_URL": "http://10.0.2.2:8000",
+  "THEME_SEED": "0xFF009688",
+  "LOGO_ASSET": "",
+  "APP_NAME_ALT1": "Resources",
+  "APP_NAME_ALT2": "Resources"
+}

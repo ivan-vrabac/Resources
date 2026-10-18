@@ -1,0 +1,78 @@
+# ── Secrets & credentials ────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+**/key.properties
+**/*.jks
+**/*.keystore
+**/*.p12
+**/*.pem
+**/*.key
+**/google-services.json
+**/GoogleService-Info.plist
+**/*service-account*.json
+**/firebase-adminsdk*.json
+deploy/secrets/
+
+# ── Player data, databases, logs ─────────────────────────────────────────────
+*.db
+*.db-*
+*.db.bak*
+*.sqlite
+*.sqlite3
+*.bak
+*.log
+logs/
+data/
+dev-data/
+
+# ── Private configuration ────────────────────────────────────────────────────
+tools/denylist.txt
+*.local.json
+*.local.yml
+docker-compose.override.yml
+
+# ── Build outputs & binaries ─────────────────────────────────────────────────
+*.apk
+*.aab
+*.ipa
+build/
+app/android/app/debug/
+app/android/app/profile/
+app/android/app/release/
+
+# ── Flutter / Dart ───────────────────────────────────────────────────────────
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+coverage/
+app.*.symbols
+app.*.map.json
+**/doc/api/
+
+# ── Android / Gradle ─────────────────────────────────────────────────────────
+.gradle/
+.kotlin/
+.cxx/
+local.properties
+**/GeneratedPluginRegistrant.*
+captures/
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# ── Editors / OS ─────────────────────────────────────────────────────────────
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp

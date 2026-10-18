@@ -1,0 +1,53 @@
+import 'package:shared_preferences/shared_preferences.dart';
+
+class StorageService {
+  static const _keyHid            = 'hid';
+  static const _keyMuted          = 'chat_muted_hids';
+  static const _keyBlocked        = 'chat_blocked_hids';
+  static const _keyCloudOpacity   = 'res_cloud_opacity';
+
+  static Future<double> getCloudOpacity() async {
+    final p = await SharedPreferences.getInstance();
+    return (p.getDouble(_keyCloudOpacity) ?? 0.35).clamp(0.10, 0.90);
+  }
+
+  static Future<void> saveCloudOpacity(double v) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setDouble(_keyCloudOpacity, v.clamp(0.10, 0.90));
+  }
+
+  static Future<String?> getHid() async {
+    final p = await SharedPreferences.getInstance();
+    return p.getString(_keyHid);
+  }
+
+  static Future<void> saveHid(String hid) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString(_keyHid, hid);
+  }
+
+  static Future<void> clearHid() async {
+    final p = await SharedPreferences.getInstance();
+    await p.remove(_keyHid);
+  }
+
+  static Future<Set<String>> getMutedHids() async {
+    final p = await SharedPreferences.getInstance();
+    return (p.getStringList(_keyMuted) ?? []).toSet();
+  }
+
+  static Future<void> saveMutedHids(Set<String> hids) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setStringList(_keyMuted, hids.toList());
+  }
+
+  static Future<Set<String>> getBlockedHids() async {
+    final p = await SharedPreferences.getInstance();
+    return (p.getStringList(_keyBlocked) ?? []).toSet();
+  }
+
+  static Future<void> saveBlockedHids(Set<String> hids) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setStringList(_keyBlocked, hids.toList());
+  }
+}
