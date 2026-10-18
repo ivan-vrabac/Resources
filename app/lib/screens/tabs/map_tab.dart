@@ -29,6 +29,7 @@ import '../../screens/settings_screen.dart' show kCloudOpacity,
 import '../../services/api_service.dart';
 import '../../widgets/top_banner.dart';
 import '../../widgets/foreign_target_sheet.dart';
+import '../../widgets/cargo_map.dart';
 import 'mines_tab.dart' show TechUpgradeSheet;
 
 // ── Heatmap data from server ───────────────────────────────────────────────────
@@ -624,6 +625,7 @@ class MapTab extends StatefulWidget {
 
 class _MapTabState extends State<MapTab> {
   final _mapCtrl = MapController();
+  final _cargo = CargoController();   // Cargo Rain crates, ring, stock (widgets/cargo_map.dart)
   LatLng? _pos;        // GPS position
   LatLng? _lastLoadPos; // GPS position at last _loadMarkers call
   LatLng? _mapCenter;  // Map center = crosshair target
@@ -688,6 +690,7 @@ class _MapTabState extends State<MapTab> {
         if (!mounted) return;
         final sid = context.read<PlayerProvider>().sid;
         if (sid.isEmpty) return;
+        unawaited(_cargo.refreshInfo(sid));
         try {
           final bounds = _mapCtrl.camera.visibleBounds;
           unawaited(_loadHqMarkers(sid, bounds));
@@ -737,6 +740,7 @@ class _MapTabState extends State<MapTab> {
 
   @override
   void dispose() {
+    _cargo.dispose();
     _markerTimer?.cancel();
     _markerDebounce?.cancel();
     _mapMoveDebounce?.cancel();
@@ -931,6 +935,7 @@ class _MapTabState extends State<MapTab> {
 
     // HQ loading is GPS-independent and has its own sequence guard.
     unawaited(_loadHqMarkers(sid, bounds));
+    unawaited(_cargo.load(sid, bounds, _mapZoom));
 
     // Mine loading requires GPS position.
     if (_pos == null) return;
@@ -1645,6 +1650,13 @@ class _MapTabState extends State<MapTab> {
               }
               return MarkerLayer(markers: markers);
             }),
+          // Cargo Rain: collection ring (toggle in the cargo panel) + crate markers
+          CargoLayers(
+            controller: _cargo,
+            pos: _pos,
+            onTapCrate: (c) => _cargo.collect(context, context.read<PlayerProvider>().sid, c, _pos),
+          ),
+
           // Own HQ boost radius — rendered above mines so it's visible
           if (player?.hq != null && _showHQs) (() {
             final hq = player!.hq!;
@@ -1896,6 +1908,19 @@ class _MapTabState extends State<MapTab> {
             ),
           ),
         ),
+
+      // ── Left-side controls (Cargo Rain) ─────────────────────────────────────
+      Positioned(
+        left: 8,
+        top: MediaQuery.of(context).padding.top + 54,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          CargoButton(
+            controller: _cargo,
+            onPressed: () => _cargo.openPanel(context, context.read<PlayerProvider>().sid, _pos,
+                () => _loadMarkers()),
+          ),
+        ]),
+      ),
 
       // ── Distance display ─────────────────────────────────────────────────────
       if (_pos != null && _mapCenter != null)
