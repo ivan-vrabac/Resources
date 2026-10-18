@@ -27,5 +27,9 @@ void main() {
     final wrong = await ApiService.signIn(name, 'not-the-password');
     expect(wrong.sid, isNull);
     expect(wrong.error, isNotNull);
+
+    expect(await ApiService.changePassword(again.sid!, 'e2e-password', 'e2e-password-2'), isNull);
+    expect((await ApiService.signIn(name, 'e2e-password')).error, isNotNull);
+    expect((await ApiService.signIn(name, 'e2e-password-2')).hid, created.hid);
   }, skip: _server.isEmpty ? 'set --dart-define=API_BASE_URL to run' : false);
 }

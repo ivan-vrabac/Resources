@@ -31,6 +31,19 @@ class ApiService {
     }
   }
 
+  /// Returns null on success, otherwise a message for the user.
+  static Future<String?> changePassword(String sid, String oldPassword, String newPassword) async {
+    try {
+      final r = await http.post(Uri.parse('$kBaseUrl/api/v1/auth/password'), body: {
+        'sid': sid, 'old_password': oldPassword, 'new_password': newPassword,
+      }).timeout(const Duration(seconds: 15));
+      final m = jsonDecode(r.body) as Map<String, dynamic>;
+      return m['ok'] == true ? null : (m['message'] as String? ?? 'Could not change password');
+    } catch (_) {
+      return 'Could not reach the server. Check your connection.';
+    }
+  }
+
   static Future<Player?> getPlayerData(String sid) async {
     try {
       final r = await http.post(Uri.parse('$kBaseUrl/flut23/playerGetData.php'),

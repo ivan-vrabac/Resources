@@ -1,8 +1,11 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../branding.dart';
+import '../models/player_provider.dart';
 import '../models/tab_config.dart';
+import '../services/api_service.dart';
 import '../services/launcher_icon_service.dart';
 import '../constants.dart' show kNumDecimals;
 import 'game_screen.dart' show tabMeta;
@@ -107,6 +110,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _categoryTile(context, Icons.notifications_outlined, 'Notifications',
             'Mine warnings · warehouse alerts', () => Navigator.push(context, MaterialPageRoute(
               builder: (_) => const _NotificationsPage()))),
+        _sectionHeader('Account'),
+        _categoryTile(context, Icons.lock_outline, 'Change password',
+            'Update the password for this company', () => showDialog(
+              context: context, builder: (_) => const _ChangePasswordDialog())),
         _sectionHeader('System'),
         _categoryTile(context, Icons.speed, 'Performance',
             'GPS update interval', () => Navigator.push(context, MaterialPageRoute(
@@ -752,6 +759,73 @@ class _AppAppearancePageState extends State<_AppAppearancePage> {
         ),
         const SizedBox(height: 16),
       ]),
+    );
+  }
+}
+
+// ── Change password dialog ─────────────────────────────────────────────────────
+
+class _ChangePasswordDialog extends StatefulWidget {
+  const _ChangePasswordDialog();
+  @override
+  State<_ChangePasswordDialog> createState() => _ChangePasswordDialogState();
+}
+
+class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
+  final _old = TextEditingController();
+  final _new = TextEditingController();
+  final _confirm = TextEditingController();
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _old.dispose();
+    _new.dispose();
+    _confirm.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_new.text != _confirm.text) {
+      setState(() => _error = 'New passwords do not match');
+      return;
+    }
+    setState(() { _busy = true; _error = null; });
+    final err = await ApiService.changePassword(
+        context.read<PlayerProvider>().sid, _old.text, _new.text);
+    if (!mounted) return;
+    if (err != null) {
+      setState(() { _busy = false; _error = err; });
+      return;
+    }
+    Navigator.of(context).pop();
+    ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password changed')));
+  }
+
+  Widget _field(TextEditingController c, String label) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: TextField(controller: c, obscureText: true,
+        decoration: InputDecoration(labelText: label, border: const OutlineInputBorder())),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Change password'),
+      content: Column(mainAxisSize: MainAxisSize.min, children: [
+        _field(_old, 'Current password'),
+        _field(_new, 'New password (min. 6 characters)'),
+        _field(_confirm, 'Repeat new password'),
+        if (_error != null)
+          Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+      ]),
+      actions: [
+        TextButton(onPressed: _busy ? null : () => Navigator.of(context).pop(),
+            child: const Text('Cancel')),
+        FilledButton(onPressed: _busy ? null : _save, child: const Text('Save')),
+      ],
     );
   }
 }

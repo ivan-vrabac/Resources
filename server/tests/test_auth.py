@@ -86,6 +86,21 @@ def test_rate_limit_after_repeated_failures():
     auth.limiter.reset("name:iota corp", "ip:testclient")
 
 
+def test_change_password():
+    sid = signin("Kappa Corp", "old-password").json()["sid"]
+    url = "/api/v1/auth/password"
+    assert client.post(url, data={"sid": sid, "old_password": "nope-nope",
+                                  "new_password": "new-password"}).status_code == 401
+    assert client.post(url, data={"sid": sid, "old_password": "old-password",
+                                  "new_password": "x"}).json()["error"] == "weak_password"
+    assert client.post(url, data={"sid": forged_sid("whatever"), "old_password": "old-password",
+                                  "new_password": "new-password"}).status_code == 401
+    r = client.post(url, data={"sid": sid, "old_password": "old-password", "new_password": "new-password"})
+    assert r.json() == {"ok": True}
+    assert signin("Kappa Corp", "old-password").status_code == 401
+    assert signin("Kappa Corp", "new-password").status_code == 200
+
+
 def test_password_hash_roundtrip():
     h = auth.hash_password("s3cret!")
     assert h.startswith("scrypt$") and "s3cret" not in h

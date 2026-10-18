@@ -1540,6 +1540,34 @@ async def auth_session(request: Request):
         log_entry({"ts": utcnow_iso(), "endpoint": "authSession", "created": True, "hID": hid})
     return json_resp({"hID": hid, "sid": make_sid(hid), "created": created})
 
+@app.post("/api/v1/auth/password")
+async def auth_change_password(request: Request):
+    """Change the signed-in player's password. Requires the current password."""
+    _, form = await read_form(request)
+    hid = hid_from_sid(form.get("sid", ""))
+    if not hid:
+        return Response(content=b'{"error": "unauthorized", "message": "Please sign in again."}',
+                        status_code=401, media_type="application/json")
+    ip_key, hid_key = f"ip:{_client_ip(request)}", f"pw:{hid}"
+    if auth.limiter.blocked(ip_key, hid_key):
+        return Response(content=json.dumps({"error": "rate_limited",
+                                            "message": "Too many attempts. Try again later."}).encode(),
+                        status_code=429, media_type="application/json")
+    new = form.get("new_password") or ""
+    problem = auth.password_problem(new)
+    if problem:
+        return json_resp({"error": "weak_password", "message": problem})
+    with get_db() as conn:
+        stored = auth.get_hash(conn, hid)
+        if stored is not None and not auth.verify_password(form.get("old_password") or "", stored):
+            auth.limiter.fail(ip_key, hid_key)
+            return Response(content=b'{"error": "wrong_password", "message": "Current password is wrong."}',
+                            status_code=401, media_type="application/json")
+        auth.set_password(conn, hid, new)
+        conn.commit()
+    auth.limiter.reset(hid_key)
+    return json_resp({"ok": True})
+
 @app.post("/flut23/playerLogin.php")
 async def player_login(request: Request):
     if auth.secure():
