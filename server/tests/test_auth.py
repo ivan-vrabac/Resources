@@ -101,6 +101,15 @@ def test_change_password():
     assert signin("Kappa Corp", "new-password").status_code == 200
 
 
+def test_legacy_mode_accepts_unsigned_sessions(monkeypatch):
+    hid = signin("Lambda Corp", "password1").json()["hID"]
+    assert auth.hid_from_sid(forged_sid(hid)) == ""
+    monkeypatch.setattr(auth, "AUTH_MODE", "legacy")
+    assert auth.hid_from_sid(forged_sid(hid)) == hid
+    r = client.post("/flut23/playerLogin.php", data={"userEmail": "Lambda Corp"})
+    assert r.json() == [{"hID": hid, "active": 1}]
+
+
 def test_password_hash_roundtrip():
     h = auth.hash_password("s3cret!")
     assert h.startswith("scrypt$") and "s3cret" not in h

@@ -17,16 +17,6 @@ class StorageService {
     await p.setDouble(_keyCloudOpacity, v.clamp(0.10, 0.90));
   }
 
-  static Future<String?> getHid() async {
-    final p = await SharedPreferences.getInstance();
-    return p.getString(_keyHid);
-  }
-
-  static Future<void> saveHid(String hid) async {
-    final p = await SharedPreferences.getInstance();
-    await p.setString(_keyHid, hid);
-  }
-
   /// Server-signed session token (see server/auth.py).
   static Future<String?> getSid() async {
     final p = await SharedPreferences.getInstance();

@@ -36,6 +36,22 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: python -m pytest -q
 
+  docker:
+    name: Server Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build and smoke-test the image
+        run: |
+          docker build -t resources-server ./server
+          docker run -d --name srv -p 127.0.0.1:8000:8000 resources-server
+          for i in $(seq 1 30); do curl -sf -X POST http://127.0.0.1:8000/flut23/ping.php && break; sleep 1; done
+          curl -sf -X POST http://127.0.0.1:8000/api/v1/auth/session \
+               -d name=CI%20Co -d password=ci-password | grep -q '"sid"'
+          docker exec srv python admin.py list-unprotected
+      - if: failure()
+        run: docker logs srv
+
   app:
     name: App analyze, test, build
     runs-on: ubuntu-latest
