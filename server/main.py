@@ -3446,6 +3446,8 @@ async def market_deal_req(request: Request):
         added = wh_add(conn, hid, req["item_id"], buy_qty, cap)
         if added <= 0:
             return zlib_resp({"err": 4, "msg": "warehouse full"})
+        # Charge only for what actually fit in the warehouse (was: always the full quantity).
+        total_cost = round(added * req["price_unit"])
         conn.execute("UPDATE players SET credits=credits-? WHERE hID=?", (total_cost, hid))
         award_xp(conn, hid, int(total_cost))
         conn.execute("UPDATE players SET credits=credits+? WHERE hID=?",
@@ -3538,14 +3540,17 @@ async def items_get_data(request: Request):
                          "needs": ft["needs"], "cost": ft["cost"], "minLvl": ft["lvl"]})
     return zlib_resp(catalog)
 
+# System ("AI") price per unit — the existing game price definitions. The market buys at
+# 100% and sells at 150% of these (systems/market.py).
+SYSTEM_PRICES = {
+    2: 5, 3: 5, 7: 20, 8: 15, 10: 40, 12: 18, 13: 20, 14: 200,
+    15: 80, 20: 8, 24: 25, 26: 35, 30: 60, 32: 90, 35: 150,
+    36: 120, 38: 70, 49: 45, 53: 6, 79: 500, 81: 400, 90: 300, 169: 350,
+}
+
 @app.post("/flut23/itemsGetKurse.php")
 async def items_get_kurse(request: Request):
-    BASE_PRICES = {
-        2: 5, 3: 5, 7: 20, 8: 15, 10: 40, 12: 18, 13: 20, 14: 200,
-        15: 80, 20: 8, 24: 25, 26: 35, 30: 60, 32: 90, 35: 150,
-        36: 120, 38: 70, 49: 45, 53: 6, 79: 500, 81: 400, 90: 300, 169: 350,
-    }
-    prices = [{"itemID": k, "price": v} for k, v in BASE_PRICES.items()]
+    prices = [{"itemID": k, "price": v} for k, v in SYSTEM_PRICES.items()]
     return zlib_resp(prices)
 
 # ── Shop ──────────────────────────────────────────────────────────────────────────
@@ -4261,7 +4266,7 @@ SYSTEM_HELPERS = _types.SimpleNamespace(
     award_xp=award_xp, add_proto=add_proto, level_from_xp=level_from_xp, push=_push_to_player,
     mine_stats=mine_stats, mine_rows=mine_rows,
     MINE_TYPES=MINE_TYPES, SPECIAL_BUILDINGS=SPECIAL_BUILDINGS, HQ_BOOST_RADIUS=HQ_BOOST_RADIUS,
-    DRONE_SCAN_RANGES=DRONE_SCAN_RANGES, new_id=new_id,
+    DRONE_SCAN_RANGES=DRONE_SCAN_RANGES, new_id=new_id, SYSTEM_PRICES=SYSTEM_PRICES,
 )
 INSTALLED_SYSTEMS = systems.install_all(app, SYSTEM_HELPERS)
 

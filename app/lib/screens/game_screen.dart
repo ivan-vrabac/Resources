@@ -44,7 +44,7 @@ final Map<GameTabId, _TabMeta> tabMeta = {
   GameTabId.factories: _TabMeta(label: 'Factories', icon: Icons.factory_outlined,
       build: () => const FactoryScreen()),
   GameTabId.market: _TabMeta(label: 'Market', icon: Icons.storefront_outlined,
-      build: () => const MarketScreen()),
+      build: () => const MarketScreen(), needsScaffold: true),
   GameTabId.shop: _TabMeta(label: 'Shop', icon: Icons.shopping_bag_outlined,
       build: () => const ShopScreen()),
   GameTabId.log: _TabMeta(label: 'Log', icon: Icons.history,

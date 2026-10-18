@@ -184,9 +184,11 @@ def take(conn, hid, item_id, qty, kind, ref=None) -> None:
     _ledger(conn, hid, kind, item_id=item_id, qty=-qty, ref=ref)
 
 
-def give(conn, hid, item_id, qty, kind, ref=None, *, strict=True) -> float:
+def give(conn, hid, item_id, qty, kind, ref=None, *, strict=True, ignore_capacity=False) -> float:
     """Add items. strict=True: fail if the warehouse can't hold all of it (purchases, transfers).
-    strict=False: add what fits and return the amount added (rewards, like production)."""
+    strict=False: add what fits and return the amount added (rewards, like production).
+    ignore_capacity=True: always add everything — only for returning the player's own escrowed
+    items or completing a purchase they already paid for, so nothing is ever lost."""
     qty = float(qty)
     if qty < 0:
         raise ValueError("negative give")
@@ -194,13 +196,14 @@ def give(conn, hid, item_id, qty, kind, ref=None, *, strict=True) -> float:
         return 0.0
     if item_id in NON_WAREHOUSE_ITEMS:
         raise GameError("not_storable", "This item can't be stored in the warehouse")
-    space = free_space(conn, hid)
-    if qty > space + 1e-9:
-        if strict:
-            raise GameError("warehouse_full", "Not enough warehouse space")
-        qty = space
-        if qty <= 0:
-            return 0.0
+    if not ignore_capacity:
+        space = free_space(conn, hid)
+        if qty > space + 1e-9:
+            if strict:
+                raise GameError("warehouse_full", "Not enough warehouse space")
+            qty = space
+            if qty <= 0:
+                return 0.0
     conn.execute("INSERT INTO warehouse(hid,item_id,qty) VALUES(?,?,?) "
                  "ON CONFLICT(hid,item_id) DO UPDATE SET qty = qty + excluded.qty", (hid, item_id, qty))
     _ledger(conn, hid, kind, item_id=item_id, qty=qty, ref=ref)
