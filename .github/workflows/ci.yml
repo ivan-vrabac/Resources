@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  repo-checks:
+    name: Repository safety (secrets, data, assets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python tools/check_repo.py
+      - run: python tools/assets.py validate --strict
+
+  server:
+    name: Server tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: server/requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+
+  app:
+    name: App analyze, test, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.0"
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos --no-fatal-warnings
+      - run: flutter test
+      - run: flutter build apk --debug --dart-define-from-file=config/branding.default.json
+
+  e2e:
+    name: Client ↔ server end-to-end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.0"
+          channel: stable
+          cache: true
+      - name: Start dev server on a throwaway database
+        working-directory: server
+        run: |
+          pip install -r requirements.txt
+          mkdir -p /tmp/e2e
+          DB_PATH=/tmp/e2e/game.db LOG_FILE=/tmp/e2e/requests.log \
+            nohup python -m uvicorn main:app --host 127.0.0.1 --port 8000 > /tmp/e2e/server.out 2>&1 &
+          for i in $(seq 1 60); do curl -sf -X POST http://127.0.0.1:8000/flut23/ping.php && break; sleep 1; done
+      - name: Run end-to-end test
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter test test/api_e2e_test.dart --dart-define=API_BASE_URL=http://127.0.0.1:8000
+      - if: failure()
+        run: cat /tmp/e2e/server.out
