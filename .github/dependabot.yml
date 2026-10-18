@@ -1,11 +1,19 @@
 version: 2
 updates:
+  # App and server: minor/patch only. Major upgrades can change gameplay or UI
+  # behaviour and are done by hand with testing.
   - package-ecosystem: pip
     directory: /server
     schedule: { interval: monthly }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: pub
     directory: /app
     schedule: { interval: monthly }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: monthly }
