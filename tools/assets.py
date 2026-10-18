@@ -90,8 +90,75 @@ def _hue_rgb(seed: str) -> tuple[int, int, int]:
     return int(r * 255), int(g * 255), int(b * 255)
 
 
-def placeholder_png(width: int, height: int, category: str, seed: str) -> bytes:
-    """Generated, copyright-free placeholder: flat shape whose colour is derived from the asset ID."""
+# 5×7 bitmap font for placeholder labels (project-owned).
+_FONT = {
+    "A": ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
+    "B": ["11110", "10001", "10001", "11110", "10001", "10001", "11110"],
+    "C": ["01110", "10001", "10000", "10000", "10000", "10001", "01110"],
+    "D": ["11110", "10001", "10001", "10001", "10001", "10001", "11110"],
+    "E": ["11111", "10000", "10000", "11110", "10000", "10000", "11111"],
+    "F": ["11111", "10000", "10000", "11110", "10000", "10000", "10000"],
+    "G": ["01110", "10001", "10000", "10111", "10001", "10001", "01111"],
+    "H": ["10001", "10001", "10001", "11111", "10001", "10001", "10001"],
+    "I": ["01110", "00100", "00100", "00100", "00100", "00100", "01110"],
+    "J": ["00111", "00010", "00010", "00010", "00010", "10010", "01100"],
+    "K": ["10001", "10010", "10100", "11000", "10100", "10010", "10001"],
+    "L": ["10000", "10000", "10000", "10000", "10000", "10000", "11111"],
+    "M": ["10001", "11011", "10101", "10101", "10001", "10001", "10001"],
+    "N": ["10001", "10001", "11001", "10101", "10011", "10001", "10001"],
+    "O": ["01110", "10001", "10001", "10001", "10001", "10001", "01110"],
+    "P": ["11110", "10001", "10001", "11110", "10000", "10000", "10000"],
+    "Q": ["01110", "10001", "10001", "10001", "10101", "10010", "01101"],
+    "R": ["11110", "10001", "10001", "11110", "10100", "10010", "10001"],
+    "S": ["01111", "10000", "10000", "01110", "00001", "00001", "11110"],
+    "T": ["11111", "00100", "00100", "00100", "00100", "00100", "00100"],
+    "U": ["10001", "10001", "10001", "10001", "10001", "10001", "01110"],
+    "V": ["10001", "10001", "10001", "10001", "10001", "01010", "00100"],
+    "W": ["10001", "10001", "10001", "10101", "10101", "10101", "01010"],
+    "X": ["10001", "10001", "01010", "00100", "01010", "10001", "10001"],
+    "Y": ["10001", "10001", "01010", "00100", "00100", "00100", "00100"],
+    "Z": ["11111", "00001", "00010", "00100", "01000", "10000", "11111"],
+    "0": ["01110", "10001", "10011", "10101", "11001", "10001", "01110"],
+    "1": ["00100", "01100", "00100", "00100", "00100", "00100", "01110"],
+    "2": ["01110", "10001", "00001", "00010", "00100", "01000", "11111"],
+    "3": ["11111", "00010", "00100", "00010", "00001", "10001", "01110"],
+    "4": ["00010", "00110", "01010", "10010", "11111", "00010", "00010"],
+    "5": ["11111", "10000", "11110", "00001", "00001", "10001", "01110"],
+    "6": ["00110", "01000", "10000", "11110", "10001", "10001", "01110"],
+    "7": ["11111", "00001", "00010", "00100", "01000", "01000", "01000"],
+    "8": ["01110", "10001", "10001", "01110", "10001", "10001", "01110"],
+    "9": ["01110", "10001", "10001", "01111", "00001", "00010", "01100"],
+    "-": ["00000", "00000", "00000", "11111", "00000", "00000", "00000"],
+    "?": ["01110", "10001", "00001", "00010", "00100", "00000", "00100"],
+}
+
+
+def _draw_label(rows: list[bytearray], width: int, height: int, text: str,
+                color: bytes, max_w: float, max_h: float) -> None:
+    text = "".join(c for c in text.upper() if c in _FONT)[:4]
+    if not text:
+        return
+    cols = len(text) * 6 - 1
+    scale = int(min(max_w / cols, max_h / 7))
+    if scale < 1:
+        return
+    x0 = (width - cols * scale) // 2
+    y0 = (height - 7 * scale) // 2
+    for ci, ch in enumerate(text):
+        glyph = _FONT[ch]
+        for gy, line in enumerate(glyph):
+            for gx, bit in enumerate(line):
+                if bit != "1":
+                    continue
+                px = x0 + (ci * 6 + gx) * scale
+                for yy in range(y0 + gy * scale, y0 + (gy + 1) * scale):
+                    if 0 <= yy < height and 0 <= px and px + scale <= width:
+                        rows[yy][px * 4:(px + scale) * 4] = color * scale
+
+
+def placeholder_png(width: int, height: int, category: str, seed: str, label: str = "") -> bytes:
+    """Generated, copyright-free placeholder: flat shape whose colour is derived from the asset ID,
+    with an optional short text label."""
     width, height = max(1, width), max(1, height)
     r, g, b = _hue_rgb(seed)
     fg = bytes((r, g, b, 255))
@@ -126,7 +193,63 @@ def placeholder_png(width: int, height: int, category: str, seed: str) -> bytes:
                 mid = edge * (i0 - x0) + fg * (i1 - i0) + edge * (x1 - i1)
             x0, x1 = max(0, x0), min(width, x1)
             rows.append(clear * x0 + mid[: (x1 - x0) * 4] + clear * (width - x1))
+    if label:
+        rect = category in ("background", "flag", "photo")
+        base = (70, 74, 82) if category == "background" else (r, g, b)
+        lum = 0.2126 * base[0] + 0.7152 * base[1] + 0.0722 * base[2]
+        ink = b"\x14\x16\x1a\xff" if lum > 140 else b"\xf2\xf2\xf2\xff"
+        box_w = width * 0.7 if rect else min(width, height) * 0.45 * 0.82 * 2 * 0.78
+        box_h = height * 0.35 if rect else min(width, height) * 0.45 * 0.82 * 2 * 0.42
+        mrows = [bytearray(row) for row in rows]
+        _draw_label(mrows, width, height, label, ink, box_w, box_h)
+        rows = [bytes(row) for row in mrows]
     return _png(width, height, rows)
+
+
+def _item_names() -> dict[int, str]:
+    """Item ID → display name, parsed from app/lib/constants.dart (kItemNames + kMineNames)."""
+    src = (APP / "lib" / "constants.dart").read_text(encoding="utf-8")
+    names: dict[int, str] = {}
+    for block in ("kItemNames", "kMineNames"):
+        m = re.search(block + r"\s*=\s*\{(.*?)\};", src, re.S)
+        if m:
+            for k, v in re.findall(r"(\d+):\s*['\"]((?:[^'\"\\]|\\.)*)['\"]", m.group(1)):
+                names.setdefault(int(k), v)
+    return names
+
+
+_NAMES: dict[int, str] | None = None
+
+
+def label_for(asset_id: str, category: str) -> str:
+    """Short human-readable label so placeholder art is still playable."""
+    global _NAMES
+    stem = Path(asset_id).stem
+    if category == "flag":
+        return stem.upper()[:3]
+    m = re.fullmatch(r"res(\d+)", stem)
+    if m:
+        if _NAMES is None:
+            _NAMES = _item_names()
+        name = _NAMES.get(int(m.group(1)))
+        if not name:
+            return m.group(1)
+        words = re.findall(r"[A-Za-z0-9]+", name)
+        roman = {"I": "1", "II": "2", "III": "3", "IV": "4", "V": "5"}
+        if len(words) == 1:
+            return words[0][:3]
+        return "".join(roman.get(w, w[0]) for w in words)[:4]
+    m = re.fullmatch(r"hq_thumb_(\d+)(?:_(\d+))?", stem)
+    if m:
+        return f"H{m.group(1)}" if not m.group(2) else f"{m.group(1)}-{m.group(2)}"
+    m = re.fullmatch(r"imgArtifact(\d+)", stem, re.I)
+    if m:
+        return "A" + m.group(1)[-2:]
+    for prefix in ("nav_", "icon_", "icon-", "ic_", "but_"):
+        if stem.lower().startswith(prefix):
+            stem = stem[len(prefix):]
+            break
+    return re.sub(r"[^A-Za-z0-9]", "", stem)[:3]
 
 
 # ── classification / usage ───────────────────────────────────────────────────
@@ -295,7 +418,8 @@ def cmd_placeholders(args) -> int:
         dst.parent.mkdir(parents=True, exist_ok=True)
         # PNG bytes are written even to .jpg paths: Flutter sniffs the format from content.
         logical = re.sub(r"/[23]x/", "/", r["asset_id"])
-        dst.write_bytes(placeholder_png(int(r["width"] or 64), int(r["height"] or 64), r["category"], logical))
+        dst.write_bytes(placeholder_png(int(r["width"] or 64), int(r["height"] or 64), r["category"], logical,
+                                        label_for(r["asset_id"], r["category"])))
         r["replacement_status"] = "placeholder"
         n += 1
     print(f"placeholders written: {n}")
