@@ -915,6 +915,11 @@ def award_xp(conn, hid: str, credits_spent: int):
         new_level = level_from_xp(row["xp"])
         if new_level > row["level"]:
             conn.execute("UPDATE players SET level=? WHERE hID=?", (new_level, hid))
+            for hook in LEVEL_UP_HOOKS:   # e.g. Cargo Rain rewards (systems/cargo.py)
+                hook(conn, hid, row["level"], new_level)
+
+# Called as hook(conn, hid, old_level, new_level) inside the transaction that levelled up.
+LEVEL_UP_HOOKS = []
 
 STARTING_CREDITS = 50000
 
@@ -2031,6 +2036,7 @@ async def scanner_payscan(request: Request):
             wh_remove(conn, hid, 117, 1)
         results = scan_location(lat, lng, tc_level, mine_count)
         add_proto(conn, hid, "scan", {"lat": lat, "lng": lng, "results": len(results), "drone": is_drone})
+        econ.emit(conn, "scan", hid, {"drone": is_drone}, public=False)
         conn.commit()
 
     # Issue one single-use prospect token covering all resources found in this scan.
@@ -2473,6 +2479,7 @@ async def mine_maint_pay(request: Request):
                      (utcnow_iso(), mine_id))
         conn.execute("UPDATE players SET credits=credits-? WHERE hID=?", (repair_cost, hid))
         add_proto(conn, hid, "repair", {"mID": mine_id, "cost": repair_cost})
+        econ.emit(conn, "mine_repaired", hid, {"mID": mine_id, "how": "pay"}, public=False)
         conn.commit()
     return zlib_resp({"err": 0, "cost": repair_cost})
 
@@ -2505,6 +2512,7 @@ async def mine_maint_kit(request: Request):
         conn.execute("UPDATE mines SET condition=100, last_coll=? WHERE mine_id=?",
                      (utcnow_iso(), mine_id))
         add_proto(conn, hid, "repairkit", {"mID": mine_id})
+        econ.emit(conn, "mine_repaired", hid, {"mID": mine_id, "how": "kit"}, public=False)
         conn.commit()
     return zlib_resp({"err": 0})
 
@@ -2606,6 +2614,7 @@ async def mine_bulk_repair(request: Request):
             for mid, cost in done:
                 add_proto(conn, hid, "repair" if mode == "pay" else "repairkit",
                           {"mID": mid, "cost": cost} if mode == "pay" else {"mID": mid})
+                econ.emit(conn, "mine_repaired", hid, {"mID": mid, "how": mode}, public=False)
             conn.commit()
             return {"err": 0, "repaired": len(done), "failed": len(eligible) - len(done),
                     "destroyed": destroyed, "cost": spent}
@@ -2645,6 +2654,7 @@ async def mine_tech_upgrade(request: Request):
         if not wh_remove(conn, hid, item_id, actual):
             return zlib_resp({"err": 5, "msg": f"need {actual}× item {item_id}"})
         conn.execute(f"UPDATE mines SET {col}={col}+? WHERE mine_id=?", (actual, mine_id))
+        econ.emit(conn, "tech_installed", hid, {"mID": mine_id, "level": level, "qty": actual}, public=False)
         conn.commit()
         new_val = current + actual
         # Calculate new total boost for response
@@ -3088,6 +3098,8 @@ async def factory_new_order(request: Request):
         conn.execute(
             "UPDATE factories SET prod_item=?,prod_amount=?,prod_start=?,prod_end=? WHERE factory_id=?",
             (ft["produces"], output, start_time, end_time, fid))
+        econ.emit(conn, "factory_started", hid, {"fID": fid, "item": ft["produces"], "batches": batches},
+                  public=False)
         conn.commit()
     return zlib_resp({"err": 0, "prodItem": ft["produces"], "prodAmt": output, "prodStart": start_time, "prodEnd": end_time})
 
@@ -4267,6 +4279,7 @@ SYSTEM_HELPERS = _types.SimpleNamespace(
     mine_stats=mine_stats, mine_rows=mine_rows,
     MINE_TYPES=MINE_TYPES, SPECIAL_BUILDINGS=SPECIAL_BUILDINGS, HQ_BOOST_RADIUS=HQ_BOOST_RADIUS,
     DRONE_SCAN_RANGES=DRONE_SCAN_RANGES, new_id=new_id, SYSTEM_PRICES=SYSTEM_PRICES,
+    LEVEL_UP_HOOKS=LEVEL_UP_HOOKS,
 )
 INSTALLED_SYSTEMS = systems.install_all(app, SYSTEM_HELPERS)
 

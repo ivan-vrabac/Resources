@@ -20,6 +20,7 @@ import 'special_buildings_screen.dart';
 import 'chat_screen.dart';
 import 'contacts_screen.dart';
 import 'profile_screen.dart';
+import 'quests_screen.dart';
 import 'placeholder_screen.dart';
 import 'settings_screen.dart';
 import 'login_screen.dart';
@@ -65,7 +66,7 @@ final Map<GameTabId, _TabMeta> tabMeta = {
   GameTabId.news: _TabMeta(label: 'News', icon: Icons.newspaper_outlined,
       build: () => const PlaceholderScreen(title: 'News', icon: Icons.newspaper, subtitle: 'Latest game updates')),
   GameTabId.quests: _TabMeta(label: 'Quests', icon: Icons.emoji_events_outlined,
-      build: () => const PlaceholderScreen(title: 'Quests', icon: Icons.emoji_events, subtitle: 'Complete challenges for rewards')),
+      build: () => const QuestsScreen(), needsScaffold: true),
   GameTabId.stats: _TabMeta(label: 'Stats', icon: Icons.bar_chart_outlined,
       build: () => const ProfileScreen(embedded: true), needsScaffold: true),
   GameTabId.contacts: _TabMeta(label: 'Contacts', icon: Icons.contacts_outlined,
