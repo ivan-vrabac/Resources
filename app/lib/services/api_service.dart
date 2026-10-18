@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import '../constants.dart';
 import '../models/player.dart';
@@ -46,8 +47,9 @@ class ApiService {
 
   static Future<Player?> getPlayerData(String sid) async {
     try {
+      // lite=1: aggregates instead of the full mine list (see getMineList / getMinesNear).
       final r = await http.post(Uri.parse('$kBaseUrl/flut23/playerGetData.php'),
-          body: {'sid': sid}).timeout(const Duration(seconds: 10));
+          body: {'sid': sid, 'lite': '1'}).timeout(const Duration(seconds: 10));
       if (r.statusCode != 200) return null;
       final decoded = ZLibDecoder().convert(r.bodyBytes);
       final list = jsonDecode(utf8.decode(decoded)) as List;
@@ -118,17 +120,53 @@ class ApiService {
     } catch (_) { return null; }
   }
 
-  static Future<List<dynamic>?> getMineDensity(
-      String sid, double lat1, double lng1, double lat2, double lng2, double zoom) async {
+  /// Positions of every mine in the bbox as a flat [lat, lng, lat, lng, ...] list,
+  /// used to draw one smoke puff per mine at far zoom.
+  static Future<Float64List?> getMineDots(
+      String sid, double lat1, double lng1, double lat2, double lng2) async {
     try {
-      final r = await http.post(Uri.parse('$kBaseUrl/flut23/mineDensity.php'), body: {
+      final r = await http.post(Uri.parse('$kBaseUrl/flut23/mineDots.php'), body: {
         'sid': sid,
         'lat1': lat1.toString(), 'lng1': lng1.toString(),
         'lat2': lat2.toString(), 'lng2': lng2.toString(),
-        'z': zoom.toString(),
-      }).timeout(const Duration(seconds: 10));
-      final decoded = ZLibDecoder().convert(r.bodyBytes);
-      return jsonDecode(utf8.decode(decoded)) as List;
+      }).timeout(const Duration(seconds: 15));
+      final list = jsonDecode(utf8.decode(ZLibDecoder().convert(r.bodyBytes))) as List;
+      return Float64List.fromList([for (final v in list) (v as num).toDouble()]);
+    } catch (_) { return null; }
+  }
+
+  /// All of the player's mines (Mines tab).
+  static Future<List<Mine>?> getMineList(String sid) async {
+    try {
+      final r = await http.post(Uri.parse('$kBaseUrl/flut23/mineList.php'),
+          body: {'sid': sid}).timeout(const Duration(seconds: 30));
+      final m = _zlibJson(r.bodyBytes);
+      if (m == null || m['err'] != 0) return null;
+      return [for (final j in m['mines'] as List) Mine.fromJson(j as Map<String, dynamic>)];
+    } catch (_) { return null; }
+  }
+
+  /// The player's own mines within [radiusM] metres of a point (map taps, HQ placement).
+  static Future<List<Mine>?> getMinesNear(
+      String sid, double lat, double lng, double radiusM) async {
+    try {
+      final r = await http.post(Uri.parse('$kBaseUrl/flut23/minesNear.php'), body: {
+        'sid': sid, 'lat': lat.toString(), 'lng': lng.toString(), 'r': radiusM.toString(),
+      }).timeout(const Duration(seconds: 15));
+      final m = _zlibJson(r.bodyBytes);
+      if (m == null || m['err'] != 0) return null;
+      return [for (final j in m['mines'] as List) Mine.fromJson(j as Map<String, dynamic>)];
+    } catch (_) { return null; }
+  }
+
+  /// Repair many mines in one request. [kits] = use maintenance kits instead of credits.
+  static Future<Map<String, dynamic>?> bulkRepairMines(
+      String sid, List<String> mineIds, {required bool kits}) async {
+    try {
+      final r = await http.post(Uri.parse('$kBaseUrl/flut23/mineBulkRepair.php'), body: {
+        'sid': sid, 'ids': jsonEncode(mineIds), 'mode': kits ? 'kit' : 'pay',
+      }).timeout(const Duration(seconds: 60));
+      return _zlibJson(r.bodyBytes);
     } catch (_) { return null; }
   }
 

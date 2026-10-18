@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
+from starlette.concurrency import run_in_threadpool
 import auth
 import re
 import httpx, json, datetime, os, zlib, sqlite3, hashlib, uuid, base64, random, math, struct, threading, time
@@ -898,7 +899,8 @@ HQ_UPGRADE_REQS = {
 # ── DB ─────────────────────────────────────────────────────────────────────────
 
 def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    # Requests run concurrently in threads; wait for a busy writer instead of failing fast.
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -1082,6 +1084,7 @@ def init_db():
         # Ensure spatial index on mines for fast bounding-box queries
         conn.execute("CREATE INDEX IF NOT EXISTS idx_mines_lat_lng ON mines(lat, lng)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_hq_lat_lng ON hq(lat, lng)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_mines_owner ON mines(owner_hid)")
         conn.commit()
 
 init_db()
@@ -1303,6 +1306,166 @@ def collect_mine(conn, mine) -> tuple:
 
     return added, destroyed
 
+def _hq_boost_from(hq, mine) -> float:
+    """hq_boost_for_mine() with the HQ row already loaded."""
+    if not hq:
+        return 1.0
+    if haversine_m(mine["lat"], mine["lng"], hq["lat"], hq["lng"]) > HQ_BOOST_RADIUS.get(hq["level"], 115):
+        return 1.0
+    return HQ_BOOST_FACTORS.get(hq["level"], 1.0)
+
+# ── Set-based mine maths (scales to very large mine counts) ────────────────────
+# The per-mine formulas of collect_mine() / rateHr, expressed in SQL so the database
+# does the work in a few statements instead of Python touching every row.
+
+def _prepare_mine_temp(conn, hid: str, hq) -> None:
+    """Per-connection TEMP tables: mine type constants and the player's HQ-boosted mines."""
+    conn.execute("CREATE TEMP TABLE IF NOT EXISTS _mt("
+                 "item_id INTEGER PRIMARY KEY, rate REAL, res INTEGER, special INTEGER)")
+    conn.execute("DELETE FROM _mt")
+    conn.executemany("INSERT INTO _mt VALUES(?,?,?,?)",
+                     [(k, v["rate"], v["res"], 1 if v["res"] in SPECIAL_BUILDINGS else 0)
+                      for k, v in MINE_TYPES.items()])
+    conn.execute("CREATE TEMP TABLE IF NOT EXISTS _boost(mine_id TEXT PRIMARY KEY, f REAL)")
+    conn.execute("DELETE FROM _boost")
+    if hq:
+        factor = HQ_BOOST_FACTORS.get(hq["level"], 1.0)
+        radius = HQ_BOOST_RADIUS.get(hq["level"], 115)
+        if factor != 1.0:
+            dlat = radius / 111320.0 * 1.05
+            dlng = dlat / max(0.01, math.cos(math.radians(hq["lat"])))
+            near = conn.execute(
+                "SELECT mine_id, lat, lng FROM mines WHERE owner_hid=? AND lat BETWEEN ? AND ? "
+                "AND lng BETWEEN ? AND ?",
+                (hid, hq["lat"] - dlat, hq["lat"] + dlat, hq["lng"] - dlng, hq["lng"] + dlng)).fetchall()
+            conn.executemany("INSERT INTO _boost VALUES(?,?)",
+                             [(m[0], factor) for m in near
+                              if haversine_m(m[1], m[2], hq["lat"], hq["lng"]) <= radius])
+
+# SQL fragment: hours since last collection, capped like collect_mine() (needs :now).
+_SQL_HOURS = "MIN(MAX(0.0, (julianday(:now) - julianday(m.last_coll)) * 24.0), 24.0)"
+_SQL_TECH = ("(1.0 + (COALESCE(m.tu1,0)*1.0 + COALESCE(m.tu2,0)*1.0 + "
+             "COALESCE(m.tu3,0)*1.5 + COALESCE(m.tu4,0)*1.5) / 100.0)")
+# rateHr exactly as build_player_data() reports it (no sickness factor, condition floor 0.1).
+_SQL_RATE_HR = (f"(t.rate * m.quality / 100.0 * MAX(0.1, m.condition / 100.0) * {_SQL_TECH} "
+                f"* m.level * COALESCE(b.f, 1.0))")
+
+def collect_mines_bulk(conn, hid: str, only_ids=None) -> int:
+    """Same result as calling collect_mine() on each of the player's mines in turn (same
+    formulas, same warehouse fill order), done in a handful of SQL statements.
+    Commits. Returns the number of mines destroyed.
+
+    Runs under BEGIN IMMEDIATE so no other writer can collect the same mines concurrently
+    (which collect_mine guards against with its last_coll check)."""
+    conn.commit()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        player = get_player(conn, hid)
+        if not player:
+            conn.rollback()
+            return 0
+        hq = conn.execute("SELECT lat,lng,level FROM hq WHERE hid=?", (hid,)).fetchone()
+        _prepare_mine_temp(conn, hid, hq)
+        conn.execute("CREATE TEMP TABLE IF NOT EXISTS _only(mine_id TEXT PRIMARY KEY)")
+        conn.execute("DELETE FROM _only")
+        flt = ""
+        if only_ids is not None:
+            conn.executemany("INSERT OR IGNORE INTO _only VALUES(?)", [(i,) for i in only_ids])
+            flt = " AND m.mine_id IN (SELECT mine_id FROM _only)"
+        space = max(0.0, wh_capacity(player["wh_level"]) - wh_total(conn, hid))
+        p = {"hid": hid, "now": datetime.datetime.utcnow().isoformat(), "space": space}
+
+        cond_end = f"ROUND(m.condition - {_SQL_HOURS} / 6.0, 2)"
+        # 1. warehouse additions, capped per mine in rowid order like sequential wh_add()
+        adds = conn.execute(f"""
+            WITH c AS (
+              SELECT m.rowid AS rid, t.res, t.special, t.rate, m.quality, m.level,
+                     {_SQL_HOURS} AS hours, CAST(m.condition AS REAL) AS c0, {cond_end} AS c1,
+                     {_SQL_TECH} AS tech, COALESCE(b.f, 1.0) AS hqf,
+                     CASE WHEN m.sick_until IS NOT NULL AND m.sick_until > :now THEN 0.5 ELSE 1.0 END AS sick
+              FROM mines m JOIN _mt t ON t.item_id = m.item_id
+                           LEFT JOIN _boost b ON b.mine_id = m.mine_id
+              WHERE m.owner_hid = :hid{flt}
+            ), a AS (
+              SELECT rid, res, special,
+                     rate * (CASE WHEN c1 < 20.0 THEN (CASE WHEN c0 <= 20.0 THEN 0.0
+                                                            ELSE MIN((c0 - 20.0) * 6.0, hours) END)
+                                  ELSE hours END)
+                          * quality / 100.0
+                          * MAX(0.0, (CASE WHEN c1 < 20.0 THEN (CASE WHEN c0 <= 20.0 THEN c0
+                                                                     ELSE (c0 + 20.0) / 2.0 END)
+                                           ELSE (c0 + c1) / 2.0 END) / 100.0)
+                          * tech * level * hqf * sick AS amount
+              FROM c
+            ), w AS (
+              SELECT res, amount,
+                     SUM(amount) OVER (ORDER BY rid ROWS UNBOUNDED PRECEDING) - amount AS before
+              FROM a WHERE amount >= 0.01 AND special = 0
+            )
+            SELECT res, SUM(MAX(0.0, MIN(amount, :space - before))) FROM w GROUP BY res
+        """, p).fetchall()
+
+        # 2. destroyed mines, 3. surviving mines (same expressions, before last_coll changes)
+        own = "owner_hid = :hid AND item_id IN (SELECT item_id FROM _mt)" + (
+            " AND mine_id IN (SELECT mine_id FROM _only)" if only_ids is not None else "")
+        hours_u = _SQL_HOURS.replace("m.last_coll", "last_coll")
+        cond_u = f"ROUND(condition - {hours_u} / 6.0, 2)"
+        destroyed = conn.execute(f"DELETE FROM mines WHERE {own} AND {cond_u} < 20.0", p).rowcount
+        conn.execute(f"UPDATE mines SET condition = {cond_u}, last_coll = :now WHERE {own}", p)
+
+        conn.executemany(
+            "INSERT INTO warehouse(hid,item_id,qty) VALUES(?,?,?) "
+            "ON CONFLICT(hid,item_id) DO UPDATE SET qty=qty+excluded.qty",
+            [(hid, res, qty) for res, qty in adds if qty and qty > 0])
+        conn.commit()
+        return destroyed
+    except Exception:
+        conn.rollback()
+        raise
+
+def mine_stats(conn, hid: str) -> dict:
+    """Aggregates the app needs instead of the full mine list (counts, notification
+    timings, output). Call after collect_mines_bulk() so conditions are current."""
+    hq = conn.execute("SELECT lat,lng,level FROM hq WHERE hid=?", (hid,)).fetchone()
+    _prepare_mine_temp(conn, hid, hq)
+    r = conn.execute(f"""
+        SELECT COUNT(*),
+               SUM(CASE WHEN m.condition > 20 AND m.condition <= 100 AND (m.condition - 24) * 6 <= 72 THEN 1 ELSE 0 END),
+               MIN(CASE WHEN m.condition > 20 AND m.condition <= 100 AND (m.condition - 24) * 6 <= 72
+                        THEN (m.condition - 24) * 6 END),
+               SUM(CASE WHEN m.condition > 20 AND m.condition <= 100 AND (m.condition - 20) * 6 <= 336 THEN 1 ELSE 0 END),
+               MIN(CASE WHEN m.condition > 20 AND m.condition <= 100 AND (m.condition - 20) * 6 <= 336
+                        THEN (m.condition - 20) * 6 END),
+               MAX({_SQL_RATE_HR}), SUM({_SQL_RATE_HR})
+        FROM mines m LEFT JOIN _mt t ON t.item_id = m.item_id
+                     LEFT JOIN _boost b ON b.mine_id = m.mine_id
+        WHERE m.owner_hid = ?""", (hid,)).fetchone()
+    return {"count": r[0] or 0,
+            "warnCount": r[1] or 0, "warnInH": r[2],
+            "destrCount": r[3] or 0, "destrInH": r[4],
+            "maxRateHr": round(r[5] or 0.0, 2), "totalRateHr": round(r[6] or 0.0, 1)}
+
+def mine_rows(conn, hid: str, where: str = "", args: tuple = (), order: str = "m.rowid",
+              limit: int = -1, offset: int = 0) -> list:
+    """The player's mines in the same JSON shape as build_player_data()['mines']."""
+    hq = conn.execute("SELECT lat,lng,level FROM hq WHERE hid=?", (hid,)).fetchone()
+    _prepare_mine_temp(conn, hid, hq)
+    now_iso = datetime.datetime.utcnow().isoformat()
+    rows = conn.execute(f"""
+        SELECT m.mine_id, m.lat, m.lng, m.item_id, COALESCE(t.res, 0), m.quality, m.condition,
+               m.level, COALESCE(m.tu1,0), COALESCE(m.tu2,0), COALESCE(m.tu3,0), COALESCE(m.tu4,0),
+               m.defence, m.last_coll, COALESCE({_SQL_RATE_HR}, 0), b.f,
+               CASE WHEN m.sick_until > ? THEN m.sick_until END
+        FROM mines m LEFT JOIN _mt t ON t.item_id = m.item_id
+                     LEFT JOIN _boost b ON b.mine_id = m.mine_id
+        WHERE m.owner_hid = ? {where}
+        ORDER BY {order} LIMIT ? OFFSET ?""", (now_iso, hid) + args + (limit, offset)).fetchall()
+    return [{"mID": r[0], "lat": r[1], "lng": r[2], "itemID": r[3], "resID": r[4], "qual": r[5],
+             "cond": r[6], "lvl": r[7], "tu1": r[8], "tu2": r[9], "tu3": r[10], "tu4": r[11],
+             "def": r[12], "lastColl": r[13], "rateHr": round(r[14], 1),
+             "hqBoost": r[15] if r[15] and r[15] > 1.0 else None, "sickUntil": r[16]}
+            for r in rows]
+
 def maybe_run_events(conn, hid: str, wa: int):
     """Once per hour: check disease spreading and random mine disease events."""
     row = conn.execute("SELECT last_event_check FROM players WHERE hID=?", (hid,)).fetchone()
@@ -1316,33 +1479,52 @@ def maybe_run_events(conn, hid: str, wa: int):
             pass
     conn.execute("UPDATE players SET last_event_check=? WHERE hID=?", (now.isoformat(), hid))
 
-    mines = conn.execute("SELECT * FROM mines WHERE owner_hid=?", (hid,)).fetchall()
-    sick_mines = [m for m in mines if m["sick_until"] and
-                  datetime.datetime.fromisoformat(m["sick_until"]) > now]
+    mines = conn.execute("SELECT mine_id, lat, lng, sick_until FROM mines WHERE owner_hid=?",
+                         (hid,)).fetchall()
 
-    # Spread disease from sick mines to nearby healthy mines
+    def is_sick(m):
+        try:
+            return bool(m["sick_until"]) and datetime.datetime.fromisoformat(m["sick_until"]) > now
+        except Exception:
+            return False
+
+    sick_mines = [m for m in mines if is_sick(m)]
+    healthy = [m for m in mines if not is_sick(m)]
     sick_until_str = (now + datetime.timedelta(days=DISEASE_DURATION_DAYS)).isoformat()
     rng = random.Random()
-    for sm in sick_mines:
-        for m in mines:
-            if m["mine_id"] == sm["mine_id"]:
-                continue
-            if m["sick_until"] and datetime.datetime.fromisoformat(m["sick_until"]) > now:
-                continue  # already sick
-            dist = haversine_m(sm["lat"], sm["lng"], m["lat"], m["lng"])
-            if dist <= DISEASE_SPREAD_RADIUS_M and rng.random() < 0.30:
-                conn.execute("UPDATE mines SET sick_until=? WHERE mine_id=?",
-                             (sick_until_str, m["mine_id"]))
+    infect = set()
+
+    # Spread disease from sick mines to healthy mines within DISEASE_SPREAD_RADIUS_M.
+    # Spatial grid: each sick mine only looks at the 3x3 neighbouring cells instead of every
+    # mine; every (sick, healthy-neighbour) pair still gets its own 30% roll as before.
+    if sick_mines and healthy:
+        cell_m = float(DISEASE_SPREAD_RADIUS_M)
+        def cell(m):
+            y = m["lat"] * 111320.0
+            x = m["lng"] * 111320.0 * math.cos(math.radians(m["lat"]))
+            return int(math.floor(x / cell_m)), int(math.floor(y / cell_m))
+        grid = {}
+        for m in healthy:
+            grid.setdefault(cell(m), []).append(m)
+        for sm in sick_mines:
+            cx, cy = cell(sm)
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    for m in grid.get((cx + dx, cy + dy), ()):
+                        if (haversine_m(sm["lat"], sm["lng"], m["lat"], m["lng"]) <= DISEASE_SPREAD_RADIUS_M
+                                and rng.random() < 0.30):
+                            infect.add(m["mine_id"])
 
     # Random new disease if WA is low
     if wa < 70:
         disease_prob = max(0.0, (70 - wa) / 70) * 0.03  # up to 3% per hour per mine at WA=0
-        for m in mines:
-            if m["sick_until"] and datetime.datetime.fromisoformat(m["sick_until"]) > now:
-                continue
+        for m in healthy:
             if rng.random() < disease_prob:
-                conn.execute("UPDATE mines SET sick_until=? WHERE mine_id=?",
-                             (sick_until_str, m["mine_id"]))
+                infect.add(m["mine_id"])
+
+    if infect:
+        conn.executemany("UPDATE mines SET sick_until=? WHERE mine_id=?",
+                         [(sick_until_str, mid) for mid in infect])
 
 # ── Scanner ────────────────────────────────────────────────────────────────────
 
@@ -1661,17 +1843,14 @@ async def ping(request: Request):
 
 # ── Player data ─────────────────────────────────────────────────────────────────
 
-def build_player_data(conn, row) -> dict:
+def build_player_data(conn, row, include_mines: bool = True) -> dict:
     hid = row["hID"]
     wa = row["wa"] if row["wa"] is not None else 80
     # Run hourly events (disease spreading, random events)
     maybe_run_events(conn, hid, wa)
     # Collect all mine outputs first
-    mines = conn.execute("SELECT * FROM mines WHERE owner_hid=?", (hid,)).fetchall()
     cap = wh_capacity(row["wh_level"])
-    for m in mines:
-        collect_mine(conn, m)
-    conn.commit()
+    collect_mines_bulk(conn, hid)
 
     # Warehouse
     wh_rows = conn.execute("SELECT item_id,qty FROM warehouse WHERE hid=?", (hid,)).fetchall()
@@ -1720,43 +1899,10 @@ def build_player_data(conn, row) -> dict:
             "boosterUntil": booster_until,
         })
 
-    # Re-read mines after collection
-    mines = conn.execute("SELECT * FROM mines WHERE owner_hid=?", (hid,)).fetchall()
-    mine_list = []
-    for m in mines:
-        mt = MINE_TYPES.get(m["item_id"], {})
-        hq_boost = hq_boost_for_mine(conn, m)
-        tu1 = (m["tu1"] or 0); tu2 = (m["tu2"] or 0); tu3 = (m["tu3"] or 0); tu4 = (m["tu4"] or 0)
-        tech_factor = 1.0 + (tu1*1.0 + tu2*1.0 + tu3*1.5 + tu4*1.5) / 100.0
-        rate = (mt.get("rate", 0) * m["quality"]/100.0 * max(0.1, m["condition"]/100.0)
-                * tech_factor * float(m["level"]) * hq_boost)
-        sick_until = None
-        if m["sick_until"]:
-            try:
-                su = datetime.datetime.fromisoformat(m["sick_until"])
-                if now < su:
-                    sick_until = m["sick_until"]
-            except Exception:
-                pass
-        mine_list.append({
-            "mID":       m["mine_id"],
-            "lat":       m["lat"],
-            "lng":       m["lng"],
-            "itemID":    m["item_id"],
-            "resID":     mt.get("res", 0),
-            "qual":      m["quality"],
-            "cond":      m["condition"],
-            "lvl":       m["level"],
-            "tu1":       m["tu1"] or 0,
-            "tu2":       m["tu2"] or 0,
-            "tu3":       m["tu3"] or 0,
-            "tu4":       m["tu4"] or 0,
-            "def":       m["defence"],
-            "lastColl":  m["last_coll"],
-            "rateHr":    round(rate, 1),
-            "hqBoost":   hq_boost if hq_boost > 1.0 else None,
-            "sickUntil": sick_until,
-        })
+    # Mines after collection. Lite clients (include_mines=False) get aggregates only and
+    # load mine details on demand (mineList / minesNear) — keeps this call fast at any count.
+    mine_list = mine_rows(conn, hid) if include_mines else []
+    stats = mine_stats(conn, hid)
 
     # Tech center level and Haulage Firm level
     tc_level = 0
@@ -1785,6 +1931,8 @@ def build_player_data(conn, row) -> dict:
         "tcMaxQ": tc_max_quality,
         "haulLvl": haul_level,
         "mines":  mine_list,
+        "mineStats": stats,
+        "minesOmitted": not include_mines,
         "hq":     hq,
         "lager":  lager,
         "facts":  facts,
@@ -1796,14 +1944,19 @@ def build_player_data(conn, row) -> dict:
 async def player_get_data(request: Request):
     _, form = await read_form(request)
     hid = hid_from_sid(form.get("sid", ""))
-    with get_db() as conn:
-        row = conn.execute("SELECT * FROM players WHERE hID=?", (hid,)).fetchone()
-        if not row:
-            return zlib_resp([])
-        record_daily_activity(conn, hid)
-        data = build_player_data(conn, row)
-        conn.commit()
-    return zlib_resp([data])
+    lite = form.get("lite", "") == "1"   # newer apps: no full mine list
+
+    def work():
+        with get_db() as conn:
+            row = conn.execute("SELECT * FROM players WHERE hID=?", (hid,)).fetchone()
+            if not row:
+                return []
+            record_daily_activity(conn, hid)
+            data = build_player_data(conn, row, include_mines=not lite)
+            conn.commit()
+            return [data]
+    # Off the event loop, so one big player doesn't stall everyone else.
+    return zlib_resp(await run_in_threadpool(work))
 
 # ── Scanner ─────────────────────────────────────────────────────────────────────
 
@@ -2167,6 +2320,39 @@ async def mine_density(request: Request):
     } for v in cells.values()])
 
 
+MINE_DOTS_MAX = 60000
+
+@app.post("/flut23/mineDots.php")
+async def mine_dots(request: Request):
+    """Every mine's position in a bbox, for per-mine smoke clouds at far zoom.
+    Response: zlib JSON flat array [lat, lng, lat, lng, ...] rounded to ~1 m.
+    Above MINE_DOTS_MAX mines the result is a deterministic rowid-stride subset, so the
+    same mines stay visible between requests (no flicker)."""
+    _, form = await read_form(request)
+    if not hid_from_sid(form.get("sid", "")):
+        return zlib_resp([])
+    try:
+        lat1 = max(-90.0, float(form.get("lat1", -90))); lat2 = min(90.0, float(form.get("lat2", 90)))
+        lng1 = max(-180.0, float(form.get("lng1", -180))); lng2 = min(180.0, float(form.get("lng2", 180)))
+    except Exception:
+        return zlib_resp([])
+    q = "FROM mines WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?"
+    args = (lat1, lat2, lng1, lng2)
+    with get_db() as conn:
+        n = conn.execute("SELECT COUNT(*) " + q, args).fetchone()[0]
+        stride = max(1, -(-n // MINE_DOTS_MAX))
+        if stride == 1:
+            rows = conn.execute("SELECT lat, lng " + q, args).fetchall()
+        else:
+            rows = conn.execute("SELECT lat, lng " + q + " AND rowid % ? = 0", args + (stride,)).fetchall()
+    flat = []
+    for r in rows:
+        flat.append(round(r[0], 5))
+        flat.append(round(r[1], 5))
+    return Response(content=zlib.compress(json.dumps(flat, separators=(",", ":")).encode(), 6),
+                    headers={"content-type": "application/octet-stream"})
+
+
 @app.post("/flut23/mineLoadMarkers.php")
 async def mine_load_markers(request: Request):
     _, form = await read_form(request)
@@ -2305,6 +2491,109 @@ async def mine_maint_kit(request: Request):
         add_proto(conn, hid, "repairkit", {"mID": mine_id})
         conn.commit()
     return zlib_resp({"err": 0})
+
+_MINE_SORTS = {"output": _SQL_RATE_HR, "quality": "m.quality", "condition": "m.condition"}
+
+@app.post("/flut23/mineList.php")
+async def mine_list(request: Request):
+    """The player's mines (same shape as playerGetData 'mines'), optionally sorted/paged:
+    sort=output|quality|condition, asc=1, offset, limit (max 100000)."""
+    _, form = await read_form(request)
+    hid = hid_from_sid(form.get("sid", ""))
+    if not hid:
+        return zlib_resp({"err": 1})
+    expr = _MINE_SORTS.get(form.get("sort", ""), "m.rowid")
+    order = f"{expr} {'ASC' if form.get('asc') == '1' else 'DESC'}, m.rowid" if expr != "m.rowid" else "m.rowid"
+    try:
+        offset = max(0, int(form.get("offset", 0)))
+        limit = min(100000, max(1, int(form.get("limit", 100000))))
+    except Exception:
+        return zlib_resp({"err": 1})
+
+    def work():
+        with get_db() as conn:
+            total = conn.execute("SELECT COUNT(*) FROM mines WHERE owner_hid=?", (hid,)).fetchone()[0]
+            return {"err": 0, "total": total, "offset": offset,
+                    "mines": mine_rows(conn, hid, order=order, limit=limit, offset=offset)}
+    return zlib_resp(await run_in_threadpool(work))
+
+@app.post("/flut23/minesNear.php")
+async def mines_near(request: Request):
+    """The player's own mines within r metres (max 5000) of lat/lng."""
+    _, form = await read_form(request)
+    hid = hid_from_sid(form.get("sid", ""))
+    try:
+        lat, lng = float(form.get("lat")), float(form.get("lng"))
+        r = min(5000.0, max(1.0, float(form.get("r", 50))))
+    except Exception:
+        return zlib_resp({"err": 1})
+    if not hid:
+        return zlib_resp({"err": 1})
+    dlat = r / 111320.0 * 1.05
+    dlng = dlat / max(0.01, math.cos(math.radians(lat)))
+
+    def work():
+        with get_db() as conn:
+            rows = mine_rows(conn, hid, where="AND m.lat BETWEEN ? AND ? AND m.lng BETWEEN ? AND ?",
+                             args=(lat - dlat, lat + dlat, lng - dlng, lng + dlng))
+        return {"err": 0, "mines": [m for m in rows if haversine_m(lat, lng, m["lat"], m["lng"]) <= r]}
+    return zlib_resp(await run_in_threadpool(work))
+
+@app.post("/flut23/mineBulkRepair.php")
+async def mine_bulk_repair(request: Request):
+    """Repair many mines in one request. ids = JSON list of mine IDs; mode = pay | kit.
+    Same rules per mine as mineMaintAPay / mineMaintAKit, applied in the given order until
+    credits or kits run out."""
+    _, form = await read_form(request)
+    hid = hid_from_sid(form.get("sid", ""))
+    mode = form.get("mode", "pay")
+    try:
+        ids = [str(i) for i in json.loads(form.get("ids", "[]"))][:100000]
+    except Exception:
+        return zlib_resp({"err": 1, "msg": "bad ids"})
+    if not hid or not ids or mode not in ("pay", "kit"):
+        return zlib_resp({"err": 1})
+
+    def work():
+        KIT_ITEM_ID = 43
+        with get_db() as conn:
+            if not get_player(conn, hid):
+                return {"err": 1}
+            # Settle pending production at the old condition first (destroys doomed mines).
+            destroyed = collect_mines_bulk(conn, hid, only_ids=set(ids))
+            conn.execute("BEGIN IMMEDIATE")
+            rows = {r["mine_id"]: r for r in conn.execute(
+                "SELECT mine_id, item_id, condition FROM mines WHERE owner_hid=? AND mine_id IN "
+                "(SELECT mine_id FROM _only)", (hid,))}
+            eligible = [rows[i] for i in dict.fromkeys(ids) if i in rows and float(rows[i]["condition"]) <= 99.00]
+            player = get_player(conn, hid)
+            done, spent = [], 0
+            if mode == "pay":
+                credits = player["credits"]
+                for m in eligible:
+                    cost = max(100, int(MINE_TYPES.get(m["item_id"], {}).get("cost", 1000) * 0.05))
+                    if credits - spent < cost:
+                        break
+                    spent += cost
+                    done.append((m["mine_id"], cost))
+                conn.execute("UPDATE players SET credits=credits-? WHERE hID=?", (spent, hid))
+            else:
+                kits = conn.execute("SELECT COALESCE(qty,0) FROM warehouse WHERE hid=? AND item_id=?",
+                                    (hid, KIT_ITEM_ID)).fetchone()
+                n = min(len(eligible), int(kits[0]) if kits else 0)
+                done = [(m["mine_id"], 0) for m in eligible[:n]]
+                if n:
+                    wh_remove(conn, hid, KIT_ITEM_ID, n)
+            now = utcnow_iso()
+            conn.executemany("UPDATE mines SET condition=100, last_coll=? WHERE mine_id=?",
+                             [(now, mid) for mid, _ in done])
+            for mid, cost in done:
+                add_proto(conn, hid, "repair" if mode == "pay" else "repairkit",
+                          {"mID": mid, "cost": cost} if mode == "pay" else {"mID": mid})
+            conn.commit()
+            return {"err": 0, "repaired": len(done), "failed": len(eligible) - len(done),
+                    "destroyed": destroyed, "cost": spent}
+    return zlib_resp(await run_in_threadpool(work))
 
 @app.post("/flut23/mineTechupgrade.php")
 async def mine_tech_upgrade(request: Request):
@@ -2568,10 +2857,7 @@ async def lager_get_data(request: Request):
         if not row:
             return zlib_resp({"err": 1})
         # collect pending production
-        mines = conn.execute("SELECT * FROM mines WHERE owner_hid=?", (hid,)).fetchall()
-        for m in mines:
-            collect_mine(conn, m)
-        conn.commit()
+        collect_mines_bulk(conn, hid)
         wh = conn.execute("SELECT item_id,qty FROM warehouse WHERE hid=?", (hid,)).fetchall()
         cap = wh_capacity(row["wh_level"])
     # Filter out special buildings — they are stored in the factories table, not the warehouse.
@@ -3402,20 +3688,20 @@ def _mine_destruction_sweeper():
         try:
             now = datetime.datetime.utcnow()
             with get_db() as conn:
-                mines = conn.execute("SELECT * FROM mines").fetchall()
-                destroyed_count = 0
-                for mine in mines:
+                doomed = {}  # owner -> mine IDs whose projected condition is below 20
+                for mine in conn.execute("SELECT mine_id, owner_hid, condition, last_coll FROM mines"):
                     try:
                         last = datetime.datetime.fromisoformat(mine["last_coll"])
                         hours = (now - last).total_seconds() / 3600
-                        projected_cond = float(mine["condition"]) - hours / 6.0
-                        if projected_cond < 20.0:
-                            _, was_destroyed = collect_mine(conn, mine)
-                            if was_destroyed:
-                                destroyed_count += 1
+                        if float(mine["condition"]) - hours / 6.0 < 20.0:
+                            doomed.setdefault(mine["owner_hid"], set()).add(mine["mine_id"])
                     except Exception:
                         pass
-                conn.commit()
+                for owner, ids in doomed.items():
+                    try:
+                        collect_mines_bulk(conn, owner, only_ids=ids)
+                    except Exception:
+                        pass
         except Exception:
             pass
 

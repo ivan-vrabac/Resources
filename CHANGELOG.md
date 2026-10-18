@@ -2,6 +2,23 @@
 
 ## Unreleased: first open-source release candidate
 
+### Performance (large mine counts)
+- Mine production is collected with a few set-based SQL statements instead of ~6 queries
+  per mine (same formulas and warehouse fill order; verified against the per-mine code).
+  A player with 10,000 mines loads in ~0.15–0.3 s instead of ~20 s.
+- Lite player data (`playerGetData` with `lite=1`): mine aggregates (`mineStats`) instead
+  of the full list. New endpoints `mineList` (sortable/paged), `minesNear`,
+  `mineBulkRepair` (one request instead of one per mine) and `mineDots`.
+- Heavy endpoints run in a thread pool, so one large player no longer blocks everyone.
+- Hourly disease spread uses a spatial grid instead of comparing every mine pair;
+  index on `mines(owner_hid)`.
+
+### Changed
+- Map clouds: one smoke puff per mine (GPU sprite batch) that merges smoothly when
+  zooming out, instead of zoom-bucketed cluster blobs that jumped between levels.
+- Tech upgrades from the map use the same sheet as the Mines tab (stays open,
+  "TUx: installed n items").
+
 ### Added
 - Accounts with passwords (scrypt) and server-signed, expiring session tokens
   (`AUTH_MODE=secure`, default). `AUTH_MODE=legacy` keeps the original name-only protocol.

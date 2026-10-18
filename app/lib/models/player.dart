@@ -69,6 +69,29 @@ class HQ {
   }
 }
 
+/// Server-side mine aggregates (lite player data), so the app doesn't need every mine.
+class MineStats {
+  final int count;
+  final int warnCount;      // mines reaching 24% condition within 72 h
+  final double? warnInH;    // hours until the first of them does (<= 0: already)
+  final int destrCount;     // mines destroyed (20%) within 14 days
+  final double? destrInH;
+  final double maxRateHr;   // best single mine output
+  final double totalRateHr;
+  const MineStats({this.count = 0, this.warnCount = 0, this.warnInH,
+      this.destrCount = 0, this.destrInH, this.maxRateHr = 0, this.totalRateHr = 0});
+
+  factory MineStats.fromJson(Map<String, dynamic> j) => MineStats(
+    count: (j['count'] as num? ?? 0).toInt(),
+    warnCount: (j['warnCount'] as num? ?? 0).toInt(),
+    warnInH: (j['warnInH'] as num?)?.toDouble(),
+    destrCount: (j['destrCount'] as num? ?? 0).toInt(),
+    destrInH: (j['destrInH'] as num?)?.toDouble(),
+    maxRateHr: (j['maxRateHr'] as num? ?? 0).toDouble(),
+    totalRateHr: (j['totalRateHr'] as num? ?? 0).toDouble(),
+  );
+}
+
 class Player {
   final String hid;
   final String name;
@@ -83,7 +106,10 @@ class Player {
   final int tcMaxQuality;
   final int haulageLevel;
   final double whUsed;
+  /// Only filled by servers that don't support lite data; use PlayerProvider.mines,
+  /// ApiService.getMinesNear and [mineStats] instead.
   final List<Mine> mines;
+  final MineStats mineStats;
   final HQ? hq;
   final Map<String, double> lager;
   final List<Map<String, dynamic>> factories;
@@ -98,8 +124,11 @@ class Player {
     this.tcMaxQuality = 26,
     this.haulageLevel = 0,
     required this.mines, required this.hq, required this.lager,
+    this.mineStats = const MineStats(),
     this.factories = const [],
   });
+
+  int get mineCount => mineStats.count > 0 ? mineStats.count : mines.length;
 
   // Boss maintenance range: 100m at level 0/1, +11m per level, max ~200m at level 10
   double get bossRangeM => haulageLevel <= 0 ? 100.0 : (100.0 + (haulageLevel - 1) * 11.0).clamp(100.0, 200.0);
@@ -138,6 +167,9 @@ class Player {
       tcMaxQuality: (j['tcMaxQ'] as num? ?? 26).toInt(),
       haulageLevel: (j['haulLvl'] as num? ?? 0).toInt(),
       mines: mineList,
+      mineStats: j['mineStats'] is Map<String, dynamic>
+          ? MineStats.fromJson(j['mineStats'] as Map<String, dynamic>)
+          : MineStats(count: mineList.length),
       hq: hq,
       lager: lager,
       factories: factsList,

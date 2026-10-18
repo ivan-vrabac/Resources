@@ -566,10 +566,22 @@ class _HQPlaceScreenState extends State<_HQPlaceScreen> {
   static const double _stepMeter  = 1.0;
   static const double _placeRange = 200.0;
 
+  // Own mines around the placement area (player data no longer carries every mine).
+  List<Mine> _nearMines = [];
+
+  Future<void> _loadNearMines() async {
+    final sid = context.read<PlayerProvider>().sid;
+    final boostR = kHqBoostRadius[(widget.hqLevel - 1).clamp(0, 9)];
+    final list = await ApiService.getMinesNear(sid, widget.userPos.latitude,
+        widget.userPos.longitude, _placeRange + boostR + 300);
+    if (mounted && list != null) setState(() => _nearMines = list);
+  }
+
   @override
   void initState() {
     super.initState();
     _liveUserPos = widget.userPos;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadNearMines());
     _posSub = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
     ).listen((pos) {
@@ -630,7 +642,7 @@ class _HQPlaceScreenState extends State<_HQPlaceScreen> {
   }
 
   void _autoPosition() {
-    final mines = context.read<PlayerProvider>().player?.mines ?? [];
+    final mines = _nearMines;
     if (mines.isEmpty) {
       AppNotify.show(context, 'No mines to optimize for');
       return;
@@ -670,7 +682,7 @@ class _HQPlaceScreenState extends State<_HQPlaceScreen> {
   @override
   Widget build(BuildContext context) {
     final boostR  = kHqBoostRadius[(widget.hqLevel - 1).clamp(0, 9)];
-    final mines   = context.watch<PlayerProvider>().player?.mines ?? [];
+    final mines   = _nearMines;
 
     return Scaffold(
       appBar: AppBar(

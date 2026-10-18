@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show SynchronousFuture;
 import 'package:flutter/material.dart';
@@ -27,6 +28,7 @@ import '../../screens/settings_screen.dart' show kCloudOpacity,
     paletteColorAt;
 import '../../services/api_service.dart';
 import '../../widgets/top_banner.dart';
+import 'mines_tab.dart' show TechUpgradeSheet;
 
 // ── Heatmap data from server ───────────────────────────────────────────────────
 
@@ -373,11 +375,6 @@ class _UiImageProvider extends ImageProvider<_UiImageProvider> {
   int get hashCode => image.hashCode;
 }
 
-// ── Mine cluster cloud painter ─────────────────────────────────────────────────
-// Draws nearby mines as a merged blob (union of circles) at low zoom.
-// Soft cluster clouds: one blurred circle per pre-computed cluster centroid.
-// No Path.combine — clusters are computed once at load time, not every frame.
-
 // ── Hex icon painter for mine toggle button — clean outline only ──────────────
 
 class _HexIconPainter extends CustomPainter {
@@ -436,86 +433,101 @@ class _RadarIconPainter extends CustomPainter {
   bool shouldRepaint(_RadarIconPainter old) => old.color != color;
 }
 
-class _MineCloudPainter extends CustomPainter {
-  final List<_ClusterDot> clusters;
+// ── Mine smoke painter ─────────────────────────────────────────────────────────
+// One soft smoke puff per mine at far zoom, drawn as a single GPU sprite batch
+// (drawRawAtlas), so tens of thousands of mines stay smooth. Puffs pile up inside
+// one layer that is composited at a capped opacity: overlapping smoke merges and
+// thickens but never turns into a solid block. The puff's screen radius is one
+// continuous function of zoom, so nothing jumps or teleports while zooming.
+
+const double _kPuffTex = 64;      // puff sprite size (px)
+const double _kSmokeMaxAlpha = 0.45; // opacity cap for fully merged smoke
+
+Future<ui.Image> _makePuffImage() {
+  final rec = ui.PictureRecorder();
+  const r = _kPuffTex / 2;
+  Canvas(rec).drawCircle(const Offset(r, r), r, Paint()
+    ..shader = const RadialGradient(
+      colors: [Color(0x80FF8C00), Color(0x26FF8C00), Color(0x00FF8C00)],
+      stops: [0.0, 0.45, 1.0],
+    ).createShader(Rect.fromCircle(center: const Offset(r, r), radius: r)));
+  return rec.endRecording().toImage(_kPuffTex.toInt(), _kPuffTex.toInt());
+}
+
+double _mercX(double lng) => (lng + 180) / 360 * 256;
+double _mercY(double lat) {
+  final lr = lat.clamp(-85.05, 85.05) * math.pi / 180;
+  return (1 - math.log(math.tan(lr) + 1 / math.cos(lr)) / math.pi) / 2 * 256;
+}
+
+/// Mine positions in Web-Mercator pixels at zoom 0, plus reusable sprite buffers.
+class _SmokeData {
+  final Float32List world; // x, y pairs
+  final Float32List rects; // sprite source rects (all the same)
+  final Float32List xf;    // per-frame RSTransforms, rewritten in paint()
+  _SmokeData._(this.world, this.rects, this.xf);
+
+  factory _SmokeData.fromLatLng(Float64List latLng) {
+    final n = latLng.length ~/ 2;
+    final world = Float32List(n * 2);
+    final rects = Float32List(n * 4);
+    for (int i = 0; i < n; i++) {
+      world[2 * i]     = _mercX(latLng[2 * i + 1]);
+      world[2 * i + 1] = _mercY(latLng[2 * i]);
+      rects[4 * i + 2] = _kPuffTex;
+      rects[4 * i + 3] = _kPuffTex;
+    }
+    return _SmokeData._(world, rects, Float32List(n * 4));
+  }
+
+  int get length => world.length ~/ 2;
+}
+
+class _MineSmokePainter extends CustomPainter {
+  final _SmokeData? data;
+  final ui.Image? puff;
   final LatLng center;
   final double zoom;
-  const _MineCloudPainter({required this.clusters, required this.center, required this.zoom});
+  const _MineSmokePainter({required this.data, required this.puff,
+      required this.center, required this.zoom});
 
-  static double _tx(double lng, double z) =>
-      (lng + 180) / 360 * 256 * math.pow(2, z);
-  static double _ty(double lat, double z) {
-    final lr = lat * math.pi / 180;
-    return (1 - math.log(math.tan(lr) + 1 / math.cos(lr)) / math.pi) / 2 * 256 * math.pow(2, z);
-  }
-
-  Offset _toScreen(double lat, double lng, Size size) {
-    final cx = _tx(center.longitude, zoom);
-    final cy = _ty(center.latitude, zoom);
-    return Offset(size.width / 2 + _tx(lng, zoom) - cx,
-                  size.height / 2 + _ty(lat, zoom) - cy);
-  }
+  /// Puff radius in screen px: ~12 px fully zoomed out, growing smoothly to ~48 px
+  /// at the switch to individual mine icons (zoom 14.5).
+  static double radiusFor(double zoom) =>
+      12.0 * math.pow(4.0, ((zoom - 3.0) / 11.5).clamp(0.0, 1.0)).toDouble();
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (clusters.isEmpty) return;
-
-    // Screen-pixel radius: small at far zoom (~8px), larger close-up (~50px).
-    // Geographic footprint stays small — nearby clusters merge visually because
-    // their soft edges overlap as the map zooms out, not because the radius grows.
-    final zoomT = ((zoom - 3.0) / 12.0).clamp(0.0, 1.0);
-    final baseR = (8.0 * math.pow(5.0, zoomT)).clamp(6.0, 60.0);
-
-    // saveLayer: circles are drawn into an offscreen buffer first.
-    // BlendMode.lighten on each circle = max(src, buffer) per channel → no alpha
-    // accumulation. Hundreds of overlapping circles produce the same max opacity as one.
-    canvas.saveLayer(
-      Rect.fromLTWH(0, 0, size.width, size.height),
-      Paint()..blendMode = BlendMode.srcOver,
-    );
-
-    for (final dot in clusters) {
-      final sp = _toScreen(dot.lat, dot.lng, size);
-      if (sp.dx < -baseR || sp.dx > size.width + baseR ||
-          sp.dy < -baseR || sp.dy > size.height + baseR) continue;
-
-      // Absolute normalization against count=50 as the saturation point.
-      // Independent of how many dots the viewport contains (no viewport-relative max).
-      // count=1: 0.16 opacity, count=10: 0.25, count>=50: 0.40 ceiling.
-      final norm = (dot.count / 50.0).clamp(0.0, 1.0);
-      final opacity = 0.12 + 0.28 * math.sqrt(norm);
-      // Denser cells are slightly larger, but growth is very slow (max +25%).
-      final r = baseR * (1.0 + 0.25 * norm).clamp(1.0, 1.25);
-
-      canvas.drawCircle(
-        sp, r,
-        Paint()
-          ..blendMode = BlendMode.lighten
-          ..shader = RadialGradient(
-            colors: [
-              const Color(0xFFFF8C00).withValues(alpha: opacity),
-              const Color(0xFFFF8C00).withValues(alpha: opacity * 0.30),
-              const Color(0x00FF8C00),
-            ],
-            stops: const [0.0, 0.45, 1.0],
-          ).createShader(Rect.fromCircle(center: sp, radius: r)),
-      );
+    final d = data, img = puff;
+    if (d == null || img == null || d.length == 0) return;
+    final scale = math.pow(2, zoom).toDouble();
+    final cx = _mercX(center.longitude), cy = _mercY(center.latitude);
+    final r = radiusFor(zoom);
+    final s = 2 * r / _kPuffTex;
+    final halfW = size.width / 2, halfH = size.height / 2;
+    final w = d.world, xf = d.xf;
+    int k = 0;
+    for (int i = 0; i < d.length; i++) {
+      final sx = halfW + (w[2 * i] - cx) * scale;
+      final sy = halfH + (w[2 * i + 1] - cy) * scale;
+      if (sx < -r || sx > size.width + r || sy < -r || sy > size.height + r) continue;
+      xf[4 * k]     = s;
+      xf[4 * k + 1] = 0;
+      xf[4 * k + 2] = sx - r;
+      xf[4 * k + 3] = sy - r;
+      k++;
     }
-
+    if (k == 0) return;
+    canvas.saveLayer(Offset.zero & size,
+        Paint()..color = Color.fromRGBO(255, 255, 255, _kSmokeMaxAlpha));
+    canvas.drawRawAtlas(img, Float32List.sublistView(xf, 0, 4 * k),
+        Float32List.sublistView(d.rects, 0, 4 * k), null, null, null, Paint());
     canvas.restore();
   }
 
   @override
-  bool shouldRepaint(_MineCloudPainter old) =>
-      old.clusters != clusters || old.center != center || old.zoom != zoom;
-}
-
-// ── Pre-computed cluster dot (centroid + mine count) ──────────────────────────
-
-class _ClusterDot {
-  final double lat, lng;
-  final int count;
-  const _ClusterDot(this.lat, this.lng, this.count);
+  bool shouldRepaint(_MineSmokePainter old) =>
+      old.data != data || old.puff != puff || old.center != center || old.zoom != zoom;
 }
 
 // ── Marquee text — scrolls slowly after 3 s when text overflows ───────────────
@@ -644,11 +656,11 @@ class _MapTabState extends State<MapTab> {
   int _loadSeq = 0; // incremented before each request; stale responses are discarded
   String? _prospectToken;  // single-use token from last scan; null = no valid scan
   bool _building = false;  // guard against concurrent construction taps
-  List<_ClusterDot> _mineClusters = [];
-  // Bounded density tile cache: up to _kDensityCacheMax entries, FIFO eviction.
-  final Map<String, List<_ClusterDot>> _densityCache = {};
-  final List<String> _densityCacheKeys = [];
-  static const int _kDensityCacheMax = 30;
+  // Per-mine smoke at far zoom: positions for _smokeBounds (viewport + margin).
+  _SmokeData? _smoke;
+  LatLngBounds? _smokeBounds;
+  bool _smokeLoading = false;
+  ui.Image? _puff;
   StreamSubscription<Position>? _posStream;
   DateTime _lastPosApplied = DateTime.fromMillisecondsSinceEpoch(0);
   // Palette colorization: grayscale PNGs stored in _heatmapScans; decoded+colored ui.Images here.
@@ -661,6 +673,7 @@ class _MapTabState extends State<MapTab> {
   @override
   void initState() {
     super.initState();
+    _makePuffImage().then((img) { if (mounted) setState(() => _puff = img); });
     _initLocation();
     _loadLastMineType();
     _loadMapToggles();
@@ -840,23 +853,25 @@ class _MapTabState extends State<MapTab> {
     _markerDebounce = Timer(const Duration(milliseconds: 100), _loadMarkers);
   }
 
-  // Cache key for density responses: zoom bucket + bbox snapped to 0.5° grid.
-  String _densityKey(double zoom, LatLngBounds b) {
-    final z = zoom.floor();
-    final lat1 = (b.south / 0.5).floor();
-    final lat2 = (b.north  / 0.5).ceil();
-    final lng1 = (b.west   / 0.5).floor();
-    final lng2 = (b.east   / 0.5).ceil();
-    return '$z,$lat1,$lat2,$lng1,$lng2';
-  }
+  static bool _boundsContain(LatLngBounds outer, LatLngBounds inner) =>
+      inner.south >= outer.south && inner.north <= outer.north &&
+      inner.west  >= outer.west  && inner.east  <= outer.east;
 
-  void _storeDensityCache(String key, List<_ClusterDot> dots) {
-    if (_densityCache.containsKey(key)) return; // already cached
-    _densityCache[key] = dots;
-    _densityCacheKeys.add(key);
-    while (_densityCacheKeys.length > _kDensityCacheMax) {
-      _densityCache.remove(_densityCacheKeys.removeAt(0));
-    }
+  // Load every mine position for the viewport plus one viewport of margin on each
+  // side, so panning and zooming out a little needs no new request.
+  Future<void> _ensureSmoke(String sid, LatLngBounds view) async {
+    if (_smokeLoading) return;
+    if (_smokeBounds != null && _boundsContain(_smokeBounds!, view)) return;
+    final dLat = view.north - view.south, dLng = view.east - view.west;
+    final q = LatLngBounds(
+      LatLng((view.south - dLat).clamp(-85.0, 85.0), (view.west - dLng).clamp(-180.0, 180.0)),
+      LatLng((view.north + dLat).clamp(-85.0, 85.0), (view.east + dLng).clamp(-180.0, 180.0)),
+    );
+    _smokeLoading = true;
+    final dots = await ApiService.getMineDots(sid, q.south, q.west, q.north, q.east);
+    _smokeLoading = false;
+    if (!mounted || dots == null) return;
+    setState(() { _smoke = _SmokeData.fromLatLng(dots); _smokeBounds = q; });
   }
 
   // Load HQ markers independently of GPS and mine loading sequence.
@@ -922,33 +937,16 @@ class _MapTabState extends State<MapTab> {
     final currentZoom = _mapZoom;
 
     if (currentZoom < 14.5) {
-      // Far/medium zoom: server-side density aggregates for mines.
-      // HQs already loaded above and shown via _hqMarkers.
-      final cacheKey = _densityKey(currentZoom, bounds);
-      if (_densityCache.containsKey(cacheKey)) {
-        if (seq == _loadSeq && mounted) {
-          setState(() => _mineClusters = _densityCache[cacheKey]!);
-        }
-        return;
-      }
-      final data = await ApiService.getMineDensity(
-          sid, bounds.south, bounds.west, bounds.north, bounds.east, currentZoom);
-      if (!mounted || seq != _loadSeq || data == null) return;
-      final dots = data.map((d) => _ClusterDot(
-          (d['lat'] as num).toDouble(),
-          (d['lng'] as num).toDouble(),
-          (d['count'] as num).toInt())).toList();
-      _storeDensityCache(cacheKey, dots);
-      setState(() => _mineClusters = dots);
+      // Far/medium zoom: one smoke puff per mine.
+      await _ensureSmoke(sid, bounds);
     } else {
       // Close zoom: individual mine markers for the visible viewport.
       final result = await ApiService.getMapMarkers(
           sid, bounds.south, bounds.west, bounds.north, bounds.east);
       if (!mounted || seq != _loadSeq || result == null) return;
-      setState(() {
-        _markers = result;
-        _computeClustersGrid(); // O(n) grid — used for zoom-out transitions
-      });
+      setState(() => _markers = result);
+      // Prefetch smoke so zooming out shows it immediately.
+      unawaited(_ensureSmoke(sid, bounds));
     }
   }
 
@@ -967,30 +965,6 @@ class _MapTabState extends State<MapTab> {
     if (m < 1000) return '${m.round()} m';
     if (m < 10000) return '${(m / 1000).toStringAsFixed(2)} km';
     return '${(m / 1000).toStringAsFixed(1)} km';
-  }
-
-  // Aggregate detail markers into centroid+count cells (0.003° ≈ 330m).
-  // Used as instant fallback when the dedicated density endpoint hasn't responded yet.
-  void _computeClustersGrid() {
-    final mines = _markers.where((m) => m['type'] != 'hq').toList();
-    if (mines.isEmpty) { _mineClusters = []; return; }
-    const cell = 0.003;
-    final Map<String, List<double>> grid = {};
-    for (final m in mines) {
-      final lat = (m['lat'] as num).toDouble();
-      final lng = (m['lng'] as num).toDouble();
-      final latC = (lat / cell).floorToDouble() * cell + cell / 2;
-      final lngC = (lng / cell).floorToDouble() * cell + cell / 2;
-      final key = '${latC.toStringAsFixed(6)}:${lngC.toStringAsFixed(6)}';
-      if (grid.containsKey(key)) {
-        grid[key]![0] += lat; grid[key]![1] += lng; grid[key]![2] += 1;
-      } else {
-        grid[key] = [lat, lng, 1.0];
-      }
-    }
-    _mineClusters = grid.values
-        .map((v) => _ClusterDot(v[0] / v[2], v[1] / v[2], v[2].toInt()))
-        .toList();
   }
 
   LatLng _offsetPt(LatLng from, double distM, double angle) {
@@ -1193,33 +1167,11 @@ class _MapTabState extends State<MapTab> {
     if (results.isEmpty) _snack('Nothing found here. Try a different spot.');
   }
 
-  // Invalidate density cache tiles that contain the scan position, then reload.
-  // Does NOT clear scan result, heatmap, prospect token, or last scan pos.
+  // Reload mines (smoke and markers) after a scan, keeping the scan result,
+  // heatmap, prospect token and last scan position.
   void _refreshNearbyMines(LatLng scanCenter) {
-    // Invalidate any cached density tile that contains the scan center.
-    final toRemove = _densityCacheKeys
-        .where((k) => _densityCacheKeyContains(k, scanCenter))
-        .toList();
-    for (final k in toRemove) {
-      _densityCache.remove(k);
-      _densityCacheKeys.remove(k);
-    }
-    // Re-run the marker load (density or close-zoom as appropriate).
+    _smokeBounds = null;
     _loadMarkers();
-  }
-
-  // Check if a density cache key's bbox contains the given point.
-  bool _densityCacheKeyContains(String key, LatLng pt) {
-    final parts = key.split(',');
-    if (parts.length != 5) return false;
-    try {
-      final lat1 = int.parse(parts[1]) * 0.5;
-      final lat2 = int.parse(parts[2]) * 0.5;
-      final lng1 = int.parse(parts[3]) * 0.5;
-      final lng2 = int.parse(parts[4]) * 0.5;
-      return pt.latitude  >= lat1 && pt.latitude  <= lat2
-          && pt.longitude >= lng1 && pt.longitude <= lng2;
-    } catch (_) { return false; }
   }
 
   Future<void> _buildMine(Map<String, dynamic> r,
@@ -1255,7 +1207,7 @@ class _MapTabState extends State<MapTab> {
             'resID': kMineResource[r['mine_item_id'] as int] ?? 0,
           }
         ];
-        _computeClustersGrid();
+        _smokeBounds = null; // refetch smoke so the new mine gets its puff
       });
       context.read<PlayerProvider>().refresh();
       _loadMarkers();
@@ -1265,16 +1217,22 @@ class _MapTabState extends State<MapTab> {
   void _snack(String msg, {bool error = false}) =>
       AppNotify.show(context, msg, isError: error);
 
-  void _onMapTap(LatLng tapped) {
+  Future<void> _onMapTap(LatLng tapped) async {
     if (_showResourcePicker) {
       setState(() => _showResourcePicker = false);
       return;
     }
-    final player = context.read<PlayerProvider>().player;
+    final prov = context.read<PlayerProvider>();
+    if (prov.player == null) return;
+    // Own mines within 15m (asked from the server — player data no longer carries
+    // every mine), then pick the single closest one. Tie-break by mine ID for
+    // determinism at shared borders/vertices.
+    final near = await ApiService.getMinesNear(
+        prov.sid, tapped.latitude, tapped.longitude, 15);
+    if (!mounted || near == null) return;
+    final player = prov.player;
     if (player == null) return;
-    // Collect own mines within 15m, then pick the single closest one.
-    // Tie-break by mine ID for determinism at shared borders/vertices.
-    final candidates = player.mines.where((mine) {
+    final candidates = near.where((mine) {
       return _distM(tapped, LatLng(mine.lat, mine.lng)) <= 15;
     }).toList();
     if (candidates.isEmpty) return;
@@ -1337,7 +1295,7 @@ class _MapTabState extends State<MapTab> {
     // TC level + scan radius
     final tcLevel = player?.tcLevel ?? 0;
     final scanRadius = kTcScanRadius[tcLevel.clamp(0, kTcScanRadius.length - 1)].toDouble();
-    final mineCount = player?.mines.length ?? 0;
+    final mineCount = player?.mineCount ?? 0;
     final rawCost = 10 * math.pow(2.4, tcLevel) * (1 + mineCount / 1000.0);
     final scanCost = math.max(5000, (rawCost / 5000).round() * 5000);
 
@@ -1494,8 +1452,9 @@ class _MapTabState extends State<MapTab> {
               Builder(builder: (ctx) {
                 final cam = MapCamera.of(ctx);
                 return CustomPaint(
-                  painter: _MineCloudPainter(
-                    clusters: _mineClusters,
+                  painter: _MineSmokePainter(
+                    data: _smoke,
+                    puff: _puff,
                     center: cam.center,
                     zoom: cam.zoom,
                   ),
@@ -2689,7 +2648,7 @@ class _MapMineSheetState extends State<_MapMineSheet> {
         context: ctx,
         isScrollControlled: true,
         backgroundColor: const Color(0xFF1A1A2E),
-        builder: (_) => _MapTechSheet(mine: mine, player: player, onDone: widget.onDone),
+        builder: (_) => TechUpgradeSheet(mine: mine, player: player, onDone: widget.onDone),
       );
     });
   }
@@ -2818,176 +2777,3 @@ class _MapMineSheetState extends State<_MapMineSheet> {
   }
 }
 
-// ── Tech upgrade sheet (map context) ──────────────────────────────────────
-
-class _MapTechSheet extends StatefulWidget {
-  final Mine mine;
-  final Player player;
-  final VoidCallback onDone;
-  const _MapTechSheet({required this.mine, required this.player, required this.onDone});
-  @override
-  State<_MapTechSheet> createState() => _MapTechSheetState();
-}
-
-class _MapTechSheetState extends State<_MapTechSheet> {
-  double _sliderVal = 0;
-  bool _busy = false;
-
-  Mine get mine => widget.mine;
-  Player get player => widget.player;
-
-  int? get _activeTuLevel {
-    if (mine.tu1 < 100) return 1;
-    if (mine.tu2 < 100) return 2;
-    if (mine.tu3 < 100) return 3;
-    if (mine.tu4 < 100) return 4;
-    return null;
-  }
-
-  int _currentForLevel(int lvl) {
-    switch (lvl) {
-      case 1: return mine.tu1;
-      case 2: return mine.tu2;
-      case 3: return mine.tu3;
-      case 4: return mine.tu4;
-      default: return 0;
-    }
-  }
-
-  int _tuItemId(int lvl) => [44, 45, 46, 48][lvl - 1];
-
-  int _stockForLevel(int lvl) {
-    final itemId = _tuItemId(lvl).toString();
-    return (player.lager[itemId] ?? 0).toInt();
-  }
-
-  double _previewBoost(int lvl, int amount) {
-    final tu1 = lvl == 1 ? mine.tu1 + amount : mine.tu1;
-    final tu2 = lvl == 2 ? mine.tu2 + amount : mine.tu2;
-    final tu3 = lvl == 3 ? mine.tu3 + amount : mine.tu3;
-    final tu4 = lvl == 4 ? mine.tu4 + amount : mine.tu4;
-    return tu1 * 1.0 + tu2 * 1.0 + tu3 * 1.5 + tu4 * 1.5;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final activeLevel = _activeTuLevel;
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(children: [
-                const Text('Tech Upgrades',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-                const Spacer(),
-                Text('+${mine.techBoostPct}% boost',
-                    style: const TextStyle(color: Colors.purpleAccent, fontSize: 13)),
-              ]),
-              const SizedBox(height: 12),
-              for (int lvl = 1; lvl <= 4; lvl++) ...[
-                _TuRow(lvl: lvl, current: _currentForLevel(lvl)),
-                const SizedBox(height: 4),
-              ],
-              if (activeLevel == null) ...[
-                const SizedBox(height: 8),
-                const Center(child: Text('All tech upgrades installed! (+500% max)',
-                    style: TextStyle(color: Colors.greenAccent))),
-              ] else ...[
-                const Divider(height: 20),
-                Text('Install TU$activeLevel',
-                    style: const TextStyle(color: Colors.white70, fontSize: 13)),
-                const SizedBox(height: 4),
-                Builder(builder: (_) {
-                  final current = _currentForLevel(activeLevel);
-                  final stock = _stockForLevel(activeLevel);
-                  final maxInstall = math.min(100 - current, stock);
-                  final amount = _sliderVal.round().clamp(0, maxInstall);
-                  final preview = _previewBoost(activeLevel, amount);
-                  if (maxInstall == 0) {
-                    return Text(
-                      stock == 0 ? 'No TU$activeLevel items in warehouse' : 'Already full',
-                      style: const TextStyle(color: Colors.redAccent, fontSize: 12),
-                    );
-                  }
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(children: [
-                        Text('Amount: $amount / $maxInstall',
-                            style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                        const Spacer(),
-                        Text('+${preview.toStringAsFixed(0)}% boost',
-                            style: const TextStyle(color: Colors.purpleAccent, fontSize: 12)),
-                      ]),
-                      Slider(
-                        value: _sliderVal.clamp(0, maxInstall.toDouble()),
-                        min: 0, max: maxInstall.toDouble(),
-                        divisions: maxInstall > 0 ? maxInstall : 1,
-                        activeColor: Colors.purpleAccent,
-                        onChanged: (v) => setState(() => _sliderVal = v),
-                      ),
-                      SizedBox(width: double.infinity, child: FilledButton(
-                        style: FilledButton.styleFrom(backgroundColor: Colors.purple),
-                        onPressed: amount > 0 && !_busy ? () async {
-                          setState(() => _busy = true);
-                          final sid = context.read<PlayerProvider>().sid;
-                          final r = await ApiService.techUpgradeMine(
-                              sid, mine.id, activeLevel, amount);
-                          if (!mounted) return;
-                          setState(() => _busy = false);
-                          if (r == null || r['err'] != 0) {
-                            AppNotify.show(context, r?['msg'] ?? 'Upgrade failed', isError: true);
-                          } else {
-                            AppNotify.show(context,
-                                'Installed $amount TU$activeLevel → +${r['boostPct']}%');
-                            Navigator.pop(context);
-                            widget.onDone();
-                          }
-                        } : null,
-                        child: _busy
-                            ? const SizedBox(width: 16, height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                            : const Text('Install'),
-                      )),
-                    ],
-                  );
-                }),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TuRow extends StatelessWidget {
-  final int lvl;
-  final int current;
-  const _TuRow({required this.lvl, required this.current});
-  @override
-  Widget build(BuildContext context) {
-    final pct = current / 100.0;
-    final boost = [100.0, 200.0, 350.0, 500.0][lvl - 1];
-    return Row(children: [
-      SizedBox(width: 36, child: Text('TU$lvl', style: const TextStyle(color: Colors.white54, fontSize: 12))),
-      Expanded(child: ClipRRect(
-        borderRadius: BorderRadius.circular(4),
-        child: LinearProgressIndicator(
-          value: pct,
-          backgroundColor: Colors.white12,
-          color: current == 100 ? Colors.greenAccent : Colors.purpleAccent,
-          minHeight: 10,
-        ),
-      )),
-      const SizedBox(width: 8),
-      SizedBox(width: 60, child: Text('$current/100 (+${boost.toStringAsFixed(0)}%)',
-          style: const TextStyle(color: Colors.white38, fontSize: 10))),
-    ]);
-  }
-}

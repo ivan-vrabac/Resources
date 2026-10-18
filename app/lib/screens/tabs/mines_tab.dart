@@ -177,12 +177,10 @@ class _MinesTabState extends State<MinesTab> {
     if (ok != true || !mounted) return;
     setState(() => _bulkBusy = true);
     final sid = context.read<PlayerProvider>().sid;
-    int repaired = 0, failed = 0;
-    for (final m in toRepair) {
-      if (m.condition > 99) continue;
-      final r = await ApiService.repairMinePay(sid, m.id);
-      if (r != null && r['err'] == 0) repaired++; else failed++;
-    }
+    final ids = [for (final m in toRepair) if (m.condition <= 99) m.id];
+    final r = await ApiService.bulkRepairMines(sid, ids, kits: false);
+    final repaired = (r?['err'] == 0) ? (r!['repaired'] as num).toInt() : 0;
+    final failed = ids.length - repaired;
     if (!mounted) return;
     setState(() { _bulkBusy = false; _massMode = false; _selected.clear(); });
     AppNotify.show(context,
@@ -213,12 +211,9 @@ class _MinesTabState extends State<MinesTab> {
     if (ok != true || !mounted) return;
     setState(() => _bulkBusy = true);
     final sid = context.read<PlayerProvider>().sid;
-    int repaired = 0;
-    for (final m in toRepair) {
-      if (m.condition > 99 || repaired >= actual) continue;
-      final r = await ApiService.repairMineKit(sid, m.id);
-      if (r != null && r['err'] == 0) repaired++;
-    }
+    final ids = [for (final m in toRepair) if (m.condition <= 99) m.id].take(actual).toList();
+    final r = await ApiService.bulkRepairMines(sid, ids, kits: true);
+    final repaired = (r?['err'] == 0) ? (r!['repaired'] as num).toInt() : 0;
     if (!mounted) return;
     setState(() { _bulkBusy = false; _massMode = false; _selected.clear(); });
     AppNotify.show(context, 'Repaired $repaired mine${repaired == 1 ? '' : 's'} with kits');
@@ -300,7 +295,14 @@ class _MinesTabState extends State<MinesTab> {
     final player = prov.player;
     if (player == null) return const Center(child: CircularProgressIndicator());
 
-    final allMines = player.mines;
+    final loaded = prov.mines;
+    if (loaded == null) {
+      if (!prov.minesLoading) {
+        WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) prov.loadMines(); });
+      }
+      return const Center(child: CircularProgressIndicator());
+    }
+    final allMines = loaded;
     if (allMines.isEmpty) {
       return const Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -799,7 +801,7 @@ class _MineTileState extends State<_MineTile> {
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF1A1A2E),
-      builder: (_) => _TechUpgradeSheet(
+      builder: (_) => TechUpgradeSheet(
         mine: mine, player: player,
         onDone: () => context.read<PlayerProvider>().refresh(),
       ),
@@ -1073,19 +1075,19 @@ class _MineTileState extends State<_MineTile> {
   }
 }
 
-// ── _TechUpgradeSheet ───────────────────────────────────────────────────────
+// ── TechUpgradeSheet (shared by Mines tab and map mine sheet) ───────────────────────────────────────────────────────
 
-class _TechUpgradeSheet extends StatefulWidget {
+class TechUpgradeSheet extends StatefulWidget {
   final Mine mine;
   final Player player;
   final VoidCallback onDone;
-  const _TechUpgradeSheet(
+  const TechUpgradeSheet(
       {required this.mine, required this.player, required this.onDone});
   @override
-  State<_TechUpgradeSheet> createState() => _TechUpgradeSheetState();
+  State<TechUpgradeSheet> createState() => TechUpgradeSheetState();
 }
 
-class _TechUpgradeSheetState extends State<_TechUpgradeSheet> {
+class TechUpgradeSheetState extends State<TechUpgradeSheet> {
   static const _tuItems  = {1: 44, 2: 45, 3: 46, 4: 48};
   static const _tuNames  = {
     1: 'Tech Upgrade I', 2: 'Tech Upgrade II',
