@@ -16,12 +16,15 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _ctrl = TextEditingController();
+  final _pwCtrl = TextEditingController();
   bool _loading = false;
+  bool _showPw = false;
   String? _error;
 
   @override
   void dispose() {
     _ctrl.dispose();
+    _pwCtrl.dispose();
     super.dispose();
   }
 
@@ -38,30 +41,33 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _error = 'Only letters, digits, spaces and . , [ ] ( ) - allowed');
       return;
     }
+    final password = _pwCtrl.text;
+    if (password.isEmpty) {
+      setState(() => _error = 'Enter a password');
+      return;
+    }
     setState(() {
       _loading = true;
       _error = null;
     });
 
     try {
-      // Try existing account first, register if new
-      String? hid = await ApiService.login(name);
-      hid ??= await ApiService.register(name);
-
-      if (hid == null || hid.isEmpty) {
+      // Signs in, or registers the company name if it is still free.
+      final res = await ApiService.signIn(name, password);
+      if (res.error != null) {
         setState(() {
-          _error = 'Could not reach the server. Check your connection.';
+          _error = res.error;
           _loading = false;
         });
         return;
       }
 
-      await StorageService.saveHid(hid);
-      final player = await ApiService.getPlayerData(hid);
+      await StorageService.saveSession(res.hid!, res.sid!);
+      final player = await ApiService.getPlayerData(res.sid!);
 
       if (!mounted) return;
       if (player != null) {
-        context.read<PlayerProvider>().setPlayer(player);
+        context.read<PlayerProvider>().setPlayer(player, sid: res.sid);
         FcmService.init(context.read<PlayerProvider>().sid);
       }
       Navigator.of(context).pushReplacement(
@@ -95,7 +101,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Enter your company name to play',
+                'Sign in, or pick a new company name and password to start playing',
                 style: TextStyle(color: Colors.white54),
                 textAlign: TextAlign.center,
               ),
@@ -103,13 +109,29 @@ class _LoginScreenState extends State<LoginScreen> {
               TextField(
                 controller: _ctrl,
                 autofocus: true,
-                textInputAction: TextInputAction.go,
+                textInputAction: TextInputAction.next,
                 maxLength: 20,
-                onSubmitted: (_) => _submit(),
+                autofillHints: const [AutofillHints.username],
                 decoration: const InputDecoration(
                   labelText: 'Company name',
                   border: OutlineInputBorder(),
                   counterText: '',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _pwCtrl,
+                obscureText: !_showPw,
+                textInputAction: TextInputAction.go,
+                autofillHints: const [AutofillHints.password],
+                onSubmitted: (_) => _submit(),
+                decoration: InputDecoration(
+                  labelText: 'Password (min. 6 characters)',
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    icon: Icon(_showPw ? Icons.visibility_off : Icons.visibility),
+                    onPressed: () => setState(() => _showPw = !_showPw),
+                  ),
                 ),
               ),
               const SizedBox(height: 16),

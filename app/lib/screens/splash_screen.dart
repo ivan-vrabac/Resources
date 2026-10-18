@@ -28,17 +28,18 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _init() async {
-    final hid = await StorageService.getHid();
-    if (hid == null || hid.isEmpty) {
+    // Older installs stored only the player ID; they have no session and must sign in.
+    final sid = await StorageService.getSid();
+    if (sid == null || sid.isEmpty) {
       _go(const LoginScreen());
       return;
     }
-    final player = await ApiService.getPlayerData(hid);
+    final player = await ApiService.getPlayerData(sid);
     if (player == null || !mounted) {
       _go(const LoginScreen());
       return;
     }
-    context.read<PlayerProvider>().setPlayer(player);
+    context.read<PlayerProvider>().setPlayer(player, sid: sid);
     FcmService.init(context.read<PlayerProvider>().sid);
     _go(const GameScreen());
   }

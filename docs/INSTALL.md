@@ -43,6 +43,10 @@ All settings are environment variables; see `deploy/.env.example`.
 | `DB_PATH` | `/data/game.db` | SQLite database file |
 | `LOG_FILE` | `/logs/requests.log` | JSON-lines request log (contains player names: treat as personal data) |
 | `FORWARDED_ALLOW_IPS` | `127.0.0.1` | Proxies whose `X-Forwarded-*` headers are trusted |
+| `AUTH_MODE` | `secure` | `secure`: name + password, signed sessions. `legacy`: original name-only login (trusted players only) |
+| `SESSION_SECRET` | generated, stored in DB | HMAC key for session tokens; changing it signs everyone out |
+| `SESSION_TTL_DAYS` | `90` | Session lifetime |
+| `AUTH_LEGACY_CLAIM` | `0` | `1`: passwordless (pre-upgrade) accounts adopt the password from their first sign-in |
 | `SERVER_MID` | generic | Server identifier for legacy clients |
 | `UPSTREAM_PROXY_FROM` / `UPSTREAM_PROXY_TO` | empty (disabled) | Legacy pass-through of unimplemented endpoints |
 | `FIREBASE_PROJECT_ID`, `GOOGLE_APPLICATION_CREDENTIALS` | empty | Optional push, see FIREBASE.md |
@@ -54,12 +58,22 @@ adds missing columns (idempotent `ALTER TABLE … ADD COLUMN`). A fresh `DB_PATH
 an empty, working game. Upgrading in place keeps existing data. **Back up `game.db`
 before upgrading** (stop the server, copy the file).
 
+### Accounts on an upgraded database
+
+Databases from before passwords existed contain accounts without one. In `secure`
+mode they cannot sign in until either:
+
+- you set a password: `docker compose exec server python admin.py set-password "<company>" "<password>"`
+  (`python admin.py list-unprotected` lists them), or
+- you temporarily set `AUTH_LEGACY_CLAIM=1`, so each account adopts the password used at its
+  first sign-in. Anyone who knows a company name can claim it this way, so only do this
+  while your players are migrating, then set it back to `0`.
+
 ### Production
 
 - Put the server behind a TLS reverse proxy (`deploy/Caddyfile.example`) and keep
   port 8000 bound to `127.0.0.1`.
-- Read the known weaknesses in `SECURITY.md` first. Name-only login is not safe on a
-  public server.
+- Keep `AUTH_MODE=secure` and set a `SESSION_SECRET`. Read `SECURITY.md`.
 - Use a separate compose project/volume for production; never reuse the dev template's volumes.
 
 ## Android app

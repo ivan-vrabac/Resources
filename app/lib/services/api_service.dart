@@ -4,29 +4,35 @@ import 'package:http/http.dart' as http;
 import '../constants.dart';
 import '../models/player.dart';
 
+class SignInResult {
+  final String? hid;
+  final String? sid;
+  final bool created;
+  final String? error;
+  const SignInResult({this.hid, this.sid, this.created = false, this.error});
+}
+
 class ApiService {
-  static Future<String?> login(String companyName) async {
+  /// Signs in, or creates the account if the company name is free.
+  /// Returns the server-signed session; on failure [SignInResult.error] is set.
+  static Future<SignInResult> signIn(String companyName, String password) async {
     try {
-      final r = await http.post(Uri.parse('$kBaseUrl/flut23/playerLogin.php'),
-          body: {'userEmail': companyName}).timeout(const Duration(seconds: 10));
-      final list = jsonDecode(r.body) as List;
-      if (list.isEmpty) return null;
-      return (list[0] as Map<String, dynamic>)['hID'] as String?;
-    } catch (_) { return null; }
+      final r = await http.post(Uri.parse('$kBaseUrl/api/v1/auth/session'),
+          body: {'name': companyName, 'password': password}).timeout(const Duration(seconds: 15));
+      final m = jsonDecode(r.body) as Map<String, dynamic>;
+      final sid = m['sid'] as String?;
+      final hid = m['hID'] as String?;
+      if (sid != null && hid != null) {
+        return SignInResult(hid: hid, sid: sid, created: m['created'] == true);
+      }
+      return SignInResult(error: m['message'] as String? ?? 'Sign-in failed');
+    } catch (_) {
+      return const SignInResult(error: 'Could not reach the server. Check your connection.');
+    }
   }
 
-  static Future<String?> register(String companyName) async {
+  static Future<Player?> getPlayerData(String sid) async {
     try {
-      final r = await http.post(Uri.parse('$kBaseUrl/flut23/playerNew.php'),
-          body: {'userEmail': companyName}).timeout(const Duration(seconds: 10));
-      final hid = r.body.trim();
-      return hid.isEmpty ? null : hid;
-    } catch (_) { return null; }
-  }
-
-  static Future<Player?> getPlayerData(String hid) async {
-    try {
-      final sid = makeSid(hid);
       final r = await http.post(Uri.parse('$kBaseUrl/flut23/playerGetData.php'),
           body: {'sid': sid}).timeout(const Duration(seconds: 10));
       if (r.statusCode != 200) return null;
@@ -477,9 +483,6 @@ class ApiService {
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
-
-  static String makeSid(String hid) =>
-      base64Url.encode(utf8.encode(jsonEncode({'hID': hid}))).replaceAll('=', '');
 
   static Map<String, dynamic>? _zlibJson(List<int> bytes) {
     try {

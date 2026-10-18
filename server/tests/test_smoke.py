@@ -1,33 +1,19 @@
-"""Smoke tests against a throwaway database. Never point these at a real game.db.
+"""Smoke tests against a throwaway database (see conftest.py).
 
 Run from server/:  python -m pytest -q
 """
-import base64
 import json
-import os
 import sqlite3
-import sys
-import tempfile
 import zlib
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
-_TMP = tempfile.mkdtemp(prefix="resources-test-")
-os.environ["DB_PATH"] = os.path.join(_TMP, "game.db")
-os.environ["LOG_FILE"] = os.path.join(_TMP, "requests.log")
-os.environ.pop("UPSTREAM_PROXY_FROM", None)
-os.environ.pop("UPSTREAM_PROXY_TO", None)
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from fastapi.testclient import TestClient  # noqa: E402
-import main  # noqa: E402
+from conftest import TMP
+import main
 
 client = TestClient(main.app)
-
-
-def sid_for(hid: str) -> str:
-    return base64.b64encode(json.dumps({"hID": hid}).encode()).decode().rstrip("=")
 
 
 def unz(resp):
@@ -35,45 +21,34 @@ def unz(resp):
 
 
 @pytest.fixture(scope="module")
-def hid():
-    r = client.post("/flut23/playerNew.php", data={"userEmail": "Test Company"})
-    assert r.status_code == 200 and len(r.text) == 32
-    return r.text
+def session():
+    r = client.post("/api/v1/auth/session", data={"name": "Test Company", "password": "secret123"})
+    assert r.status_code == 200, r.text
+    return r.json()
 
 
 def test_uses_isolated_database():
-    assert main.DB_PATH.startswith(_TMP)
+    assert main.DB_PATH.startswith(TMP)
     assert Path(main.DB_PATH).exists()
 
 
 def test_fresh_schema_created():
     with sqlite3.connect(main.DB_PATH) as conn:
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    for t in ("players", "mines", "warehouse", "hq", "factories", "market_req", "proto_log"):
+    for t in ("players", "mines", "warehouse", "hq", "factories", "market_req", "proto_log",
+              "player_auth", "server_secrets"):
         assert t in tables
 
 
-def test_register_is_idempotent_and_login_finds_player(hid):
-    again = client.post("/flut23/playerNew.php", data={"userEmail": "test company"})
-    assert again.text == hid
-    r = client.post("/flut23/playerLogin.php", data={"userEmail": "Test Company"})
-    assert r.json() == [{"hID": hid, "active": 1}]
-
-
-def test_unknown_login_returns_empty():
-    r = client.post("/flut23/playerLogin.php", data={"userEmail": "nobody here"})
-    assert r.json() == []
-
-
-def test_player_data(hid):
-    data = unz(client.post("/flut23/playerGetData.php", data={"sid": sid_for(hid)}))
+def test_player_data(session):
+    data = unz(client.post("/flut23/playerGetData.php", data={"sid": session["sid"]}))
     assert isinstance(data, list) and data
-    assert data[0]["hID"] == hid
+    assert data[0]["hID"] == session["hID"]
 
 
-def test_scan_returns_result(hid):
+def test_scan_returns_result(session):
     r = client.post("/flut23/scannerPayscan.php",
-                    data={"sid": sid_for(hid), "lat": "45.8150", "lng": "15.9819"})
+                    data={"sid": session["sid"], "lat": "45.8150", "lng": "15.9819"})
     assert r.status_code == 200
     assert isinstance(unz(r), (dict, list))
 

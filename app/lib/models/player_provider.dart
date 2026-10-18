@@ -32,18 +32,18 @@ class PlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setPlayer(Player p) {
+  void setPlayer(Player p, {String? sid}) {
     _player = p;
-    _sid = ApiService.makeSid(p.hid);
+    if (sid != null) _sid = sid;
     notifyListeners();
   }
 
   Future<void> refresh() async {
-    final hid = await StorageService.getHid();
-    if (hid == null) return;
-    final p = await ApiService.getPlayerData(hid);
+    final sid = _sid ?? await StorageService.getSid();
+    if (sid == null) return;
+    final p = await ApiService.getPlayerData(sid);
     if (p != null) {
-      setPlayer(p);
+      setPlayer(p, sid: sid);
       NotificationService.scheduleMineNotifications(p);
     }
   }

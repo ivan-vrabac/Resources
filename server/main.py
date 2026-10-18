@@ -1,5 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
+import auth
+import re
 import httpx, json, datetime, os, zlib, sqlite3, hashlib, uuid, base64, random, math, struct, threading, time
 
 app = FastAPI()
@@ -1083,6 +1085,8 @@ def init_db():
         conn.commit()
 
 init_db()
+with get_db() as _conn:
+    auth.init(_conn)
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -1115,15 +1119,10 @@ async def read_form(request: Request) -> tuple[bytes, dict]:
     return body, {k: v for k, v in form.items()}
 
 def hid_from_sid(sid: str) -> str:
-    try:
-        padding = 4 - len(sid) % 4
-        decoded = base64.b64decode(sid + "=" * padding).decode()
-        return json.loads(decoded).get("hID", "")
-    except Exception:
-        return ""
+    return auth.hid_from_sid(sid)
 
 def make_sid(hid: str) -> str:
-    return base64.b64encode(json.dumps({"hID": hid}).encode()).decode().rstrip("=")
+    return auth.make_session(hid)
 
 def log_entry(data: dict):
     try:
@@ -1489,8 +1488,62 @@ async def proxy_to_original(request: Request, body: bytes) -> Response:
 
 # ── Auth ────────────────────────────────────────────────────────────────────────
 
+_VALID_NAME = re.compile(r"^[a-zA-Z0-9 .,\[\]()\-]{1,20}$")
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "?"
+
+@app.post("/api/v1/auth/session")
+async def auth_session(request: Request):
+    """Sign in, or create the account if the company name is free. Returns {hID, sid, created}."""
+    _, form = await read_form(request)
+    name = (form.get("name") or "").strip()
+    password = form.get("password") or ""
+    if not _VALID_NAME.match(name):
+        return json_resp({"error": "invalid_name",
+                          "message": "Name: 1-20 letters, digits, spaces and . , [ ] ( ) -"})
+    canon = norm_name(name)
+    ip_key, name_key = f"ip:{_client_ip(request)}", f"name:{canon}"
+    if auth.limiter.blocked(ip_key, name_key):
+        return Response(content=json.dumps({"error": "rate_limited",
+                                            "message": "Too many attempts. Try again later."}).encode(),
+                        status_code=429, media_type="application/json")
+    problem = auth.password_problem(password)
+    with get_db() as conn:
+        row = conn.execute("SELECT hID FROM players WHERE company_name=?", (canon,)).fetchone()
+        created = False
+        if not row:
+            if problem:
+                return json_resp({"error": "weak_password", "message": problem})
+            hid = new_hid()
+            conn.execute("INSERT INTO players(hID,company_name) VALUES(?,?)", (hid, canon))
+            auth.set_password(conn, hid, password)
+            created = True
+        else:
+            hid = row["hID"]
+            stored = auth.get_hash(conn, hid)
+            if stored is None:
+                if not auth.LEGACY_CLAIM:
+                    return json_resp({"error": "no_password",
+                                      "message": "This account has no password yet. Ask the server admin."})
+                if problem:
+                    return json_resp({"error": "weak_password", "message": problem})
+                auth.set_password(conn, hid, password)
+            elif not auth.verify_password(password, stored):
+                auth.limiter.fail(ip_key, name_key)
+                return Response(content=json.dumps({"error": "wrong_password",
+                                                    "message": "Wrong company name or password."}).encode(),
+                                status_code=401, media_type="application/json")
+        conn.commit()
+    auth.limiter.reset(name_key)
+    if created:
+        log_entry({"ts": utcnow_iso(), "endpoint": "authSession", "created": True, "hID": hid})
+    return json_resp({"hID": hid, "sid": make_sid(hid), "created": created})
+
 @app.post("/flut23/playerLogin.php")
 async def player_login(request: Request):
+    if auth.secure():
+        return json_resp([])  # name-only login disabled; use /api/v1/auth/session
     _, form = await read_form(request)
     raw_name = (form.get("userEmail") or "").strip()
     key = norm_name(raw_name)
@@ -1502,6 +1555,8 @@ async def player_login(request: Request):
 
 @app.post("/flut23/playerNew.php")
 async def player_new(request: Request):
+    if auth.secure():
+        return plain_resp("")  # passwordless registration disabled; use /api/v1/auth/session
     _, form = await read_form(request)
     display = (form.get("userName") or "").strip()
     email   = (form.get("userEmail") or "").strip()

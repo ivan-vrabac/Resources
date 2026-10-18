@@ -44,14 +44,15 @@ For a phone on your LAN, set `BIND_ADDRESS=0.0.0.0` in `deploy/.env`, then copy
 ```bash
 cd server && pip install -r requirements-dev.txt && python -m pytest -q
 cd app && flutter test
+# optional: client ↔ running dev server
+cd app && flutter test test/api_e2e_test.dart --dart-define=API_BASE_URL=http://127.0.0.1:8000
 python tools/assets.py validate
 python tools/check_repo.py          # secrets / player data / forbidden files
 ```
 
 ## Known limitations
 
-- **Accounts have no passwords.** Signing in only needs the company name. Do not run
-  a public server with this login flow; see [SECURITY.md](SECURITY.md).
+- No in-app password reset yet; admins use `server/admin.py`. See [SECURITY.md](SECURITY.md).
 - The map uses OpenStreetMap's public tile server; read its usage policy before
   deploying for many users.
 

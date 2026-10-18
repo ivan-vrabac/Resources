@@ -54,6 +54,9 @@ android {
         manifestPlaceholders["appLabel"] = appName
         manifestPlaceholders["appLabelAlt1"] = brand("APP_NAME_ALT1", appName)
         manifestPlaceholders["appLabelAlt2"] = brand("APP_NAME_ALT2", appName)
+        // Plain HTTP only when the configured server is http:// (local development).
+        manifestPlaceholders["usesCleartextTraffic"] =
+            brand("API_BASE_URL", "http://10.0.2.2:8000").startsWith("http://").toString()
     }
 
     signingConfigs {
