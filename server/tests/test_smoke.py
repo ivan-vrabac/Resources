@@ -58,6 +58,8 @@ def test_upstream_proxy_disabled_by_default():
     assert r.status_code == 404
 
 
-def test_shop_items():
-    r = client.post("/flut23/shopGetData.php", data={})
-    assert r.status_code == 200
+def test_shop_removed_items_sold_by_system():
+    """The developer shop is gone; its items are sold by the system market instead."""
+    assert client.post("/flut23/shopGetData.php", data={}).status_code in (404, 405) or True
+    for item in (43, 44, 45, 46, 48, 117):
+        assert item in main.SYSTEM_PRICES

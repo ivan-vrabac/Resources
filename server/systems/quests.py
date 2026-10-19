@@ -23,7 +23,7 @@ import datetime
 import hashlib
 
 import econ
-from . import cargo, int_arg
+from . import archaeology, cargo, int_arg
 
 DAILY_COUNT = 3
 QUEST_HOURS = 48
@@ -193,12 +193,14 @@ def install(api) -> None:
             if cur.rowcount != 1:      # lost a race with a concurrent claim
                 raise econ.GameError("already_claimed", "Reward already claimed")
             level = conn.execute("SELECT level FROM players WHERE hID=?", (hid,)).fetchone()[0] or 1
-            credits = CREDITS_PER_LEVEL * level
+            bonus = 1 + archaeology.effect(conn, hid, 176) / 100        # Aeon Mechanism: +10/20/30 %
+            credits = int(round(CREDITS_PER_LEVEL * level * bonus))
+            crates = int(round(cargo.QUEST_CRATES * bonus))
             econ.credit(conn, hid, credits, "quest_reward", str(qid))
-            cargo.grant(conn, hid, cargo.QUEST_CRATES, "quest")
+            cargo.grant(conn, hid, crates, "quest")
             econ.emit(conn, "quest_completed", hid, {"code": q["code"]}, public=False)
             conn.execute("INSERT OR IGNORE INTO achievements(hid, code, title, ts) VALUES(?,?,?,?)",
                          (hid, "first_quest", "Completed a daily quest", now.isoformat()))
             milestones = pay_milestones(conn, hid, q["day"])
-        return {"err": 0, "credits": credits, "crates": cargo.QUEST_CRATES, "milestones": milestones,
+        return {"err": 0, "credits": credits, "crates": crates, "milestones": milestones,
                 "streak": current_streak(conn, hid, now)}

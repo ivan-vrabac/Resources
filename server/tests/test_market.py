@@ -22,8 +22,11 @@ def test_system_trade_prices_and_restrictions():
     r = call(M + "system", sid, side="sell", itemID=CLAY, qty=1000)
     assert r["credits"] == 5000 and qty(hid, CLAY) == 0
     r = call(M + "system", sid, side="buy", itemID=CLAY, qty=100)
-    assert r["cost"] == 750 and qty(hid, CLAY) == 100              # 150%
-    assert credits(hid) == 1_000_000 + 5000 - 750
+    assert r["cost"] == 750 + 112 and r["tax"] == 112 and qty(hid, CLAY) == 100   # 150% + 15% tax
+    assert credits(hid) == 1_000_000 + 5000 - 862
+    r = call(M + "system", sid, side="buy", itemID=48, qty=1)       # TU IV: system sells it …
+    assert r["err"] == 0 and qty(hid, 48) == 1
+    assert call(M + "order", sid, side="buy", itemID=48, qty=1, price=10)["code"] == "restricted"  # … players can't trade it
     for restricted in (42, 48, 175):
         give(hid, restricted, 1)
         assert call(M + "system", sid, side="sell", itemID=restricted, qty=1)["code"] == "restricted"

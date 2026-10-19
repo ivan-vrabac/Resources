@@ -41,15 +41,35 @@ MINE_TYPES = {
 }
 
 # item_id → {produces, needs:{item_id:qty}, output_amount_per_batch, batch_hours, cost}
+# Factories (srx.txt list). The first 8 keep their original numbers; the others follow the same
+# cheap pattern (owner 2026-10-19: keep costs low): per batch the srx.txt recipe inputs, output ≈
+# srx base rate / 20 per hour, build cost 5 000 + 2 500 × unlock level. Unlock levels follow
+# srx.txt, which never unlocks a factory before the resources it needs.
 FACTORY_TYPES = {
-    6:  {"name":"Concrete Factory",  "produces":7,  "needs":{20:2,3:1},  "out":50,  "hrs":2, "cost":10000, "lvl":1},
+    6:  {"name":"Concrete Factory",  "produces":7,  "needs":{20:2,3:1},  "out":50,  "hrs":2, "cost":10000, "lvl":3},
     25: {"name":"Brick Factory",     "produces":24, "needs":{2:3},       "out":80,  "hrs":2, "cost":8000,  "lvl":1},
-    31: {"name":"Ironworks",         "produces":30, "needs":{13:3,8:1},  "out":40,  "hrs":4, "cost":20000, "lvl":3},
-    33: {"name":"Aluminium Factory", "produces":32, "needs":{12:4},      "out":30,  "hrs":3, "cost":15000, "lvl":2},
-    34: {"name":"Silver Refinery",   "produces":35, "needs":{15:5},      "out":20,  "hrs":5, "cost":25000, "lvl":4},
-    37: {"name":"Copper Refinery",   "produces":36, "needs":{26:4},      "out":25,  "hrs":4, "cost":20000, "lvl":3},
-    39: {"name":"Oil Refinery",      "produces":38, "needs":{10:5},      "out":15,  "hrs":6, "cost":30000, "lvl":5},
-    80: {"name":"Gold Refinery",     "produces":79, "needs":{14:8},      "out":10,  "hrs":8, "cost":40000, "lvl":6},
+    31: {"name":"Ironworks",         "produces":30, "needs":{13:3,8:1},  "out":40,  "hrs":4, "cost":20000, "lvl":5},
+    33: {"name":"Aluminium Factory", "produces":32, "needs":{12:4},      "out":30,  "hrs":3, "cost":15000, "lvl":12},
+    34: {"name":"Silver Refinery",   "produces":35, "needs":{15:5},      "out":20,  "hrs":5, "cost":25000, "lvl":40},
+    37: {"name":"Copper Refinery",   "produces":36, "needs":{26:4},      "out":25,  "hrs":4, "cost":20000, "lvl":10},
+    39: {"name":"Oil Refinery",      "produces":38, "needs":{10:5},      "out":15,  "hrs":6, "cost":30000, "lvl":6},
+    80: {"name":"Gold Refinery",     "produces":79, "needs":{14:8},      "out":10,  "hrs":8, "cost":40000, "lvl":45},
+    23: {"name":"Fertilizer Factory", "produces":22, "needs":{20:8}, "out":182, "hrs":3, "cost":15000, "lvl":4},
+    60: {"name":"Glazier's Workshop", "produces":59, "needs":{53:6,38:8,20:4}, "out":128, "hrs":4, "cost":25000, "lvl":8},
+    29: {"name":"Insecticide Factory", "produces":28, "needs":{36:1,20:3}, "out":525, "hrs":3, "cost":32500, "lvl":11},
+    62: {"name":"Plastic Factory", "produces":57, "needs":{10:1}, "out":270, "hrs":3, "cost":40000, "lvl":14},
+    91: {"name":"Lithium Refinery", "produces":92, "needs":{90:115}, "out":150, "hrs":4, "cost":45000, "lvl":16},
+    94: {"name":"Battery Factory", "produces":93, "needs":{92:20,57:40,32:10}, "out":120, "hrs":4, "cost":50000, "lvl":18},
+    99: {"name":"Arms Factory", "produces":87, "needs":{30:1,32:1,93:1}, "out":25, "hrs":4, "cost":57500, "lvl":21},
+    68: {"name":"Silicon Refinery", "produces":67, "needs":{53:20,2:1,38:5}, "out":30, "hrs":5, "cost":65000, "lvl":24},
+    69: {"name":"Electronics Factory", "produces":66, "needs":{57:4,36:3,67:1}, "out":96, "hrs":4, "cost":72500, "lvl":27},
+    52: {"name":"Titanium Refinery", "produces":51, "needs":{49:8}, "out":64, "hrs":4, "cost":80000, "lvl":30},
+    76: {"name":"Medical Technology Inc.", "produces":75, "needs":{51:4,57:2,66:2}, "out":80, "hrs":4, "cost":92500, "lvl":35},
+    85: {"name":"Goldsmith", "produces":84, "needs":{81:1000,79:1,35:1}, "out":20, "hrs":4, "cost":130000, "lvl":50},
+    170: {"name":"Tungsten Smelter", "produces":171, "needs":{169:40,38:5,20:20}, "out":40, "hrs":4, "cost":130000, "lvl":50},
+    125: {"name":"Truck Plant", "produces":124, "needs":{30:100,93:25,35:50}, "out":20, "hrs":4, "cost":142500, "lvl":55},
+    118: {"name":"Drone Shipyard", "produces":117, "needs":{66:25,51:50,93:250}, "out":1, "hrs":20, "cost":155000, "lvl":60},
+    165: {"name":"Detector Factory", "produces":166, "needs":{93:50,66:30,171:50}, "out":1, "hrs":4, "cost":155000, "lvl":60},
 }
 
 # Resources required to BUILD each factory (in addition to credits)
@@ -62,6 +82,22 @@ FACTORY_BUILD_RESOURCES = {
     37: {26: 150, 13: 50},   # Copper Refinery: Chalcopyrite + Iron Ore
     39: {10: 100, 8: 50},    # Oil Refinery: Crude Oil + Coal
     80: {14: 50, 13: 100},   # Gold Refinery: Gold Ore + Iron Ore
+    23: {7: 50, 24: 25, 20: 10},   # srx.txt materials / 100
+    60: {7: 250, 24: 30, 20: 10},   # srx.txt materials / 100
+    29: {7: 250, 30: 20, 36: 10},   # srx.txt materials / 100
+    62: {7: 160, 30: 10, 32: 10},   # srx.txt materials / 100
+    91: {7: 250, 30: 100, 59: 10},   # srx.txt materials / 100
+    94: {7: 200, 32: 100, 59: 60},   # srx.txt materials / 100
+    99: {24: 5000, 7: 500, 59: 100},   # srx.txt materials / 100
+    68: {7: 200, 30: 12, 59: 15},   # srx.txt materials / 100
+    69: {7: 200, 32: 10, 59: 80},   # srx.txt materials / 100
+    52: {7: 300, 30: 100, 59: 25},   # srx.txt materials / 100
+    76: {7: 400, 30: 95, 57: 160},   # srx.txt materials / 100
+    85: {7: 200, 24: 900, 59: 200},   # srx.txt materials / 100
+    170: {7: 300, 30: 100, 51: 100},   # srx.txt materials / 100
+    125: {24: 5000, 66: 900, 35: 500},   # srx.txt materials / 100
+    118: {7: 800, 57: 1200, 59: 400},   # srx.txt materials / 100
+    165: {7: 400, 93: 10, 59: 400},   # srx.txt materials / 100
 }
 
 # Rarity tiers for scanner
@@ -74,14 +110,6 @@ _SCAN_WEIGHTS  = [10]*5 + [5]*4 + [2]*4 + [1]*2
 
 WAREHOUSE_BASE_CAPACITY = 5000
 
-SHOP_ITEMS = {
-    43:  {"name": "Maintenance Kit",  "price": 500,   "desc": "Restores mine to 100% condition"},
-    44:  {"name": "Tech Upgrade I",   "price": 5000,  "desc": "+20% mine output per upgrade"},
-    45:  {"name": "Tech Upgrade II",  "price": 15000, "desc": "+40% mine output cumulative"},
-    46:  {"name": "Tech Upgrade III", "price": 35000, "desc": "+60% mine output cumulative"},
-    48:  {"name": "Tech Upgrade IV",  "price": 70000, "desc": "+80% mine output cumulative"},
-    117: {"name": "Scan Drone",       "price": 2000,  "desc": "Expands scanner range & yield"},
-}
 
 MINE_UPGRADE_COSTS = {2: 5000, 3: 15000, 4: 40000, 5: 100000}
 MAX_MINE_LEVEL = 5
@@ -1266,10 +1294,15 @@ def repair_cost_of(item_id, quality, condition, tu1, tu2, tu3, tu4, hq_f, dogs=0
         + (elite or 0) * REPAIR_DEFENCE_VALUES[2]
     return max(REPAIR_MIN, round(base / max(0.01, out) * (1 + defence / REPAIR_DEFENCE_PER_PCT / 100.0)))
 
+def repair_discount(conn, hid) -> float:
+    """Dwarven Pick: repairs paid with credits cost 25/35/50 % less."""
+    return 1 - artifact_effect(conn, hid, 177) / 100
+
 def compute_repair_cost(conn, mine) -> int:
     d = conn.execute("SELECT dogs, staff, elite FROM mine_defence WHERE mine_id=?", (mine["mine_id"],)).fetchone()
-    return repair_cost_of(mine["item_id"], mine["quality"], mine["condition"], mine["tu1"], mine["tu2"],
+    cost = repair_cost_of(mine["item_id"], mine["quality"], mine["condition"], mine["tu1"], mine["tu2"],
                           mine["tu3"], mine["tu4"], hq_boost_for_mine(conn, mine), *(tuple(d) if d else ()))
+    return max(REPAIR_MIN, round(cost * repair_discount(conn, mine["owner_hid"])))
 
 def collect_mine(conn, mine) -> tuple:
     """Calculate pending production, add to warehouse. Returns (amount_added, mine_destroyed)."""
@@ -1496,6 +1529,7 @@ def mine_rows(conn, hid: str, where: str = "", args: tuple = (), order: str = "m
     hq = conn.execute("SELECT lat,lng,level FROM hq WHERE hid=?", (hid,)).fetchone()
     _prepare_mine_temp(conn, hid, hq)
     now_iso = datetime.datetime.utcnow().isoformat()
+    disc = repair_discount(conn, hid)
     rows = conn.execute(f"""
         SELECT m.mine_id, m.lat, m.lng, m.item_id, COALESCE(t.res, 0), m.quality, m.condition,
                m.level, COALESCE(m.tu1,0), COALESCE(m.tu2,0), COALESCE(m.tu3,0), COALESCE(m.tu4,0),
@@ -1511,8 +1545,8 @@ def mine_rows(conn, hid: str, where: str = "", args: tuple = (), order: str = "m
              "cond": r[6], "lvl": r[7], "tu1": r[8], "tu2": r[9], "tu3": r[10], "tu4": r[11],
              "def": r[12], "lastColl": r[13], "rateHr": round(r[14], 1),
              "hqBoost": r[15] if r[15] and r[15] > 1.0 else None, "sickUntil": r[16],
-             "repairCost": repair_cost_of(r[3], r[5], r[6], r[8], r[9], r[10], r[11], r[15] or 1.0,
-                                          r[17], r[18], r[19])}
+             "repairCost": max(REPAIR_MIN, round(repair_cost_of(r[3], r[5], r[6], r[8], r[9], r[10], r[11],
+                                                                r[15] or 1.0, r[17], r[18], r[19]) * disc))}
             for r in rows]
 
 def maybe_run_events(conn, hid: str, wa: int):
@@ -1581,15 +1615,24 @@ def maybe_run_events(conn, hid: str, wa: int):
 # ── Scanner ────────────────────────────────────────────────────────────────────
 
 MAX_MINES_PER_PLAYER = 10000
-REMOTE_BUILD_COOLDOWN_H = 12   # owner's rule: one drone (remote) construction per 12 hours
+REMOTE_BUILD_COOLDOWN_H = 12   # owner's rule: one drone (remote) construction per 12 hours (Astrolabium: 11/10/8)
+
+def artifact_effect(conn, hid: str, item_id: int) -> float:
+    """Effect of an invested artifact kind (systems/archaeology.py ARTIFACT_EFFECTS)."""
+    from systems import archaeology
+    return archaeology.effect(conn, hid, item_id)
+
+def remote_build_hours(conn, hid: str) -> float:
+    return artifact_effect(conn, hid, 172)
 
 def _remote_build_wait(hid: str):
     """'3 h 20 min' until the next remote build is allowed, or None."""
     with get_db() as c:
         r = c.execute("SELECT MAX(ts) FROM game_events WHERE hid=? AND type='remote_build'", (hid,)).fetchone()
+        hours = remote_build_hours(c, hid)
     if not r or not r[0]:
         return None
-    left = datetime.datetime.fromisoformat(r[0]) + datetime.timedelta(hours=REMOTE_BUILD_COOLDOWN_H) - datetime.datetime.utcnow()
+    left = datetime.datetime.fromisoformat(r[0]) + datetime.timedelta(hours=hours) - datetime.datetime.utcnow()
     if left.total_seconds() <= 0:
         return None
     m = int(left.total_seconds() // 60)
@@ -2212,9 +2255,11 @@ async def mine_new(request: Request):
             _diamond_qty = (_pre_conn2.execute(
                 "SELECT qty FROM warehouse WHERE hid=? AND item_id=42", (hid,)).fetchone() or {}).get("qty", 0)
         _wait = _remote_build_wait(hid)
+        with get_db() as _c3:
+            _remote_hours = remote_build_hours(_c3, hid)
         if _wait:
             return zlib_resp({"err": 12, "msg": f"Remote construction is possible once every "
-                              f"{REMOTE_BUILD_COOLDOWN_H} hours — next in {_wait}"})
+                              f"{_remote_hours} hours — next in {_wait}"})
         if _drone_qty < 1:
             return zlib_resp({"err": 8, "msg": "Remote build requires 1× Scan Drone"})
         if _diamond_qty < 1:
@@ -2264,10 +2309,11 @@ async def mine_new(request: Request):
             if not drone_row or drone_row["qty"] < 1:
                 conn.rollback(); conn.close()
                 return zlib_resp({"err": 8, "msg": "Remote build requires 1× Scan Drone"})
+            _rh = remote_build_hours(conn, hid)
             if econ.count_events(conn, hid, "remote_build", (datetime.datetime.utcnow() - datetime.timedelta(
-                    hours=REMOTE_BUILD_COOLDOWN_H)).isoformat()):
+                    hours=_rh)).isoformat()):
                 conn.rollback(); conn.close()
-                return zlib_resp({"err": 12, "msg": f"Remote construction is possible once every {REMOTE_BUILD_COOLDOWN_H} hours"})
+                return zlib_resp({"err": 12, "msg": f"Remote construction is possible once every {_rh} hours"})
             d_row = conn.execute(
                 "SELECT qty FROM warehouse WHERE hid=? AND item_id=?", (hid, DIAMOND_ITEM_ID)).fetchone()
             if not d_row or d_row["qty"] < 1:
@@ -3387,7 +3433,8 @@ async def factory_boost(request: Request):
             conn.execute(
                 "UPDATE factories SET prod_end=?, prod_amount=? WHERE factory_id=?",
                 (new_prod_end, new_amount, fid))
-        cooldown_until = (now + datetime.timedelta(days=5)).isoformat()
+        # Thor's Crucible shortens the instant-production cooldown by 15/20/30 %
+        cooldown_until = (now + datetime.timedelta(days=5 * (1 - artifact_effect(conn, hid, 175) / 100))).isoformat()
         conn.execute(
             "UPDATE factories SET boost_cooldown_until=? WHERE factory_id=?",
             (cooldown_until, fid))
@@ -3632,55 +3679,18 @@ SYSTEM_PRICES = {
     2: 5, 3: 5, 7: 20, 8: 15, 10: 40, 12: 18, 13: 20, 14: 200,
     15: 80, 20: 8, 24: 25, 26: 35, 30: 60, 32: 90, 35: 150,
     36: 120, 38: 70, 49: 45, 53: 6, 79: 500, 81: 400, 90: 300, 169: 350,
+    # former developer-shop items, now sold by the system market: price × 1.5 = old shop price
+    43: 333, 44: 3333, 45: 10000, 46: 23333, 48: 46667, 117: 1333,
 }
+# items the system sells but that players may not trade between themselves (Tech Upgrade IV)
+SYSTEM_ONLY_BUY = {48}
 
 @app.post("/flut23/itemsGetKurse.php")
 async def items_get_kurse(request: Request):
     prices = [{"itemID": k, "price": v} for k, v in SYSTEM_PRICES.items()]
     return zlib_resp(prices)
 
-# ── Shop ──────────────────────────────────────────────────────────────────────────
-
-@app.post("/flut23/shopGetData.php")
-async def shop_get_data(request: Request):
-    return zlib_resp({
-        "err": 0,
-        "items": [{"itemID": iid, "name": d["name"], "price": d["price"], "desc": d["desc"]}
-                  for iid, d in SHOP_ITEMS.items()],
-    })
-
-@app.post("/flut23/shopBuyItem.php")
-async def shop_buy_item(request: Request):
-    _, form = await read_form(request)
-    hid = hid_from_sid(form.get("sid", ""))
-    try:
-        item_id = int(form.get("itemID", 0))
-        qty     = max(1, int(form.get("qty", 1)))
-    except Exception:
-        return zlib_resp({"err": 1})
-    shop_item = SHOP_ITEMS.get(item_id)
-    if not shop_item:
-        return zlib_resp({"err": 2, "msg": "item not available in shop"})
-    total = shop_item["price"] * qty
-    with get_db() as conn:
-        row = get_player(conn, hid)
-        if not row:
-            return zlib_resp({"err": 3})
-        if row["credits"] < total:
-            return zlib_resp({"err": 4, "msg": f"need ꞓ{total}"})
-        cap = wh_capacity(row["wh_level"])
-        added = wh_add(conn, hid, item_id, qty, cap)
-        actual_cost = int(shop_item["price"] * added)
-        if added < qty:
-            conn.execute("UPDATE players SET credits=credits-? WHERE hID=?", (actual_cost, hid))
-        else:
-            conn.execute("UPDATE players SET credits=credits-? WHERE hID=?", (total, hid))
-            actual_cost = total
-        award_xp(conn, hid, actual_cost)
-        conn.commit()
-    return zlib_resp({"err": 0, "bought": int(added), "cost": actual_cost})
-
-# ── Mine upgrade ──────────────────────────────────────────────────────────────────
+# (The developer shop was removed: items come from the market, factories and Cargo Rain.)
 
 @app.post("/flut23/mineUpgrade.php")
 async def mine_upgrade(request: Request):
@@ -4362,6 +4372,19 @@ with get_db() as _conn:
     econ.init(_conn, capacity_fn=lambda p: wh_capacity(p["wh_level"]),
               non_warehouse_items=set(SPECIAL_BUILDINGS))
 
+def _owner_balance_x10_once() -> None:
+    """One-time owner decision (2026-10-19): existing companies get 10× their credits, like the new
+    starting balance. Runs once per database (scheduler flag), ledgered as owner_balance_x10."""
+    with get_db() as c:
+        with econ.tx(c):
+            if c.execute("SELECT 1 FROM scheduler WHERE name='owner_balance_x10'").fetchone():
+                return
+            for r in c.execute("SELECT hID, credits FROM players WHERE credits > 0").fetchall():
+                econ.credit(c, r[0], int(r[1]) * 9, "owner_balance_x10")
+            c.execute("INSERT INTO scheduler(name, last_run) VALUES('owner_balance_x10', ?)", (utcnow_iso(),))
+
+_owner_balance_x10_once()
+
 SYSTEM_HELPERS = _types.SimpleNamespace(
     get_db=get_db, hid_from_sid=hid_from_sid, read_form=read_form, zlib_resp=zlib_resp,
     get_player=get_player, wh_capacity=wh_capacity, building_level=building_level,
@@ -4370,7 +4393,7 @@ SYSTEM_HELPERS = _types.SimpleNamespace(
     mine_stats=mine_stats, mine_rows=mine_rows,
     MINE_TYPES=MINE_TYPES, SPECIAL_BUILDINGS=SPECIAL_BUILDINGS, HQ_BOOST_RADIUS=HQ_BOOST_RADIUS,
     HQ_BOOST_FACTORS=HQ_BOOST_FACTORS, FACTORY_TYPES=FACTORY_TYPES,
-    DRONE_SCAN_RANGES=DRONE_SCAN_RANGES, new_id=new_id, SYSTEM_PRICES=SYSTEM_PRICES,
+    DRONE_SCAN_RANGES=DRONE_SCAN_RANGES, new_id=new_id, SYSTEM_PRICES=SYSTEM_PRICES, SYSTEM_ONLY_BUY=SYSTEM_ONLY_BUY,
     LEVEL_UP_HOOKS=LEVEL_UP_HOOKS, CASINO_FIVE_HOOKS=CASINO_FIVE_HOOKS, OUTPUT_HOOKS=OUTPUT_HOOKS,
 )
 INSTALLED_SYSTEMS = systems.install_all(app, SYSTEM_HELPERS)

@@ -25,8 +25,8 @@ Documented assumptions (values are configurable constants below):
   within the hand collection range) or by drone (uses 1 Scan Drone, 117; needs Drone Research ≥ 5
   as in eva.txt; within the drone scan range).
 - Crates expire CRATE_HOURS after being dropped.
-- Recycling (sfo.txt "*From recycling" sources) needs ratios the sources don't give: implemented
-  with RECYCLE ratios below behind feature flag RECYCLING (off by default) — decision needed.
+- Recycling (sfo.txt / srs.txt "*From recycling" sources) is on (owner's decision 2026-10-19); the
+  ratios aren't in the sources — see RECYCLE. Needs a Recycling Plant; Shadow Obelisk adds yield.
 """
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ import random
 import uuid
 
 import econ
-from . import float_arg, int_arg
+from . import archaeology, float_arg, int_arg
 
 CARGO_ITEM = 0          # ledger item id used for Cargo Rain crates (not a warehouse item)
 LEVEL_UP_CRATES = 30    # eva.txt: 30 C&C per level up
@@ -75,15 +75,18 @@ LOOT = {
 QTY = {57: (1, 20), 41: (1, 20), 55: (1, 10), 40: (1, 10), 70: (5, 50), 74: (5, 50), 43: (1, 1),
        115: (5, 50), 78: (5, 30), 77: (5, 50), 120: (1, 3), 42: (1, 1), 44: (1, 3), 45: (1, 2),
        46: (1, 2), 48: (1, 1), 159: (1, 1), 158: (1, 1), 160: (1, 1), 161: (1, 1)}
-# Recycling (sfo.txt sources; ratios assumed): input → [(output, units of output per input unit)]
+# Recycling sources from sfo.txt and srs.txt ("*From recycling"); the ratios are not in the
+# sources and are a documented proposal: input → [(output, units of output per input unit)].
+# The units are split evenly over the outputs, then × the Recycling Plant yield.
 RECYCLE = {
-    120: [(70, 3), (74, 2), (78, 2), (77, 2)],   # drone wreckage
-    115: [(70, 0.5), (77, 0.5)],                  # waste glass
-    74: [(70, 0.5)],                              # used oil
-    77: [(74, 0.5)],                              # plastic scrap
-    43: [(77, 5)],                                # maintenance kit
-    55: [(44, 0.01)],                             # copper coins → TU1
-    40: [(45, 0.01)],                             # roman coins → TU2
+    41: [(2, 10), (10, 2), (20, 6), (3, 6), (53, 6)],   # fossils → clay, crude oil, limestone, gravel, quartz sand (srs.txt)
+    120: [(70, 3), (74, 2), (78, 2), (77, 2)],          # drone wreckage → scrap metal, used oil, e-scrap, plastic scrap
+    115: [(70, 0.5), (77, 0.5)],                         # waste glass → scrap metal, plastic scrap
+    74: [(70, 0.5), (10, 0.5)],                          # used oil → scrap metal, crude oil (srs.txt)
+    77: [(74, 0.5)],                                     # plastic scrap → used oil
+    43: [(77, 5)],                                       # maintenance kit → plastic scrap
+    55: [(44, 0.01)],                                    # copper coins → Tech Upgrade I
+    40: [(45, 0.01)],                                    # roman coins → Tech Upgrade II
 }
 
 
@@ -365,7 +368,7 @@ def install(api) -> None:
     def recycle(conn, hid, form):
         """Recycle found objects in the Recycling Plant (ratios are assumptions, see RECYCLE)."""
         item_id = int_arg(form, "itemID", None, 1)
-        qty = float_arg(form, "qty", None, 0, 1e12)
+        qty = int_arg(form, "qty", None, 0, 10**12)                 # whole units
         if item_id not in RECYCLE or qty <= 0:
             raise econ.GameError("bad_input", "This item can't be recycled")
         with econ.tx(conn):
@@ -373,11 +376,23 @@ def install(api) -> None:
             if level < 1:
                 raise econ.GameError("locked", "Build a Recycling Plant first")
             yield_ = 0.5 + 0.05 * min(10, level)      # 55% at L1 … 100% at L10 (assumed)
+            yield_ *= 1 + archaeology.effect(conn, hid, 174) / 100    # Shadow Obelisk: +15/20/30 %
             econ.take(conn, hid, item_id, qty, "recycle_in")
             out = []
             for target, per_unit in RECYCLE[item_id]:
-                q = round(qty * per_unit * yield_ / len(RECYCLE[item_id]), 2)
+                q = qty * per_unit * yield_ / len(RECYCLE[item_id])
                 if q > 0:
-                    econ.give(conn, hid, target, q, "recycle_out", ignore_capacity=False)
-                    out.append({"itemID": target, "qty": q})
-        return {"err": 0, "outputs": out, "yield": yield_}
+                    got = econ.give(conn, hid, target, q, "recycle_out", strict=False)   # whole units, fraction carried
+                    if got:
+                        out.append({"itemID": target, "qty": int(got)})
+        return {"err": 0, "outputs": out, "yield": round(yield_, 3)}
+
+    @api.endpoint("/api/v1/cargo/recycling", feature="RECYCLING")
+    def recycling_info(conn, hid, form):
+        """What can be recycled, into what, and your yield."""
+        level = h.building_level(conn, hid, RECYCLING_PLANT)
+        y = (0.5 + 0.05 * min(10, level)) * (1 + archaeology.effect(conn, hid, 174) / 100) if level else 0
+        return {"err": 0, "plantLevel": level, "yield": round(y, 3), "recipes": [
+            {"itemID": i, "owned": int(econ.qty_of(conn, hid, i)),
+             "outputs": [{"itemID": t, "perUnit": round(u * y / len(outs), 4)} for t, u in outs]}
+            for i, outs in RECYCLE.items()]}

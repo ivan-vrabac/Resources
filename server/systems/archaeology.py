@@ -20,6 +20,7 @@ from __future__ import annotations
 import datetime
 import hashlib
 import math
+import random
 
 import econ
 
@@ -29,6 +30,17 @@ ARCHAEOLOGISTS = 167
 MUSEUM = 65
 ARTIFACTS = {172: "Astrolabium", 173: "Throne of Depths", 174: "Shadow Obelisk",
              175: "Thor's Crucible", 176: "Aeon Mechanism", 177: "Dwarven Pick"}
+# Artifact levels (owner's rules 2026-10-19): invest artifacts of a kind — 100 → level 1,
+# 500 → level 2, 1000 → level 3 (total invested). Effects per level 1/2/3:
+LEVEL_AT = (100, 500, 1000)
+ARTIFACT_EFFECTS = {
+    172: ("Remote (drone) construction every {} h", (12, 11, 10, 8)),        # Astrolabium: cooldown hours
+    173: ("{}% chance to recover two artifacts", (0, 10, 20, 30)),           # Throne of Depths
+    174: ("+{}% recycling yield", (0, 15, 20, 30)),                           # Shadow Obelisk
+    175: ("Factory instant production cooldown −{}%", (0, 15, 20, 30)),       # Thor's Crucible
+    176: ("+{}% quest rewards", (0, 10, 20, 30)),                             # Aeon Mechanism
+    177: ("Mine repairs (credits) −{}%", (0, 25, 35, 50)),                    # Dwarven Pick
+}
 ARTIFACT_WEIGHTS = {172: 30, 173: 10, 174: 20, 175: 15, 176: 5, 177: 20}
 CELL_DEG = 0.02
 SITE_CHANCE = 0.35
@@ -55,6 +67,24 @@ def archaeologists_needed(level: int) -> int:
 def period_of(now: datetime.datetime) -> str:
     """24-hour site period id, e.g. 'D20380'."""
     return f"D{int(now.replace(tzinfo=datetime.timezone.utc).timestamp() // PERIOD_S)}"
+
+
+def level_for(invested: int) -> int:
+    return sum(1 for t in LEVEL_AT if invested >= t)
+
+
+def artifact_level(conn, hid, item_id) -> int:
+    """Investment level 0–3 of one artifact kind for a player (0 if the table doesn't exist yet)."""
+    try:
+        r = conn.execute("SELECT invested FROM artifact_levels WHERE hid=? AND item_id=?", (hid, item_id)).fetchone()
+    except Exception:
+        return 0
+    return level_for(int(r[0])) if r else 0
+
+
+def effect(conn, hid, item_id) -> float:
+    """The artifact's effect value at the player's level (hours for 172, percent for the others)."""
+    return ARTIFACT_EFFECTS[item_id][1][artifact_level(conn, hid, item_id)]
 
 
 def _h(*parts) -> int:
@@ -129,6 +159,9 @@ def init_schema(conn) -> None:
             DROP TABLE artifact_recoveries_old;
         """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_artrec_hid ON artifact_recoveries(hid)")
+    conn.execute("""CREATE TABLE IF NOT EXISTS artifact_levels (
+        hid TEXT NOT NULL, item_id INTEGER NOT NULL, invested INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (hid, item_id))""")
     conn.commit()
 
 
@@ -161,9 +194,36 @@ def install(api) -> None:
         coll = {}
         for r in conn.execute("SELECT item_id, COUNT(*) FROM artifact_recoveries WHERE hid=? GROUP BY item_id", (hid,)):
             coll[r[0]] = r[1]
-        return {"err": 0, **levels(conn, hid),
-                "collection": [{"itemID": i, "name": n, "found": coll.get(i, 0),
-                                "owned": econ.qty_of(conn, hid, i)} for i, n in ARTIFACTS.items()]}
+        inv = {r[0]: int(r[1]) for r in conn.execute("SELECT item_id, invested FROM artifact_levels WHERE hid=?", (hid,))}
+
+        def entry(i, n):
+            invested = inv.get(i, 0)
+            lvl = level_for(invested)
+            text, vals = ARTIFACT_EFFECTS[i]
+            return {"itemID": i, "name": n, "found": coll.get(i, 0), "owned": int(econ.qty_of(conn, hid, i)),
+                    "invested": invested, "level": lvl, "nextAt": LEVEL_AT[lvl] if lvl < 3 else None,
+                    "effect": text.format(vals[lvl]) if (lvl or i == 172) else None,
+                    "effects": [text.format(v) for v in vals[1:]]}
+        return {"err": 0, **levels(conn, hid), "levelAt": LEVEL_AT,
+                "collection": [entry(i, n) for i, n in ARTIFACTS.items()]}
+
+    @api.endpoint("/api/v1/archaeology/invest", feature="ARCHAEOLOGY")
+    def invest(conn, hid, form):
+        """Invest artifacts of one kind to raise its level (100 / 500 / 1000 in total)."""
+        item = int(form.get("itemID") or 0)
+        try:
+            qty = int(form.get("qty") or 0)
+        except ValueError:
+            qty = 0
+        if item not in ARTIFACTS or qty <= 0:
+            raise econ.GameError("bad_input", "Choose an artifact and a quantity")
+        with econ.tx(conn):
+            econ.take(conn, hid, item, qty, "artifact_invest")
+            conn.execute("INSERT INTO artifact_levels(hid, item_id, invested) VALUES(?,?,?) ON CONFLICT(hid, item_id) "
+                         "DO UPDATE SET invested = invested + excluded.invested", (hid, item, qty))
+            invested = conn.execute("SELECT invested FROM artifact_levels WHERE hid=? AND item_id=?",
+                                    (hid, item)).fetchone()[0]
+        return {"err": 0, "itemID": item, "invested": invested, "level": level_for(invested)}
 
     @api.endpoint("/api/v1/archaeology/detect", feature="ARCHAEOLOGY")
     def detect(conn, hid, form):
@@ -220,9 +280,11 @@ def install(api) -> None:
                                                        econ.utcnow_iso()))
             if cur.rowcount != 1:
                 raise econ.GameError("gone", "You already recovered this artifact")
-            econ.give(conn, hid, site["item"], 1, "artifact_recovery", site_id, ignore_capacity=True)
+            n = 2 if random.random() * 100 < effect(conn, hid, 173) else 1      # Throne of Depths
+            econ.give(conn, hid, site["item"], n, "artifact_recovery", site_id, ignore_capacity=True)
             econ.emit(conn, "artifact_found", hid, {"itemID": site["item"], "name": ARTIFACTS[site["item"]]},
                       lat=round(site["lat"], 2), lng=round(site["lng"], 2), dedup=f"artifact:{site_id}:{hid}")
             conn.execute("INSERT OR IGNORE INTO achievements(hid, code, title, ts) VALUES(?,?,?,?)",
                          (hid, f"artifact_{site['item']}", f"Found {ARTIFACTS[site['item']]}", econ.utcnow_iso()))
-        return {"err": 0, "itemID": site["item"], "name": ARTIFACTS[site["item"]], "archaeologistsUsed": need}
+        return {"err": 0, "itemID": site["item"], "name": ARTIFACTS[site["item"]], "archaeologistsUsed": need,
+                "count": n}

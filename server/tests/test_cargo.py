@@ -156,6 +156,14 @@ def test_cargo_collected_counts_for_quests():
         assert econ.count_events(conn, hid, "cargo_collected", "2000-01-01") == 3
 
 
-def test_recycling_is_off_by_default():
-    hid, sid, _ = new_player("rc")
-    assert call(C + "recycle", sid, itemID=120, qty=1)["code"] == "disabled"
+def test_recycling_found_objects():
+    hid, sid, _ = new_player("rc", wh_level=10)
+    give(hid, 41, 100)
+    assert call(C + "recycle", sid, itemID=41, qty=10)["code"] == "locked"          # needs a Recycling Plant
+    set_building(hid, 58, 10)                                                       # 100 % yield
+    r = call(C + "recycle", sid, itemID=41, qty=100)
+    outs = {o["itemID"]: o["qty"] for o in r["outputs"]}
+    assert qty(hid, 41) == 0 and outs == {2: 200, 10: 40, 20: 120, 3: 120, 53: 120}  # fossils → 5 resources
+    assert all(float(v).is_integer() for v in outs.values())
+    info = call(C + "recycling", sid)
+    assert {x["itemID"] for x in info["recipes"]} >= {41, 74, 115, 120}

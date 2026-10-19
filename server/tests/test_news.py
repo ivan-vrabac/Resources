@@ -96,3 +96,24 @@ def test_quake_runs_once_damages_without_deleting():
 def test_protection_factors():
     assert P.disease_factor(0) == 1 and round(P.disease_factor(10), 2) == 0.3
     assert round(P.fire_factor(10), 2) == 0.2 and round(P.quake_factor(10), 2) == 0.4
+
+
+def test_daily_awards_and_anniversaries_once_per_day():
+    rich, sid, rich_name = new_player("nwrich")
+    old, _, old_name = new_player("nwold")
+    now = econ.utcnow()
+    with main.get_db() as conn:
+        conn.execute("UPDATE players SET credits=? WHERE hID=?", (10**15, rich))
+        conn.execute("UPDATE players SET created_at=? WHERE hID=?",
+                     (now.replace(year=now.year - 5, hour=0).isoformat(), old))
+        conn.execute("DELETE FROM news_items WHERE category='awards' OR kind IN ('jubilee100', 'anniversary')")
+        conn.commit()
+        with econ.tx(conn):
+            assert N.daily_awards(conn, main.SYSTEM_HELPERS, now) > 0
+            assert N.daily_awards(conn, main.SYSTEM_HELPERS, now) == 0          # once per day
+    items = call("/api/v1/news", sid, category="awards")["items"]
+    assert any(i["kind"] == "rich" and rich_name in i["title"] for i in items)
+    assert all(i["kind"] != "marker" for i in items)
+    assert rich not in str(items)
+    players = call("/api/v1/news", sid, category="players")["items"]
+    assert any(i["kind"] == "anniversary" and "Five years" in i["title"] for i in players)

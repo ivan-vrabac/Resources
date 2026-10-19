@@ -2,7 +2,7 @@
 
 Rules (documented assumptions, see .private/NEXT-PROGRESS.md):
 - System trade (items with a system price only): sell to the system at 100% of the system price,
-  buy from the system at 150%. Unlimited volume. No transport tax (the 50% markup is the system's).
+  buy from the system at 150% plus your transport tax (owner's rule). Unlimited volume.
 - * Only BUY orders can be placed (owner's rule 2026-10-19): a player sells by filling an existing
   buy order (or to the system). One open buy order per player and item; it can be edited (price
   change = new time priority) or cancelled. Book order: price high→low, then oldest first.
@@ -269,7 +269,8 @@ def install(api) -> None:
             if not p:
                 raise econ.GameError("no_price", "The system doesn't sell this item")
             v = round(qty * p * SYSTEM_BUY_MARKUP)
-            return {"err": 0, "value": v, "tax": 0, "total": v}
+            tax = round(v * rate)
+            return {"err": 0, "value": v, "tax": tax, "total": v + tax, "taxRate": rate}
         price = float_arg(form, "price", None, 0)
         value = round(qty * price)
         if action == "buy_order":    # up-front: value + tax (tax refunded for any unfilled part)
@@ -300,7 +301,8 @@ def install(api) -> None:
         """side=sell: sell to the system at 100%. side=buy: buy from the system at 150%."""
         side = form.get("side", "")
         item_id, qty = parse_order(form)
-        check_tradeable(item_id)
+        if not (side == "buy" and item_id in getattr(h, "SYSTEM_ONLY_BUY", ())):
+            check_tradeable(item_id)
         p = prices.get(item_id)
         if not p:
             raise econ.GameError("no_price", "The system doesn't trade this item")
@@ -312,13 +314,14 @@ def install(api) -> None:
                 econ.credit(conn, hid, value, "system_sell")
                 record(conn, "system_sell", item_id, qty, p, None, hid)
                 return {"err": 0, "qty": qty, "credits": value}
-            if side == "buy":
+            if side == "buy":       # 150 % of the system price + your transport tax (owner's rule)
                 value = round(qty * p * SYSTEM_BUY_MARKUP)
-                econ.debit(conn, hid, value, "system_buy")
+                tax = round(value * my_tax(conn, hid))
+                econ.debit(conn, hid, value + tax, "system_buy")
                 econ.give(conn, hid, item_id, qty, "system_buy")
                 h.award_xp(conn, hid, int(value))
-                record(conn, "system_buy", item_id, qty, p * SYSTEM_BUY_MARKUP, hid, None)
-                return {"err": 0, "qty": qty, "cost": value}
+                record(conn, "system_buy", item_id, qty, p * SYSTEM_BUY_MARKUP, hid, None, tax, hid)
+                return {"err": 0, "qty": qty, "cost": value + tax, "tax": tax}
             raise econ.GameError("bad_input", "side must be buy or sell")
         return idempotent(conn, hid, form, "market_system", run)
 

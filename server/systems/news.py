@@ -30,7 +30,7 @@ import protection
 from . import int_arg, social
 
 PAGE = 30
-CATEGORIES = ("world", "casino", "auctions", "archaeology", "combat", "players", "cargo", "quests")
+CATEGORIES = ("world", "awards", "casino", "auctions", "archaeology", "combat", "players", "cargo", "quests")
 MINES_24H_THRESHOLDS = (100, 1000, 10000)
 CRATES_THRESHOLDS = (1000, 10000, 100000)
 LEVEL_MILESTONE_EVERY = 10
@@ -191,6 +191,83 @@ def digest_events(conn, limit=5000) -> int:
     return len(rows)
 
 
+def daily_awards(conn, h, now) -> int:
+    """Once per UTC day: award news (richest companies, hardest-working, decadence, top raw and
+    factory output) and company anniversaries (100 days, every year, 5 and 10 years). Inside tx()."""
+    day = now.strftime("%Y-%m-%d")
+    if conn.execute("SELECT 1 FROM news_items WHERE dedup=?", (f"awards:{day}",)).fetchone():
+        return 0
+    ts = now.isoformat()
+    n = 0
+
+    def put(kind, hid, data, key):
+        nonlocal n
+        add_news(conn, "awards" if kind not in ANNIVERSARY_KINDS else "players", kind, hid, data=data,
+                 dedup=f"{key}:{day}", ts=ts)
+        n += 1
+
+    rich = conn.execute("SELECT hID, credits FROM players WHERE credits > 0 ORDER BY credits DESC LIMIT 3").fetchall()
+    if rich:
+        put("rich", rich[0][0], {"credits": int(rich[0][1]),
+                                 "others": [{"hid": r[0], "credits": int(r[1])} for r in rich[1:]]}, "rich")
+    # hardest-working: activity-weighted score (same as the overall leaderboard)
+    best = None
+    for r in conn.execute("SELECT hID, xp, created_at FROM players WHERE xp > 0"):
+        try:
+            age = max(1, (now - datetime.datetime.fromisoformat(r[2])).days)
+        except (TypeError, ValueError):
+            age = 1
+        days = conn.execute("SELECT COUNT(*) FROM player_activity WHERE hid=? AND day>=?",
+                            (r[0], (now - datetime.timedelta(days=min(age, 100))).strftime("%Y-%m-%d"))).fetchone()[0]
+        score = round((r[1] or 0) * 2 * min(1.0, days / min(age, 100)))
+        if not best or score > best[1]:
+            best = (r[0], score)
+    if best and best[1] > 0:
+        put("workhorse", best[0], {"points": best[1]}, "workhorse")
+    try:
+        lux = conn.execute("SELECT p.hid, p.points, COALESCE((SELECT SUM(qty) FROM luxury_items l WHERE l.hid=p.hid), 0) "
+                           "FROM luxury_points p WHERE p.points > 0 ORDER BY p.points DESC LIMIT 1").fetchone()
+    except Exception:
+        lux = None
+    if lux:
+        put("decadence", lux[0], {"points": int(lux[1]), "items": int(lux[2])}, "decadence")
+    raw = conn.execute(
+        "SELECT owner_hid, SUM(r.rate * quality / 100.0 * MAX(0.1, condition / 100.0) * level * "
+        "(1.0 + (COALESCE(tu1,0) + COALESCE(tu2,0) + 1.5*COALESCE(tu3,0) + 1.5*COALESCE(tu4,0)) / 100.0)) AS out "
+        f"FROM mines m JOIN (SELECT column1 AS item_id, column2 AS rate FROM (VALUES {_mine_rate_values(h)})) r "
+        "ON r.item_id = m.item_id GROUP BY owner_hid ORDER BY out DESC LIMIT 1").fetchone()
+    if raw and raw[1]:
+        put("raw_output", raw[0], {"perHour": round(raw[1])}, "raw_output")
+    fac_rate = {fid: ft["out"] / ft["hrs"] for fid, ft in h.FACTORY_TYPES.items()}
+    acc = {}
+    for r in conn.execute("SELECT hid, item_id, level FROM factories"):
+        if r[1] in fac_rate:
+            acc[r[0]] = acc.get(r[0], 0) + fac_rate[r[1]] * (r[2] or 1)
+    if acc:
+        top = max(acc.items(), key=lambda x: x[1])
+        put("factory_output", top[0], {"perHour": round(top[1])}, "factory_output")
+    # anniversaries
+    for r in conn.execute("SELECT hID, created_at FROM players"):
+        try:
+            created = datetime.datetime.fromisoformat(r[1])
+        except (TypeError, ValueError):
+            continue
+        age = (now.date() - created.date()).days
+        if age == 100:
+            put("jubilee100", r[0], {"days": 100}, f"anniv:{r[0]}")
+        elif age >= 365 and created.month == now.month and created.day == now.day:
+            put("anniversary", r[0], {"years": now.year - created.year}, f"anniv:{r[0]}")
+    add_news(conn, "awards", "marker", data={}, dedup=f"awards:{day}", ts=ts)   # hidden: marks the day done
+    return n
+
+
+ANNIVERSARY_KINDS = {"jubilee100", "anniversary"}
+
+
+def _mine_rate_values(h) -> str:
+    return ",".join(f"({int(k)},{float(v['rate'])})" for k, v in h.MINE_TYPES.items())
+
+
 def run_quake(conn, h, now, day=None) -> dict | None:
     """Process the earthquake for `day` (default: today, once its time has come). Exactly once."""
     day = day or now.strftime("%Y-%m-%d")
@@ -272,6 +349,7 @@ def install(api) -> None:
         with econ.tx(conn):
             if econ.due(conn, "news_sweep", SWEEP_S):
                 digest_events(conn)
+                daily_awards(conn, h, econ.utcnow())
 
     def world_loop():
         time.sleep(30)
@@ -280,6 +358,7 @@ def install(api) -> None:
                 with h.get_db() as conn:
                     with econ.tx(conn):
                         digest_events(conn)
+                        daily_awards(conn, h, econ.utcnow())
                     if econ.feature("EARTHQUAKES"):
                         run_quake(conn, h, econ.utcnow())
             except Exception:
@@ -295,12 +374,17 @@ def install(api) -> None:
 
     def render(conn, rows, viewer):
         hids = {x for r in rows for x in (r["hid"], r["hid2"]) if x}
+        for r in rows:
+            for o in json.loads(r["data"] or "{}").get("others", []):
+                hids.add(o["hid"])
         anon = anonymous(conn, hids) if hids else set()
         refs = {x: ({"pid": None, "name": "A company"} if x in anon and x != viewer else social.public_ref(conn, x))
                 for x in hids}
         out = []
         for r in rows:
             d = json.loads(r["data"] or "{}")
+            if "others" in d:       # never send internal ids
+                d["others"] = [{"name": refs[o["hid"]]["name"], "credits": o["credits"]} for o in d["others"]]
             p1, p2 = refs.get(r["hid"]), refs.get(r["hid2"])
             out.append({"id": r["id"], "ts": r["ts"], "category": r["category"], "kind": r["kind"],
                         "title": _title(r["kind"], d, p1, p2), "body": _body(r["kind"], d, p1, p2),
@@ -312,7 +396,7 @@ def install(api) -> None:
         maybe_sweep(conn)
         before = int_arg(form, "before", 0, 0, 2**62)
         cat = (form.get("category") or "").strip()
-        sql, args = "SELECT * FROM news_items WHERE 1=1", []
+        sql, args = "SELECT * FROM news_items WHERE kind<>'marker'", []
         if cat in CATEGORIES:
             sql += " AND category=?"
             args.append(cat)
@@ -358,7 +442,24 @@ def _title(kind, d, p1, p2):
         "crates": f"{_n(p1)} collected {int(d.get('crates', 0)):,} Cargo Rain crates",
         "mines24": f"{_n(p1)} built {int(d.get('mines', 0)):,} mines in 24 hours",
         "earthquake": f"Magnitude {d.get('magnitude')} earthquake — {d.get('place')}",
+        "rich": f"Rich, richer, {_n(p1)}!",
+        "workhorse": f"Hardest-working company: {_n(p1)}",
+        "decadence": f"Decadence award: {_n(p1)}",
+        "raw_output": f"Mining magnate: {_n(p1)}",
+        "factory_output": f"Industrial giant: {_n(p1)}",
+        "jubilee100": f"{_n(p1)} celebrates 100 days!",
+        "anniversary": _anniversary_title(_n(p1), int(d.get("years", 1))),
     }.get(kind, kind)
+
+
+def _anniversary_title(name, years):
+    if years == 1:
+        return f"{name} turns one year old!"
+    if years == 5:
+        return f"Five years of {name}!"
+    if years == 10:
+        return f"{name} — ten years in business!"
+    return f"{name} celebrates {years} years!"
 
 
 def _body(kind, d, p1, p2):
@@ -374,4 +475,27 @@ def _body(kind, d, p1, p2):
                 f"max damage {d.get('max_damage', 0)} points.")
     if kind == "attack":
         return f"{int(d.get('sent', 0)):,} units took part."
+    if kind == "rich":
+        rest = "; ".join(f"{o['name']} ꞓ{o['credits']:,}" for o in d.get("others", []))
+        return f"The richest company holds ꞓ{int(d.get('credits', 0)):,}." + (f" Close behind: {rest}." if rest else "")
+    if kind == "workhorse":
+        return f"{int(d.get('points', 0)):,} points — nobody worked harder today."
+    if kind == "decadence":
+        return (f"{int(d.get('items', 0)):,} luxury items and {int(d.get('points', 0)):,} luxury points. "
+                "Gold-plated everything.")
+    if kind == "raw_output":
+        return f"Its mines dig up {int(d.get('perHour', 0)):,} raw resources every hour."
+    if kind == "factory_output":
+        return f"Its factories turn out {int(d.get('perHour', 0)):,} products every hour."
+    if kind == "jubilee100":
+        return "100 days of hard work — the first bottle of Moët & Chandon is open. Cheers!"
+    if kind == "anniversary":
+        y = int(d.get("years", 1))
+        if y == 1:
+            return "365 days in business: time for Dom Pérignon!"
+        if y == 5:
+            return "Half a decade! A jeroboam of Dom Pérignon for the whole company."
+        if y == 10:
+            return "A whole decade — Dom Pérignon Plénitude P3 from the vault, as is tradition."
+        return f"Another year, another Dom Pérignon. {y} years and counting."
     return ""

@@ -281,8 +281,7 @@ def count_events(conn, hid, type_, since_iso) -> int:
 DEFAULT_FEATURES = {
     "SOCIAL": True, "MARKET_V2": True, "QUESTS": True, "CARGO": True, "ARCHAEOLOGY": True,
     "COMBAT": True, "LOANS": True, "AUCTIONS": True, "NEWS": True, "EARTHQUAKES": True,
-    # Ratios not defined by the sources — off until the owner decides (systems/cargo.py RECYCLE).
-    "RECYCLING": False,
+    "RECYCLING": True,      # owner enabled 2026-10-19 (ratios: systems/cargo.py RECYCLE)
 }
 
 
