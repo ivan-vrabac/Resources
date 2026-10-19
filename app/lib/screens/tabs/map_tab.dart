@@ -2835,6 +2835,12 @@ class _MapMineSheetState extends State<_MapMineSheet> {
                     onPressed: _demolish,
                   )),
                 ]),
+                const SizedBox(height: 8),
+                SizedBox(width: double.infinity, child: OutlinedButton.icon(
+                  icon: const Icon(Icons.shield_outlined, size: 14),
+                  label: const Text('Defence'),
+                  onPressed: () => CombatActions.openDefence(context, mine.id),
+                )),
               ],
             ],
           ),

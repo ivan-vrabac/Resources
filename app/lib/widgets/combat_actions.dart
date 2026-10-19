@@ -19,6 +19,22 @@ class CombatActions {
     ForeignTargetSheet.extraActions.add(_build);
   }
 
+  /// Own mine: show its defence and station watch dogs / security staff / elite force on it.
+  static Future<void> openDefence(BuildContext context, String mineId) async {
+    final sid = context.read<PlayerProvider>().sid;
+    final info = await GameApi.call('/api/v1/combat/info', sid, {'mineID': mineId});
+    if (!context.mounted) return;
+    if (!info.ok) {
+      AppNotify.show(context, info.message ?? 'Unavailable', isError: true);
+      return;
+    }
+    final res = await showDialog<Map<String, dynamic>>(context: context, builder: (_) => _DefenceDialog(info: info.data));
+    if (res == null || !context.mounted) return;
+    final r = await GameApi.call('/api/v1/combat/station', sid, {'mineID': mineId, ...res});
+    if (!context.mounted) return;
+    AppNotify.show(context, r.ok ? 'Units stationed — they stay on this mine' : (r.message ?? 'Failed'), isError: !r.ok);
+  }
+
   static Widget _build(BuildContext context, Map<String, dynamic> t, LatLng? pos, VoidCallback onChanged) {
     if (t['type'] == 'hq' || t['mID'] == null) return const SizedBox.shrink();
     final cond = (t['cond'] as num?)?.toDouble() ?? 100;
@@ -168,5 +184,55 @@ class _ResultDialog extends StatelessWidget {
       ]),
       actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
     );
+  }
+}
+
+class _DefenceDialog extends StatefulWidget {
+  final Map<String, dynamic> info;
+  const _DefenceDialog({required this.info});
+  @override
+  State<_DefenceDialog> createState() => _DefenceDialogState();
+}
+
+class _DefenceDialogState extends State<_DefenceDialog> {
+  static const _units = [('95', 'dogs', 'Watch Dogs'), ('97', 'staff', 'Security Staff'), ('98', 'elite', 'Elite Force')];
+  final _n = <String, int>{'dogs': 0, 'staff': 0, 'elite': 0};
+
+  @override
+  Widget build(BuildContext context) {
+    final have = (widget.info['units'] as Map).cast<String, dynamic>();
+    final t = (widget.info['target'] as Map).cast<String, dynamic>();
+    final def = (t['defence'] as List?) ?? [0, 0, 0];
+    final vals = (t['defenceValues'] as List?) ?? [0, 0, 0];
+    return AlertDialog(
+      title: const Text('Mine defence'),
+      content: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Now: ${def[0]} watch dogs · ${def[1]} security staff · ${def[2]} elite'
+              '${t['inHqArea'] == true ? '\nInside your HQ area: +25% defence' : ''}',
+              style: const TextStyle(fontSize: 12)),
+          const Text('Every mine has 200 / 5 / 1 free guards; they return after a repair once defeated. '
+              'Stationed units stay on the mine permanently.', style: TextStyle(fontSize: 11, color: Colors.white54)),
+          const SizedBox(height: 8),
+          for (var k = 0; k < _units.length; k++) _row(k, (have[_units[k].$1] as num? ?? 0).toInt(), vals[k] as num),
+        ]),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(onPressed: _n.values.every((v) => v == 0) ? null : () => Navigator.pop(context, _n),
+            child: const Text('Station')),
+      ],
+    );
+  }
+
+  Widget _row(int k, int have, num value) {
+    final key = _units[k].$2, v = _n[key]!;
+    return Row(children: [
+      Expanded(child: Text('${_units[k].$3}\nvalue $value · have $have', style: const TextStyle(fontSize: 12))),
+      IconButton(icon: const Icon(Icons.remove), onPressed: v == 0 ? null : () => setState(() => _n[key] = max(0, v - 10))),
+      SizedBox(width: 44, child: Text('$v', textAlign: TextAlign.center)),
+      IconButton(icon: const Icon(Icons.add), onPressed: v >= have ? null : () => setState(() => _n[key] = min(have, v + 10))),
+      TextButton(onPressed: have == 0 ? null : () => setState(() => _n[key] = have), child: const Text('all')),
+    ]);
   }
 }
