@@ -125,6 +125,11 @@ def _summary(conn, hid) -> dict:
             "hqLevel": hq[0] if hq else 0}
 
 
+def public_ref(conn, hid) -> dict:
+    """Public reference to a player for other systems (no internal id)."""
+    return _summary(conn, hid)
+
+
 def install(api) -> None:
     h = api.h
     with h.get_db() as conn:

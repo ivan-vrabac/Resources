@@ -3462,8 +3462,7 @@ async def market_deal_req(request: Request):
         total_cost = round(added * req["price_unit"])
         conn.execute("UPDATE players SET credits=credits-? WHERE hID=?", (total_cost, hid))
         award_xp(conn, hid, int(total_cost))
-        conn.execute("UPDATE players SET credits=credits+? WHERE hID=?",
-                     (total_cost, req["seller_hid"]))
+        econ.credit(conn, req["seller_hid"], total_cost, "market_sell_legacy", req_id)
         new_qty = req["qty"] - added
         if new_qty <= 0.01:
             conn.execute("UPDATE market_req SET active=0 WHERE req_id=?", (req_id,))

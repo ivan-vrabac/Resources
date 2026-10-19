@@ -21,6 +21,7 @@ import 'chat_screen.dart';
 import 'contacts_screen.dart';
 import 'profile_screen.dart';
 import 'quests_screen.dart';
+import 'loans_screen.dart';
 import '../widgets/archaeology_map.dart';
 import 'placeholder_screen.dart';
 import 'settings_screen.dart';
@@ -63,7 +64,7 @@ final Map<GameTabId, _TabMeta> tabMeta = {
   GameTabId.chat: _TabMeta(label: 'Chat', icon: Icons.chat_bubble_outline,
       build: () => const ChatScreen()),
   GameTabId.loans: _TabMeta(label: 'Loans', icon: Icons.account_balance_wallet_outlined,
-      build: () => const PlaceholderScreen(title: 'Loans', icon: Icons.account_balance_wallet, subtitle: 'Borrow and lend credits')),
+      build: () => const LoansScreen(), needsScaffold: true),
   GameTabId.news: _TabMeta(label: 'News', icon: Icons.newspaper_outlined,
       build: () => const PlaceholderScreen(title: 'News', icon: Icons.newspaper, subtitle: 'Latest game updates')),
   GameTabId.quests: _TabMeta(label: 'Quests', icon: Icons.emoji_events_outlined,
