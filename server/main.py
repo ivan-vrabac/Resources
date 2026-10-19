@@ -1215,7 +1215,7 @@ def wh_add(conn, hid: str, item_id: int, qty: float, cap: float) -> float:
         return 0.0
     total = wh_total(conn, hid)
     space = max(0.0, cap - total)
-    added = min(qty, space)
+    added = econ.to_whole(conn, hid, item_id, min(qty, space), cap=space)   # whole units only
     if added <= 0:
         return 0.0
     conn.execute(
@@ -1459,8 +1459,8 @@ def collect_mines_bulk(conn, hid: str, only_ids=None) -> int:
         conn.executemany(
             "INSERT INTO warehouse(hid,item_id,qty) VALUES(?,?,?) "
             "ON CONFLICT(hid,item_id) DO UPDATE SET qty=qty+excluded.qty",
-            [(hid, res, q) for res, q in ((r, apply_output_hooks(conn, hid, r, qty) if qty and qty > 0 else 0)
-                                          for r, qty in adds) if q and q > 0])
+            [(hid, res, q) for res, q in ((r, econ.to_whole(conn, hid, r, apply_output_hooks(conn, hid, r, qty))
+                                           if qty and qty > 0 else 0) for r, qty in adds) if q and q > 0])
         conn.commit()
         return destroyed
     except Exception:

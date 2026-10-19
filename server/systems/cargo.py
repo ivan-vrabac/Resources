@@ -13,9 +13,13 @@ Documented assumptions (values are configurable constants below):
   item's museum level (sfo.txt column "Discoverable from museum level").
 - Collection range (by hand): 50 m + 15 m × Museum level (200 m at L10). Drop range: crates are
   scattered within DROP_SCATTER_M of the dropping player's position.
-- Pick-up is exclusive: the first valid collector gets the crate (atomic conditional update);
-  retries and simultaneous attempts can't pay twice. (eva.txt describes shared crates; next.txt
-  requires preventing duplicate collection, which takes precedence.)
+- * Shared crates (owner's rule): every player can collect a crate once (cargo_pickups primary key
+  (crate, player) → no duplicate collection). A crate disappears GONE_AFTER_FIRST_S (15 min) after
+  its first collection, otherwise CRATE_HOURS (24 h) after the drop.
+- * Contents are regular found objects only — no Giant Diamonds, Tech Upgrades or production
+  boosters (owner's rule) — and always whole units.
+- * Trucks (Haulage Firm ≥ 5): one tap collects every crate in truck range (the Haulage Firm boss
+  range, 100 m + 10 m/level) — TRUCK_CAPACITY crates or one stack per truck; trucks aren't used up.
 - Stacked Cargo Rain (one map object = 100 crates' contents) unlocks at Haulage Firm level
   STACK_HF_LEVEL. Stacks can only be collected by truck (needs ≥1 Trucks item, 124, not used up;
   within the hand collection range) or by drone (uses 1 Scan Drone, 117; needs Drone Research ≥ 5
@@ -50,7 +54,10 @@ DRONE_DR_LEVEL = 5
 MAX_DROP = 100
 MAX_STACKS_PER_DROP = 10
 DROP_SCATTER_M = 40.0
-CRATE_HOURS = 60
+CRATE_HOURS = 24
+GONE_AFTER_FIRST_S = 15 * 60
+TRUCK_CAPACITY = 10          # normal crates per truck per run (a stack needs one truck)
+TRUCK_HF_LEVEL = 5
 LOCAL_RANGE_BASE_M = 50.0
 LOCAL_RANGE_PER_MUSEUM_M = 15.0
 MUSEUM_QTY_BONUS = 0.05
@@ -60,10 +67,9 @@ LOOT = {
     57: ("Old Tires", 11.5, 0), 41: ("Fossils", 23.0, 0), 55: ("Copper Coins", 21.85, 0),
     40: ("Roman Coins", 14.95, 0), 70: ("Scrap Metal", 9.11, 3), 74: ("Used Oil", 7.36, 4),
     43: ("Maintenance Kit", 7.36, 4), 115: ("Waste Glass", 5.52, 6), 78: ("Electronic Scrap", 5.29, 6),
-    77: ("Plastic Scrap", 4.6, 6), 120: ("Drone Wreckage", 3.68, 7), 42: ("Giant Diamond", 0.02, 10),
-    44: ("Tech Upgrade 1", 0.58, 10), 45: ("Tech Upgrade 2", 0.23, 10), 46: ("Tech Upgrade 3", 0.12, 10),
-    48: ("Tech Upgrade 4", 0.02, 10), 159: ("Overtime", 0.12, 0), 158: ("Night Shift", 0.12, 0),
-    160: ("Guest Workers", 0.12, 0), 161: ("Wage Subsidy", 0.12, 0),
+    77: ("Plastic Scrap", 4.6, 6), 120: ("Drone Wreckage", 3.68, 7),
+    # sfo.txt also lists Giant Diamond, Tech Upgrades 1–4 and the production boosters 158–161;
+    # the owner excluded those from cargo (2026-10-19).
 }
 # Assumed quantity per crate (min, max) — not in the sources.
 QTY = {57: (1, 20), 41: (1, 20), 55: (1, 10), 40: (1, 10), 70: (5, 50), 74: (5, 50), 43: (1, 1),
@@ -103,7 +109,16 @@ def ensure_schema(conn) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_crates_geo ON cargo_crates(lat, lng);
         CREATE INDEX IF NOT EXISTS idx_crates_open ON cargo_crates(collected_by, expires_at);
+        CREATE TABLE IF NOT EXISTS cargo_pickups (
+            crate_id TEXT NOT NULL,
+            hid      TEXT NOT NULL,
+            ts       TEXT NOT NULL,
+            PRIMARY KEY (crate_id, hid)
+        );
     """)
+    # crates of earlier builds that hold items no longer allowed in cargo: drop them
+    conn.execute("DELETE FROM cargo_crates WHERE item_id IN (42, 44, 45, 46, 48, 158, 159, 160, 161) "
+                 "AND collected_by IS NULL")
 
 
 def stock(conn, hid) -> int:
@@ -127,6 +142,25 @@ def spend(conn, hid, n: int, source: str) -> None:
     if cur.rowcount != 1:
         raise econ.GameError("no_cargo", "Not enough Cargo Rain")
     econ._ledger(conn, hid, f"cargo_{source}", item_id=CARGO_ITEM, qty=-n)
+
+
+# crates a player can still see/collect: not expired, not gone 15 min after the first pick-up,
+# and not already collected by this player
+OPEN_SQL = ("SELECT c.* FROM cargo_crates c WHERE c.expires_at > ? "
+            "AND (c.collected_at IS NULL OR c.collected_at > ?) "
+            "AND NOT EXISTS (SELECT 1 FROM cargo_pickups p WHERE p.crate_id = c.id AND p.hid = ?)")
+
+
+def open_args(hid):
+    now = econ.utcnow()
+    return (now.isoformat(), (now - datetime.timedelta(seconds=GONE_AFTER_FIRST_S)).isoformat(), hid)
+
+
+def gone_at(c) -> str:
+    if c["collected_at"]:
+        t = datetime.datetime.fromisoformat(c["collected_at"]) + datetime.timedelta(seconds=GONE_AFTER_FIRST_S)
+        return min(t.isoformat(), c["expires_at"])
+    return c["expires_at"]
 
 
 def collect_range(museum_level: int) -> float:
@@ -163,6 +197,23 @@ def install(api) -> None:
         return {"museum": h.building_level(conn, hid, MUSEUM),
                 "haulage": h.building_level(conn, hid, HAULAGE_FIRM),
                 "droneResearch": h.building_level(conn, hid, DRONE_RESEARCH)}
+
+    def truck_range(hf_level: int) -> float:
+        return min(200.0, 100.0 + 10.0 * max(0, hf_level))
+
+    def take_crate(conn, hid, c, museum, strict=True) -> int:
+        """Record this player's pick-up of crate `c` and give the contents (whole units)."""
+        now = econ.utcnow_iso()
+        cur = conn.execute("INSERT OR IGNORE INTO cargo_pickups(crate_id, hid, ts) VALUES(?,?,?)", (c["id"], hid, now))
+        if cur.rowcount != 1:
+            raise econ.GameError("gone", "You already collected this crate")
+        conn.execute("UPDATE cargo_crates SET collected_by=COALESCE(collected_by, ?), "
+                     "collected_at=COALESCE(collected_at, ?) WHERE id=?", (hid, now, c["id"]))
+        amount = int(round(c["qty"] * (1 + MUSEUM_QTY_BONUS * museum)))
+        got = int(econ.give(conn, hid, c["item_id"], amount, "cargo_collect", c["id"], strict=strict))
+        econ.emit(conn, "cargo_collected", hid, {"crates": STACK_SIZE if c["stacked"] else 1,
+                                                  "itemID": c["item_id"], "qty": got}, public=False)
+        return got
 
     def drone_range(dr_level: int) -> float:
         if dr_level < DRONE_DR_LEVEL:
@@ -228,12 +279,10 @@ def install(api) -> None:
         if (lat2 - lat1) * (lng2 - lng1) > 1.0:          # don't serve continent-sized boxes
             return {"err": 0, "crates": [], "tooLarge": True}
         museum = h.building_level(conn, hid, MUSEUM)
-        rows = conn.execute("SELECT id, lat, lng, item_id, stacked, expires_at FROM cargo_crates "
-                            "WHERE collected_by IS NULL AND expires_at > ? AND museum_level <= ? "
-                            "AND lat BETWEEN ? AND ? AND lng BETWEEN ? AND ? LIMIT 2000",
-                            (econ.utcnow_iso(), museum, lat1, lat2, lng1, lng2)).fetchall()
-        return {"err": 0, "crates": [{"id": r[0], "lat": r[1], "lng": r[2], "itemID": r[3],
-                                      "stacked": bool(r[4]), "expiresAt": r[5]} for r in rows]}
+        rows = conn.execute(OPEN_SQL + " AND c.museum_level <= ? AND c.lat BETWEEN ? AND ? AND c.lng BETWEEN ? AND ? "
+                            "LIMIT 2000", open_args(hid) + (museum, lat1, lat2, lng1, lng2)).fetchall()
+        return {"err": 0, "crates": [{"id": r["id"], "lat": r["lat"], "lng": r["lng"], "itemID": r["item_id"],
+                                      "stacked": bool(r["stacked"]), "expiresAt": gone_at(r)} for r in rows]}
 
     @api.endpoint("/api/v1/cargo/collect", feature="CARGO")
     def collect(conn, hid, form):
@@ -243,9 +292,9 @@ def install(api) -> None:
         method = form.get("method", "hand")
         lat, lng = econ.parse_pos(form)
         with econ.tx(conn):
-            c = conn.execute("SELECT * FROM cargo_crates WHERE id=?", (crate_id,)).fetchone()
-            if not c or c["collected_by"] or c["expires_at"] <= econ.utcnow_iso():
-                raise econ.GameError("gone", "This crate is gone")
+            c = conn.execute(OPEN_SQL + " AND c.id=?", open_args(hid) + (crate_id,)).fetchone()
+            if not c:
+                raise econ.GameError("gone", "This crate is gone (or you already collected it)")
             lv = levels(conn, hid)
             if lv["museum"] < c["museum_level"]:
                 raise econ.GameError("not_visible", "Your Museum level is too low for this crate")
@@ -267,19 +316,50 @@ def install(api) -> None:
                 if method != "hand":
                     raise econ.GameError("bad_input", "Collect normal crates by hand")
                 econ.require_within(lat, lng, c["lat"], c["lng"], collect_range(lv["museum"]), "crate")
-            cur = conn.execute("UPDATE cargo_crates SET collected_by=?, collected_at=? "
-                               "WHERE id=? AND collected_by IS NULL", (hid, econ.utcnow_iso(), crate_id))
-            if cur.rowcount != 1:          # someone else got it first
-                raise econ.GameError("gone", "This crate is gone")
-            amount = round(c["qty"] * (1 + MUSEUM_QTY_BONUS * lv["museum"]), 2)
-            got = econ.give(conn, hid, c["item_id"], amount, "cargo_collect", c["id"], strict=True)
-            crates = STACK_SIZE if c["stacked"] else 1
-            econ.emit(conn, "cargo_collected", hid, {"crates": crates, "itemID": c["item_id"], "qty": got},
-                      public=False)
-            if c["item_id"] == 42 or c["item_id"] == 48:
-                econ.emit(conn, "rare_find", hid, {"itemID": c["item_id"], "qty": got},
-                          lat=round(c["lat"], 2), lng=round(c["lng"], 2))
+            got = take_crate(conn, hid, c, lv["museum"])
         return {"err": 0, "itemID": c["item_id"], "qty": got, "distance": round(d)}
+
+    @api.endpoint("/api/v1/cargo/truck", feature="CARGO")
+    def truck(conn, hid, form):
+        """Collect every crate in truck range with your trucks (Haulage Firm ≥ 5).
+        preview=1 → how many crates/stacks are in range and how many trucks that needs."""
+        lat, lng = econ.parse_pos(form)
+        preview = form.get("preview") == "1"
+        with econ.tx(conn):
+            lv = levels(conn, hid)
+            if lv["haulage"] < TRUCK_HF_LEVEL:
+                raise econ.GameError("locked", f"Truck collection needs Haulage Firm level {TRUCK_HF_LEVEL}")
+            trucks = int(econ.qty_of(conn, hid, TRUCKS))
+            rng_m = truck_range(lv["haulage"])
+            s_lat, n_lat, w_lng, e_lng = econ.bbox(lat, lng, rng_m)
+            rows = [c for c in conn.execute(OPEN_SQL + " AND c.museum_level <= ? AND c.lat BETWEEN ? AND ? "
+                                            "AND c.lng BETWEEN ? AND ? ORDER BY c.stacked, c.created_at",
+                                            open_args(hid) + (lv["museum"], s_lat, n_lat, w_lng, e_lng)).fetchall()
+                    if econ.dist_m(lat, lng, c["lat"], c["lng"]) <= rng_m]
+            normal = [c for c in rows if not c["stacked"]]
+            stacks = [c for c in rows if c["stacked"]]
+            needed = math.ceil(len(normal) / TRUCK_CAPACITY) + len(stacks)
+            if preview or not rows:
+                return {"err": 0, "crates": len(normal), "stacks": len(stacks), "trucksNeeded": needed,
+                        "trucks": trucks, "range": rng_m}
+            if trucks < 1:
+                raise econ.GameError("no_vehicle", "You have no Trucks")
+            # fill the trucks: normal crates first (TRUCK_CAPACITY per truck), then one stack per truck
+            loads = min(len(normal), trucks * TRUCK_CAPACITY)
+            free = trucks - math.ceil(loads / TRUCK_CAPACITY)
+            chosen = normal[:loads] + stacks[:max(0, free)]
+            got = {}
+            for c in chosen:
+                try:
+                    q = take_crate(conn, hid, c, lv["museum"], strict=False)
+                except econ.GameError:
+                    continue
+                if q > 0:
+                    got[c["item_id"]] = got.get(c["item_id"], 0) + q
+            used = math.ceil(loads / TRUCK_CAPACITY) + min(len(stacks), max(0, free))
+        return {"err": 0, "trucksUsed": used, "trucks": trucks, "collected": len(chosen),
+                "left": len(rows) - len(chosen),
+                "items": [{"itemID": k, "qty": v} for k, v in sorted(got.items(), key=lambda x: -x[1])]}
 
     @api.endpoint("/api/v1/cargo/recycle", feature="RECYCLING")
     def recycle(conn, hid, form):

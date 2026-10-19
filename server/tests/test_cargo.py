@@ -23,7 +23,7 @@ def _grant(hid, n):
 def _crates(dropper_hid):
     with main.get_db() as conn:
         return [dict(r) for r in conn.execute(
-            "SELECT * FROM cargo_crates WHERE dropper_hid=? AND collected_by IS NULL", (dropper_hid,))]
+            "SELECT * FROM cargo_crates WHERE dropper_hid=? AND collected_by IS NULL ORDER BY created_at", (dropper_hid,))]
 
 
 def _place(hid, item=41, q=5.0, museum=0, stacked=0, lat=LAT, lng=LNG):
@@ -77,11 +77,11 @@ def test_collect_range_museum_visibility_and_bonus():
     assert call(C + "collect", b_sid, id=far, lat=LAT, lng=LNG)["code"] == "out_of_range"   # 50 m at museum 0
     set_building(b_hid, 65, 5)                                                              # 125 m, +25%
     r = call(C + "collect", b_sid, id=far, lat=LAT, lng=LNG)
-    assert r["qty"] == pytest.approx(12.5) and qty(b_hid, 41) == pytest.approx(12.5)
-    assert call(C + "collect", b_sid, id=far, lat=LAT, lng=LNG)["code"] == "gone"           # once
+    assert r["qty"] == 12 and qty(b_hid, 41) == 12                          # 12.5 → whole units
+    assert call(C + "collect", b_sid, id=far, lat=LAT, lng=LNG)["code"] == "gone"           # once per player
 
 
-def test_simultaneous_collection_pays_once():
+def test_shared_crate_each_player_once_then_gone_after_15_min():
     d_hid, _, _ = new_player("cr")
     cid = _place(d_hid, item=41, q=10)
     players = [new_player(f"cp{i}", wh_level=3) for i in range(6)]
@@ -92,8 +92,37 @@ def test_simultaneous_collection_pays_once():
         t.start()
     for t in ts:
         t.join()
-    assert sum(1 for r in out if r["err"] == 0) == 1
-    assert sum(qty(p[0], 41) for p in players) == pytest.approx(10)
+    assert sum(1 for r in out if r["err"] == 0) == 6                       # shared: everyone gets it
+    assert all(qty(p[0], 41) == 10 for p in players)
+    again = [call(C + "collect", p[1], id=cid, lat=LAT, lng=LNG) for p in players[:2]]
+    assert all(r["code"] == "gone" for r in again)                          # but only once each
+    late, late_sid, _ = new_player("cl", wh_level=3)
+    with main.get_db() as conn:                                             # first pick-up 16 min ago
+        conn.execute("UPDATE cargo_crates SET collected_at='2000-01-01T00:00:00' WHERE id=?", (cid,))
+        conn.commit()
+    assert call(C + "collect", late_sid, id=cid, lat=LAT, lng=LNG)["code"] == "gone"
+
+
+def test_no_special_items_in_cargo():
+    for banned in (42, 44, 45, 46, 48, 158, 159, 160, 161):
+        assert banned not in cargo.LOOT
+
+
+def test_truck_collects_everything_nearby():
+    hid, sid, _ = new_player("ct", wh_level=10)
+    d_hid, _, _ = new_player("ctd")
+    lat0, lng0 = LAT + 1.0, LNG + 1.0                                             # away from other tests' crates
+    for i in range(12):                                                            # 12 crates within ~130 m
+        _place(d_hid, item=41, q=3, lat=lat0 + i * 0.0001, lng=lng0)
+    assert call(C + "truck", sid, lat=lat0, lng=lng0, preview=1)["code"] == "locked"
+    set_building(hid, 123, 5)                                                      # range 150 m
+    p = call(C + "truck", sid, lat=lat0, lng=lng0, preview=1)
+    assert p["crates"] == 12 and p["trucksNeeded"] == 2 and p["trucks"] == 0
+    assert call(C + "truck", sid, lat=lat0, lng=lng0)["code"] == "no_vehicle"
+    give(hid, 124, 1)
+    r = call(C + "truck", sid, lat=lat0, lng=lng0)
+    assert r["collected"] == 10 and r["left"] == 2 and r["items"] == [{"itemID": 41, "qty": 30}]
+    assert qty(hid, 124) == 1                                                      # trucks are not used up
 
 
 def test_stacked_cargo_needs_haulage_and_vehicle():

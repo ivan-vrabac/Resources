@@ -68,8 +68,11 @@ def test_bulk_matches_per_mine(tmp_path):
     assert mines_a.keys() == mines_b.keys()          # same mines destroyed
     assert mines_a == mines_b                        # same conditions
     assert wh_a.keys() == wh_b.keys()
-    for k in wh_a:  # same warehouse; collect_mine reads the clock per mine, so allow ms of drift
-        assert abs(wh_a[k] - wh_b[k]) < 1e-4 * max(1.0, wh_a[k])
+    # same warehouse. Stock is whole units (fractions carried per resource), and when the warehouse
+    # fills up the two paths round at slightly different points, so allow a few units per resource.
+    for k in wh_a:
+        assert abs(wh_a[k] - wh_b[k]) <= max(10, 1e-3 * wh_a[k])
+    assert all(float(v).is_integer() for v in list(wh_a.values()) + list(wh_b.values()))
 
 
 def test_bulk_is_fast_with_10k_mines(tmp_path):

@@ -130,8 +130,8 @@ def public_profile(conn, h, viewer_hid: str, target_hid: str) -> dict:
         if _has_table(conn, "luxury_points") else None
     out["luxuryPoints"] = int(lux[0]) if lux else 0
     out["luxuryItems"] = [{"itemID": r[0], "qty": int(r[1])} for r in conn.execute(
-        "SELECT item_id, qty FROM warehouse WHERE hid=? AND qty>=1 AND (item_id BETWEEN 128 AND 157 OR item_id=163) "
-        "ORDER BY item_id", (target_hid,))]
+        "SELECT item_id, qty FROM luxury_items WHERE hid=? AND qty>=1 ORDER BY item_id", (target_hid,))] \
+        if _has_table(conn, "luxury_items") else []
     out["artifacts"] = int(conn.execute(
         "SELECT COALESCE(SUM(qty),0) FROM warehouse WHERE hid=? AND item_id BETWEEN 172 AND 177", (target_hid,)).fetchone()[0])
     if _has_table(conn, "attacks"):

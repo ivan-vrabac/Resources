@@ -10,6 +10,20 @@ import main
 from helpers import call, client, credits, give, new_player, qty
 from systems import auctions as A
 
+
+def lux(hid, item, n):
+    """Luxury items live in luxury_items, not the warehouse."""
+    with main.get_db() as conn:
+        conn.execute("INSERT INTO luxury_items(hid, item_id, qty) VALUES(?,?,?) ON CONFLICT(hid, item_id) "
+                     "DO UPDATE SET qty=qty+excluded.qty", (hid, item, n))
+        conn.commit()
+
+
+def lux_qty(hid, item):
+    with main.get_db() as conn:
+        r = conn.execute("SELECT qty FROM luxury_items WHERE hid=? AND item_id=?", (hid, item)).fetchone()
+        return r[0] if r else 0
+
 R = "/api/v1/auctions"
 
 
@@ -85,7 +99,7 @@ def test_resources_reserved_refunded_points_and_settlement():
     _end(lot["id"])
     data = call(R, b_sid)
     assert len(data["active"]) == 1 and data["active"][0]["itemID"] != lot["itemID"]   # next item
-    assert qty(b, lot["itemID"]) == 1 and qty(b, res) == lot["minBid"] * 10 - nxt
+    assert lux_qty(b, lot["itemID"]) == 1 and qty(b, lot["itemID"]) == 0 and qty(b, res) == lot["minBid"] * 10 - nxt
     assert _points(b) == A.points_for(lot["itemID"], nxt) + A.win_points(lot["itemID"], nxt)
     assert A.win_points(lot["itemID"], nxt) > 10 * A.points_for(lot["itemID"], nxt)
     h = call(R + "/item", a_sid, itemID=lot["itemID"])
@@ -95,7 +109,7 @@ def test_resources_reserved_refunded_points_and_settlement():
 def test_ownership_limit_counts_owned_and_leading():
     hid, sid = _bidder("au4")
     lot = _lot(sid)
-    give(hid, lot["itemID"], 10)
+    lux(hid, lot["itemID"], 10)
     give(hid, lot["resID"], lot["minBid"])
     assert call(R + "/bid", sid, auctionID=lot["id"], amount=lot["minBid"])["code"] == "limit"
 
@@ -124,11 +138,11 @@ def test_dividend_per_holder_new_money_jackpot_unchanged():
     spinner, _, _ = new_player("au9")
     item = A.symbol_item(5)
     with main.get_db() as conn:
-        conn.execute("DELETE FROM warehouse WHERE item_id=?", (item,))
+        conn.execute("DELETE FROM luxury_items WHERE item_id=?", (item,))
         conn.execute("UPDATE jackpot SET amount=100000000000 WHERE id=1")
         conn.commit()
-    give(h1, item, 30)                                            # counts as 10 → 10 %
-    give(h2, item, 3)                                             # 3 %
+    lux(h1, item, 30)                                            # counts as 10 → 10 %
+    lux(h2, item, 3)                                             # 3 %
     c1, c2 = credits(h1), credits(h2)
     with main.get_db() as conn:
         with econ.tx(conn):

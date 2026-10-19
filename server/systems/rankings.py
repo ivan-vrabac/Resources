@@ -116,8 +116,7 @@ def install(api) -> None:
         out = []
         for i, r in enumerate(rows):
             items = [{"itemID": x[0], "qty": int(x[1])} for x in conn.execute(
-                "SELECT item_id, qty FROM warehouse WHERE hid=? AND qty>=1 AND (item_id BETWEEN 128 AND 157 OR item_id=163) "
-                "ORDER BY qty DESC", (r[0],))]
+                "SELECT item_id, qty FROM luxury_items WHERE hid=? AND qty>=1 ORDER BY qty DESC", (r[0],))]
             out.append({"rank": i + 1, **social.public_ref(conn, r[0]), "points": r[1], "items": items,
                         "isMe": r[0] == hid})
         mine = conn.execute("SELECT points FROM luxury_points WHERE hid=?", (hid,)).fetchone()

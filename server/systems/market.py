@@ -3,9 +3,11 @@
 Rules (documented assumptions, see .private/NEXT-PROGRESS.md):
 - System trade (items with a system price only): sell to the system at 100% of the system price,
   buy from the system at 150%. Unlimited volume. No transport tax (the 50% markup is the system's).
-- Player orders: buy orders escrow credits (price × qty + tax), sell orders escrow items. New orders
-  first match the opposite side at the resting order's price (best price first, then oldest); the
-  rest stays open for ORDER_DAYS days, then is refunded.
+- * Only BUY orders can be placed (owner's rule 2026-10-19): a player sells by filling an existing
+  buy order (or to the system). One open buy order per player and item; it can be edited (price
+  change = new time priority) or cancelled. Book order: price high→low, then oldest first.
+  Buy orders escrow credits (price × qty + tax) and stay open ORDER_DAYS days, then are refunded.
+  Quantities are whole units.
 - Transport tax (Haulage Firm, item 123): 15% − 1% per level (5% at level 10), as in eva.txt.
   Charged once per trade to the side that placed the RESTING order (the "request"):
     · resting buy order → buyer paid it up front with the order (refunded pro rata if unfilled);
@@ -177,10 +179,20 @@ def install(api) -> None:
 
     def parse_order(form):
         item_id = int_arg(form, "itemID", None, 1)
-        qty = float_arg(form, "qty", None, 0, MAX_QTY)
+        qty = int_arg(form, "qty", None, 0, int(MAX_QTY))     # whole units only
         if qty <= 0:
             raise econ.GameError("bad_input", "Quantity must be positive")
         return item_id, qty
+
+    def check_bid(conn, hid, item_id, price):
+        top = conn.execute("SELECT * FROM mkt_orders WHERE item_id=? AND side='buy' AND status='open' AND hid<>? "
+                           "ORDER BY price DESC, created_at LIMIT 1", (item_id, hid)).fetchone()
+        if top and price > top["price"] * MAX_BID_OVER_TOP + 1e-9:
+            raise econ.GameError("price_too_high",
+                                 f"Bid at most 25% above the best bid ({top['price'] * MAX_BID_OVER_TOP:.2f})")
+        sp = prices.get(item_id)
+        if sp and price > sp * SYSTEM_BUY_MARKUP:
+            raise econ.GameError("price_too_high", "Buying from the system is cheaper")
 
     # ── read endpoints ──────────────────────────────────────────────────────
 
@@ -212,11 +224,14 @@ def install(api) -> None:
     def book(conn, hid, form):
         item_id = int_arg(form, "itemID", None, 1)
         p = prices.get(item_id)
-        return {"err": 0, "itemID": item_id, "bids": book_side(conn, hid, item_id, "buy"),
-                "asks": book_side(conn, hid, item_id, "sell"),
+        mine = conn.execute("SELECT * FROM mkt_orders WHERE hid=? AND item_id=? AND side='buy' AND status='open'",
+                            (hid, item_id)).fetchone()
+        return {"err": 0, "itemID": item_id, "bids": book_side(conn, hid, item_id, "buy", limit=50),
                 "systemSell": p, "systemBuy": round(p * SYSTEM_BUY_MARKUP, 2) if p else None,
                 "owned": econ.qty_of(conn, hid, item_id), "taxRate": my_tax(conn, hid),
-                "credits": econ.credits_of(conn, hid)}
+                "credits": econ.credits_of(conn, hid), "freeSpace": int(econ.free_space(conn, hid)),
+                "myOrder": None if not mine else {"id": mine["id"], "price": mine["price"], "qty": int(mine["qty_open"]),
+                                                  "escrow": round(mine["escrow"]), "expiresAt": mine["expires_at"]}}
 
     @api.endpoint("/api/v1/market/mine", feature="MARKET_V2")
     def my_orders(conn, hid, form):
@@ -309,79 +324,68 @@ def install(api) -> None:
 
     @api.endpoint("/api/v1/market/order", feature="MARKET_V2")
     def place_order(conn, hid, form):
-        """Place a buy or sell order. It first fills against the best opposite orders; any remaining
-        quantity rests in the book (escrowed) until filled, cancelled or expired."""
-        side = form.get("side", "")
-        if side not in ("buy", "sell"):
-            raise econ.GameError("bad_input", "side must be buy or sell")
+        """Place a buy order (the only kind of player order). Credits (price × qty + your tax) are
+        held until it fills, is edited, cancelled or expires. One open order per item."""
+        if form.get("side", "buy") != "buy":
+            raise econ.GameError("bad_input", "Only buy orders can be placed — sell by filling a buy order")
         item_id, qty = parse_order(form)
         check_tradeable(item_id)
         price = round(float_arg(form, "price", None, 0.01, 1e12), 2)
 
         def run():
-            fills, remaining = [], qty
-            if side == "buy":
-                top = best(conn, item_id, "buy")
-                if top and top["hid"] != hid and price > top["price"] * MAX_BID_OVER_TOP + 1e-9:
-                    raise econ.GameError("price_too_high",
-                                         f"Bid at most 25% above the best bid ({top['price'] * MAX_BID_OVER_TOP:.2f})")
-                sp = prices.get(item_id)
-                if sp and price > sp * SYSTEM_BUY_MARKUP:
-                    raise econ.GameError("price_too_high", "Buying from the system is cheaper")
-                # match resting sells (cheapest first), never your own
-                while remaining > 1e-9:
-                    o = conn.execute("SELECT * FROM mkt_orders WHERE item_id=? AND side='sell' AND status='open' "
-                                     "AND price <= ? AND hid != ? ORDER BY price ASC, created_at LIMIT 1",
-                                     (item_id, price, hid)).fetchone()
-                    if not o:
-                        break
-                    q = min(remaining, o["qty_open"])
-                    fills.append(fill_resting_sell(conn, o, hid, q))
-                    remaining = round(remaining - q, 6)
-                order_id = None
-                if remaining > 1e-9:
-                    rate = my_tax(conn, hid)
-                    value = round(remaining * price)
-                    escrow = value + round(value * rate)
-                    if econ.free_space(conn, hid) < remaining - 1e-9:
-                        raise econ.GameError("warehouse_full", "Not enough warehouse space for this order")
-                    order_id = uuid.uuid4().hex
-                    econ.debit(conn, hid, escrow, "market_order_escrow", order_id)
-                    insert(order_id, "buy", remaining, escrow, rate)
-            else:
-                econ.take(conn, hid, item_id, qty, "market_order_escrow")  # escrow all items now
-                # match resting buys (highest first), never your own
-                while remaining > 1e-9:
-                    o = conn.execute("SELECT * FROM mkt_orders WHERE item_id=? AND side='buy' AND status='open' "
-                                     "AND price >= ? AND hid != ? ORDER BY price DESC, created_at LIMIT 1",
-                                     (item_id, price, hid)).fetchone()
-                    if not o:
-                        break
-                    q = min(remaining, o["qty_open"])
-                    econ.give(conn, hid, item_id, q, "market_match", ignore_capacity=True)  # un-escrow, then sell
-                    fills.append(fill_resting_buy(conn, o, hid, q))
-                    remaining = round(remaining - q, 6)
-                order_id = None
-                if remaining > 1e-9:
-                    order_id = uuid.uuid4().hex
-                    insert(order_id, "sell", remaining, 0, my_tax(conn, hid))
-            filled = round(qty - remaining, 6)
-            return {"err": 0, "filled": filled, "fills": fills, "orderID": order_id,
-                    "resting": remaining if order_id else 0}
-
-        def insert(order_id, side_, q, escrow, rate):
+            if conn.execute("SELECT 1 FROM mkt_orders WHERE hid=? AND item_id=? AND side='buy' AND status='open'",
+                            (hid, item_id)).fetchone():
+                raise econ.GameError("duplicate", "You already have a buy order for this item — edit or cancel it")
+            check_bid(conn, hid, item_id, price)
+            if econ.free_space(conn, hid) < qty:
+                raise econ.GameError("warehouse_full", "Not enough warehouse space for this order")
+            rate = my_tax(conn, hid)
+            value = round(qty * price)
+            escrow = value + round(value * rate)
+            order_id = uuid.uuid4().hex
+            econ.debit(conn, hid, escrow, "market_order_escrow", order_id)
             now = econ.utcnow()
             conn.execute("INSERT INTO mkt_orders(id, hid, side, item_id, price, qty_total, qty_open, escrow, "
                          "tax_rate, status, created_at, expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                         (order_id, hid, side_, item_id, price, q, q, escrow, rate, "open", now.isoformat(),
+                         (order_id, hid, "buy", item_id, price, qty, qty, escrow, rate, "open", now.isoformat(),
                           (now + datetime.timedelta(days=ORDER_DAYS)).isoformat()))
+            return {"err": 0, "orderID": order_id, "escrow": escrow, "tax": escrow - value}
         return idempotent(conn, hid, form, "market_order", run)
+
+    @api.endpoint("/api/v1/market/edit", feature="MARKET_V2")
+    def edit_order(conn, hid, form):
+        """Change price and/or quantity of your buy order. A new price gets a new time priority."""
+        order_id = (form.get("orderID") or "").strip()
+        qty = int_arg(form, "qty", None, 1, int(MAX_QTY))
+        price = round(float_arg(form, "price", None, 0.01, 1e12), 2)
+
+        def run():
+            o = conn.execute("SELECT * FROM mkt_orders WHERE id=? AND hid=? AND status='open' AND side='buy'",
+                             (order_id, hid)).fetchone()
+            if not o:
+                raise econ.GameError("gone", "Order not found or already closed")
+            check_tradeable(o["item_id"])
+            check_bid(conn, hid, o["item_id"], price)
+            econ.credit(conn, hid, o["escrow"], "market_edit_refund", o["id"])
+            if econ.free_space(conn, hid) < qty:
+                raise econ.GameError("warehouse_full", "Not enough warehouse space for this order")
+            rate = my_tax(conn, hid)
+            value = round(qty * price)
+            escrow = value + round(value * rate)
+            econ.debit(conn, hid, escrow, "market_order_escrow", o["id"])
+            now = econ.utcnow()
+            created = o["created_at"] if abs(price - o["price"]) < 1e-9 else now.isoformat()
+            conn.execute("UPDATE mkt_orders SET price=?, qty_total=?, qty_open=?, escrow=?, tax_rate=?, created_at=?, "
+                         "expires_at=? WHERE id=?", (price, qty, qty, escrow, rate, created,
+                                                     (now + datetime.timedelta(days=ORDER_DAYS)).isoformat(), o["id"]))
+            return {"err": 0, "orderID": o["id"], "escrow": escrow, "tax": escrow - value}
+        return idempotent(conn, hid, form, "market_edit", run)
 
     @api.endpoint("/api/v1/market/take", feature="MARKET_V2")
     def take_order(conn, hid, form):
         """Fill a specific resting order (sell into a buy order, or buy from a sell order)."""
         order_id = (form.get("orderID") or "").strip()
-        qty = float_arg(form, "qty", None, 0, MAX_QTY)
+        qty = int_arg(form, "qty", None, 0, int(MAX_QTY))
 
         def run():
             o = conn.execute("SELECT * FROM mkt_orders WHERE id=? AND status='open'", (order_id,)).fetchone()
@@ -407,3 +411,9 @@ def install(api) -> None:
             refund = round(o["escrow"]) if o["side"] == "buy" else o["qty_open"]
             close_order(conn, o, "cancelled")
         return {"err": 0, "side": o["side"], "refunded": refund}
+
+    # sell orders no longer exist (owner's rule): return the items of any still open
+    with h.get_db() as conn:
+        for o in conn.execute("SELECT * FROM mkt_orders WHERE side='sell' AND status='open'").fetchall():
+            with econ.tx(conn):
+                close_order(conn, o, "cancelled")

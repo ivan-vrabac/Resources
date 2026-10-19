@@ -67,6 +67,12 @@ def init(conn, capacity_fn=None, non_warehouse_items=None) -> None:
             ref      TEXT                     -- order id, quest id, ...
         );
         CREATE INDEX IF NOT EXISTS idx_ledger_hid_ts ON ledger(hid, ts);
+        CREATE TABLE IF NOT EXISTS wh_carry (
+            hid     TEXT NOT NULL,
+            item_id INTEGER NOT NULL,
+            frac    REAL NOT NULL DEFAULT 0,
+            PRIMARY KEY (hid, item_id)
+        );
         CREATE TABLE IF NOT EXISTS idempotency (
             scope  TEXT NOT NULL,
             hid    TEXT NOT NULL,
@@ -94,6 +100,11 @@ def init(conn, capacity_fn=None, non_warehouse_items=None) -> None:
             state    TEXT NOT NULL DEFAULT '{}'
         );
     """)
+    # whole units only: move any fractional part of existing stock into wh_carry (runs until clean)
+    conn.execute("INSERT INTO wh_carry(hid, item_id, frac) "
+                 "SELECT hid, item_id, qty - CAST(qty AS INTEGER) FROM warehouse WHERE qty <> CAST(qty AS INTEGER) "
+                 "ON CONFLICT(hid, item_id) DO UPDATE SET frac = MIN(0.999999, frac + excluded.frac)")
+    conn.execute("UPDATE warehouse SET qty = CAST(qty AS INTEGER) WHERE qty <> CAST(qty AS INTEGER)")
     conn.commit()
 
 
@@ -189,6 +200,22 @@ def take(conn, hid, item_id, qty, kind, ref=None) -> None:
     _ledger(conn, hid, kind, item_id=item_id, qty=-qty, ref=ref)
 
 
+def to_whole(conn, hid, item_id, qty, cap=None) -> int:
+    """Warehouses hold whole units only (owner's rule). Turn a possibly fractional amount (mine
+    or factory output) into whole units; the remainder is kept per player and item in wh_carry
+    and added next time, so nothing is lost over many small collections. `cap` limits the result."""
+    r = conn.execute("SELECT frac FROM wh_carry WHERE hid=? AND item_id=?", (hid, item_id)).fetchone()
+    total = max(0.0, float(qty)) + (float(r[0]) if r else 0.0)
+    whole = int(math.floor(total + 1e-9))
+    if cap is not None:
+        whole = max(0, min(whole, int(math.floor(cap + 1e-9))))
+    frac = min(0.999999, max(0.0, round(total - whole, 6)))
+    if r or frac:
+        conn.execute("INSERT INTO wh_carry(hid, item_id, frac) VALUES(?,?,?) ON CONFLICT(hid, item_id) "
+                     "DO UPDATE SET frac=excluded.frac", (hid, item_id, frac))
+    return whole
+
+
 def give(conn, hid, item_id, qty, kind, ref=None, *, strict=True, ignore_capacity=False) -> float:
     """Add items. strict=True: fail if the warehouse can't hold all of it (purchases, transfers).
     strict=False: add what fits and return the amount added (rewards, like production).
@@ -201,6 +228,7 @@ def give(conn, hid, item_id, qty, kind, ref=None, *, strict=True, ignore_capacit
         return 0.0
     if item_id in NON_WAREHOUSE_ITEMS:
         raise GameError("not_storable", "This item can't be stored in the warehouse")
+    space = None
     if not ignore_capacity:
         space = free_space(conn, hid)
         if qty > space + 1e-9:
@@ -209,6 +237,9 @@ def give(conn, hid, item_id, qty, kind, ref=None, *, strict=True, ignore_capacit
             qty = space
             if qty <= 0:
                 return 0.0
+    qty = to_whole(conn, hid, item_id, qty, cap=space)
+    if qty <= 0:
+        return 0.0
     conn.execute("INSERT INTO warehouse(hid,item_id,qty) VALUES(?,?,?) "
                  "ON CONFLICT(hid,item_id) DO UPDATE SET qty = qty + excluded.qty", (hid, item_id, qty))
     _ledger(conn, hid, kind, item_id=item_id, qty=qty, ref=ref)

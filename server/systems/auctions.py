@@ -131,6 +131,13 @@ def init_schema(conn) -> None:
             ts         TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_auction_bids ON auction_bids(auction_id, id);
+        CREATE TABLE IF NOT EXISTS luxury_items (     -- owner's rule: luxury items are not warehouse stock
+            hid     TEXT NOT NULL,
+            item_id INTEGER NOT NULL,
+            qty     INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (hid, item_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_luxury_items_item ON luxury_items(item_id);
         CREATE TABLE IF NOT EXISTS luxury_points (
             hid    TEXT PRIMARY KEY,
             points INTEGER NOT NULL DEFAULT 0
@@ -146,6 +153,11 @@ def init_schema(conn) -> None:
             holders    INTEGER NOT NULL
         );
     """)
+    # move luxury items out of the warehouse (earlier builds stored them there)
+    q = ",".join(str(i) for i in LUXURY)
+    conn.execute(f"INSERT INTO luxury_items(hid, item_id, qty) SELECT hid, item_id, CAST(qty AS INTEGER) FROM warehouse "
+                 f"WHERE item_id IN ({q}) AND qty >= 1 ON CONFLICT(hid, item_id) DO UPDATE SET qty = qty + excluded.qty")
+    conn.execute(f"DELETE FROM warehouse WHERE item_id IN ({q})")
     # bid currency changed from credits to resources: settle leftovers of earlier dev builds
     for a in conn.execute("SELECT * FROM auctions WHERE status='open' AND start_price>=1000000 AND top_hid IS NOT NULL").fetchall():
         try:
@@ -158,7 +170,13 @@ def init_schema(conn) -> None:
 
 
 def owned(conn, hid, item_id) -> int:
-    return int(econ.qty_of(conn, hid, item_id))
+    r = conn.execute("SELECT qty FROM luxury_items WHERE hid=? AND item_id=?", (hid, item_id)).fetchone()
+    return int(r[0]) if r else 0
+
+
+def add_luxury(conn, hid, item_id, qty) -> None:
+    conn.execute("INSERT INTO luxury_items(hid, item_id, qty) VALUES(?,?,?) ON CONFLICT(hid, item_id) "
+                 "DO UPDATE SET qty = qty + excluded.qty", (hid, item_id, int(qty)))
 
 
 def leading(conn, hid, item_id) -> int:
@@ -183,7 +201,7 @@ def pay_dividend(conn, sym, spinner_hid, h=None):
         return None
     jackpot = int(conn.execute("SELECT amount FROM jackpot WHERE id=1").fetchone()[0])
     holders = [(r[0], min(MAX_OWN, int(r[1]))) for r in
-               conn.execute("SELECT hid, qty FROM warehouse WHERE item_id=? AND qty>=1", (item,)).fetchall()]
+               conn.execute("SELECT hid, qty FROM luxury_items WHERE item_id=? AND qty>=1", (item,)).fetchall()]
     did = uuid.uuid4().hex
     paid = 0
     for hid, q in holders:
@@ -213,13 +231,13 @@ def sweep(conn, h, now, rng=None) -> list:
             if cur.rowcount != 1:
                 continue
             # the bid resources were taken when bidding; the winner now receives the item
-            econ.give(conn, a["top_hid"], a["item_id"], a["qty"], "auction_won", a["id"], ignore_capacity=True)
+            add_luxury(conn, a["top_hid"], a["item_id"], a["qty"])
             add_points(conn, a["top_hid"], win_points(a["item_id"], a["top_bid"]))
             h.add_proto(conn, a["top_hid"], "auctionwon", {"itemID": a["item_id"], "price": a["top_bid"],
                                                             "resID": BID_RESOURCE[a["item_id"]]})
             econ.emit(conn, "auction_won", a["top_hid"], {"itemID": a["item_id"], "price": a["top_bid"],
                                                           "resID": BID_RESOURCE[a["item_id"]]})
-            pushes.append((a["top_hid"], "Auction won", "You won the luxury auction. The item is in your warehouse."))
+            pushes.append((a["top_hid"], "Auction won", "You won the luxury auction. See it in your luxury collection."))
         else:
             conn.execute("UPDATE auctions SET status='expired', settled_at=? WHERE id=? AND status='open'", (iso, a["id"]))
     if not conn.execute("SELECT 1 FROM auctions WHERE status='open'").fetchone():
@@ -236,6 +254,7 @@ def sweep(conn, h, now, rng=None) -> list:
 def install(api) -> None:
     h = api.h
     _prices.update(h.SYSTEM_PRICES)
+    econ.NON_WAREHOUSE_ITEMS.update(LUXURY)
     with h.get_db() as conn:
         init_schema(conn)
     h.CASINO_FIVE_HOOKS.append(lambda conn, sym, hid: pay_dividend(conn, sym, hid, h))

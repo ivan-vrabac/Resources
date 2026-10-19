@@ -7,6 +7,14 @@ from helpers import call, give, new_player, set_building
 from systems import rankings
 
 
+
+def lux(hid, item, n):
+    with main.get_db() as conn:
+        conn.execute("INSERT INTO luxury_items(hid, item_id, qty) VALUES(?,?,?) ON CONFLICT(hid, item_id) "
+                     "DO UPDATE SET qty=qty+excluded.qty", (hid, item, n))
+        conn.commit()
+
+
 def _mine(owner, item_id=4, lat=46.5, lng=16.5, quality=100):
     with main.get_db() as conn:
         conn.execute("INSERT INTO mines(mine_id, owner_hid, lat, lng, item_id, quality, condition) VALUES(?,?,?,?,?,?,100)",
@@ -46,12 +54,12 @@ def test_luxury_board_and_company_sheet():
     with main.get_db() as conn:
         conn.execute("INSERT INTO luxury_points(hid, points) VALUES(?, 999999)", (a,))
         conn.commit()
-    give(a, 128, 2)
+    lux(a, 128, 2)
     _mine(a, item_id=4)
     set_building(a, 86, 3)                                       # Mafia HQ (special building)
     set_building(a, 25, 2)                                       # brick factory
-    lux = call("/api/v1/rank/luxury", v_sid)
-    top = lux["rows"][0]
+    board = call("/api/v1/rank/luxury", v_sid)
+    top = board["rows"][0]
     assert top["name"] == a_name and top["points"] == 999999 and top["items"][0]["itemID"] == 128
     pid = top["pid"]
     p = call("/api/v1/social/profile", v_sid, pid=pid)["profile"]
