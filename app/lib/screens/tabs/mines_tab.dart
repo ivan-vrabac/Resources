@@ -32,11 +32,8 @@ List<Mine> _sortMines(List<Mine> mines, _SortMode mode, bool asc) {
 }
 
 int _mineRefund(Mine m)     => ((kMineBuildCost[m.itemId] ?? 0) * 0.1).round();
-int _mineRepairCost(Mine m) {
-  final deficit = 100 - m.condition;
-  final base    = (kMineBaseRate[m.itemId] ?? 100) * 10;
-  return (deficit * base / 100).round();
-}
+/// Server-calculated repair cost (see repair_cost_of in server/main.py).
+int _mineRepairCost(Mine m) => m.repairCost;
 
 // ── MinesTab ────────────────────────────────────────────────────────────────
 
@@ -1068,11 +1065,7 @@ class _MineTileState extends State<_MineTile> {
     child: Text(text, style: TextStyle(color: color, fontSize: 11)),
   );
 
-  int _repairCost() {
-    final deficit = 100 - mine.condition;
-    final base    = (kMineBaseRate[mine.itemId] ?? 100) * 10;
-    return (deficit * base / 100).round();
-  }
+  int _repairCost() => mine.repairCost;
 }
 
 // ── TechUpgradeSheet (shared by Mines tab and map mine sheet) ───────────────────────────────────────────────────────

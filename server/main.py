@@ -920,6 +920,13 @@ def award_xp(conn, hid: str, credits_spent: int):
 
 # Called as hook(conn, hid, old_level, new_level) inside the transaction that levelled up.
 LEVEL_UP_HOOKS = []
+OUTPUT_HOOKS = []        # fn(conn, hid, item_id, qty) -> qty kept; mining + factory output (loan garnishment)
+
+def apply_output_hooks(conn, hid, item_id, qty):
+    for hook in OUTPUT_HOOKS:
+        qty = hook(conn, hid, item_id, qty)
+    return qty
+
 CASINO_FIVE_HOOKS = []   # fn(conn, symbol, spinner_hid) -> dict | None, inside the roll transaction
 
 STARTING_CREDITS = 50000
@@ -1091,6 +1098,10 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_mines_lat_lng ON mines(lat, lng)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_hq_lat_lng ON hq(lat, lng)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_mines_owner ON mines(owner_hid)")
+        # also created by systems/combat.py; needed here because mine_rows() joins it
+        conn.execute("""CREATE TABLE IF NOT EXISTS mine_defence (
+            mine_id TEXT PRIMARY KEY, dogs INTEGER NOT NULL DEFAULT 0, staff INTEGER NOT NULL DEFAULT 0,
+            elite INTEGER NOT NULL DEFAULT 0, default_down INTEGER NOT NULL DEFAULT 0)""")
         conn.commit()
 
 init_db()
@@ -1234,6 +1245,31 @@ def hq_boost_for_mine(conn, mine) -> float:
         return 1.0
     return HQ_BOOST_FACTORS.get(hq["level"], 1.0)
 
+# ── Repair cost (owner's rule, 2026-10-19) ───────────────────────────────────────
+# The better a mine produces, the cheaper it is to repair: cost = 5 % of the build cost
+# ÷ output factor, where output factor = quality × tech × condition × HQ boost (a plain mine at
+# 100 % quality, no tech, 100 % condition, outside the HQ area = 1.0 → 5 % as before). The best
+# possible mine (100 % Q, +500 % tech, 100 % cond, HQ level 10 ×10) = 60 → 1/60 of that. Losing
+# condition makes it dearer; leaving the HQ area makes it up to 10× dearer (HQ level 10).
+# Stationed defence units raise the cost: +1 % per 100 defence points stationed.
+REPAIR_BASE_SHARE = 0.05
+REPAIR_MIN = 100
+REPAIR_DEFENCE_PER_PCT = 100.0
+REPAIR_DEFENCE_VALUES = (5.0, 50.0, 100.0)   # watch dogs, security staff, elite (= combat DEFENCE_BASE)
+
+def repair_cost_of(item_id, quality, condition, tu1, tu2, tu3, tu4, hq_f, dogs=0, staff=0, elite=0) -> int:
+    base = MINE_TYPES.get(item_id, {}).get("cost", 1000) * REPAIR_BASE_SHARE
+    tech = 1.0 + ((tu1 or 0) * 1.0 + (tu2 or 0) * 1.0 + (tu3 or 0) * 1.5 + (tu4 or 0) * 1.5) / 100.0
+    out = (quality or 1) / 100.0 * tech * max(0.05, float(condition) / 100.0) * (hq_f or 1.0)
+    defence = (dogs or 0) * REPAIR_DEFENCE_VALUES[0] + (staff or 0) * REPAIR_DEFENCE_VALUES[1] \
+        + (elite or 0) * REPAIR_DEFENCE_VALUES[2]
+    return max(REPAIR_MIN, round(base / max(0.01, out) * (1 + defence / REPAIR_DEFENCE_PER_PCT / 100.0)))
+
+def compute_repair_cost(conn, mine) -> int:
+    d = conn.execute("SELECT dogs, staff, elite FROM mine_defence WHERE mine_id=?", (mine["mine_id"],)).fetchone()
+    return repair_cost_of(mine["item_id"], mine["quality"], mine["condition"], mine["tu1"], mine["tu2"],
+                          mine["tu3"], mine["tu4"], hq_boost_for_mine(conn, mine), *(tuple(d) if d else ()))
+
 def collect_mine(conn, mine) -> tuple:
     """Calculate pending production, add to warehouse. Returns (amount_added, mine_destroyed)."""
     player = get_player(conn, mine["owner_hid"])
@@ -1307,6 +1343,7 @@ def collect_mine(conn, mine) -> tuple:
 
     added = 0.0
     if amount >= 0.01:
+        amount = apply_output_hooks(conn, mine["owner_hid"], mt["res"], amount)
         cap = wh_capacity(player["wh_level"])
         added = wh_add(conn, mine["owner_hid"], mt["res"], amount, cap)
 
@@ -1422,7 +1459,8 @@ def collect_mines_bulk(conn, hid: str, only_ids=None) -> int:
         conn.executemany(
             "INSERT INTO warehouse(hid,item_id,qty) VALUES(?,?,?) "
             "ON CONFLICT(hid,item_id) DO UPDATE SET qty=qty+excluded.qty",
-            [(hid, res, qty) for res, qty in adds if qty and qty > 0])
+            [(hid, res, q) for res, q in ((r, apply_output_hooks(conn, hid, r, qty) if qty and qty > 0 else 0)
+                                          for r, qty in adds) if q and q > 0])
         conn.commit()
         return destroyed
     except Exception:
@@ -1461,15 +1499,19 @@ def mine_rows(conn, hid: str, where: str = "", args: tuple = (), order: str = "m
         SELECT m.mine_id, m.lat, m.lng, m.item_id, COALESCE(t.res, 0), m.quality, m.condition,
                m.level, COALESCE(m.tu1,0), COALESCE(m.tu2,0), COALESCE(m.tu3,0), COALESCE(m.tu4,0),
                m.defence, m.last_coll, COALESCE({_SQL_RATE_HR}, 0), b.f,
-               CASE WHEN m.sick_until > ? THEN m.sick_until END
+               CASE WHEN m.sick_until > ? THEN m.sick_until END,
+               COALESCE(d.dogs,0), COALESCE(d.staff,0), COALESCE(d.elite,0)
         FROM mines m LEFT JOIN _mt t ON t.item_id = m.item_id
                      LEFT JOIN _boost b ON b.mine_id = m.mine_id
+                     LEFT JOIN mine_defence d ON d.mine_id = m.mine_id
         WHERE m.owner_hid = ? {where}
         ORDER BY {order} LIMIT ? OFFSET ?""", (now_iso, hid) + args + (limit, offset)).fetchall()
     return [{"mID": r[0], "lat": r[1], "lng": r[2], "itemID": r[3], "resID": r[4], "qual": r[5],
              "cond": r[6], "lvl": r[7], "tu1": r[8], "tu2": r[9], "tu3": r[10], "tu4": r[11],
              "def": r[12], "lastColl": r[13], "rateHr": round(r[14], 1),
-             "hqBoost": r[15] if r[15] and r[15] > 1.0 else None, "sickUntil": r[16]}
+             "hqBoost": r[15] if r[15] and r[15] > 1.0 else None, "sickUntil": r[16],
+             "repairCost": repair_cost_of(r[3], r[5], r[6], r[8], r[9], r[10], r[11], r[15] or 1.0,
+                                          r[17], r[18], r[19])}
             for r in rows]
 
 def maybe_run_events(conn, hid: str, wa: int):
@@ -1538,6 +1580,19 @@ def maybe_run_events(conn, hid: str, wa: int):
 # ── Scanner ────────────────────────────────────────────────────────────────────
 
 MAX_MINES_PER_PLAYER = 10000
+REMOTE_BUILD_COOLDOWN_H = 12   # owner's rule: one drone (remote) construction per 12 hours
+
+def _remote_build_wait(hid: str):
+    """'3 h 20 min' until the next remote build is allowed, or None."""
+    with get_db() as c:
+        r = c.execute("SELECT MAX(ts) FROM game_events WHERE hid=? AND type='remote_build'", (hid,)).fetchone()
+    if not r or not r[0]:
+        return None
+    left = datetime.datetime.fromisoformat(r[0]) + datetime.timedelta(hours=REMOTE_BUILD_COOLDOWN_H) - datetime.datetime.utcnow()
+    if left.total_seconds() <= 0:
+        return None
+    m = int(left.total_seconds() // 60)
+    return f"{m // 60} h {m % 60} min"
 
 def mine_scaled_cost(base_cost: int, mine_count: int) -> int:
     """Linear scaling: each mine adds 10% of base cost."""
@@ -2154,6 +2209,10 @@ async def mine_new(request: Request):
                 "SELECT qty FROM warehouse WHERE hid=? AND item_id=117", (hid,)).fetchone() or {}).get("qty", 0)
             _diamond_qty = (_pre_conn2.execute(
                 "SELECT qty FROM warehouse WHERE hid=? AND item_id=42", (hid,)).fetchone() or {}).get("qty", 0)
+        _wait = _remote_build_wait(hid)
+        if _wait:
+            return zlib_resp({"err": 12, "msg": f"Remote construction is possible once every "
+                              f"{REMOTE_BUILD_COOLDOWN_H} hours — next in {_wait}"})
         if _drone_qty < 1:
             return zlib_resp({"err": 8, "msg": "Remote build requires 1× Scan Drone"})
         if _diamond_qty < 1:
@@ -2203,6 +2262,10 @@ async def mine_new(request: Request):
             if not drone_row or drone_row["qty"] < 1:
                 conn.rollback(); conn.close()
                 return zlib_resp({"err": 8, "msg": "Remote build requires 1× Scan Drone"})
+            if econ.count_events(conn, hid, "remote_build", (datetime.datetime.utcnow() - datetime.timedelta(
+                    hours=REMOTE_BUILD_COOLDOWN_H)).isoformat()):
+                conn.rollback(); conn.close()
+                return zlib_resp({"err": 12, "msg": f"Remote construction is possible once every {REMOTE_BUILD_COOLDOWN_H} hours"})
             d_row = conn.execute(
                 "SELECT qty FROM warehouse WHERE hid=? AND item_id=?", (hid, DIAMOND_ITEM_ID)).fetchone()
             if not d_row or d_row["qty"] < 1:
@@ -2237,6 +2300,7 @@ async def mine_new(request: Request):
         if is_remote:
             wh_remove(conn, hid, DRONE_ITEM_ID, 1)
             wh_remove(conn, hid, DIAMOND_ITEM_ID, 1)
+            econ.emit(conn, "remote_build", hid, {"mID": mid}, public=False)
         award_xp(conn, hid, actual_cost)
 
         add_proto(conn, hid, "newmine", {"mID": mid, "itemID": item_id, "lat": lat, "lng": lng, "remote": is_remote})
@@ -2469,15 +2533,17 @@ async def mine_maint_pay(request: Request):
         # Eligibility: repair only allowed when condition <= 99.00 (fractional precision).
         if float(mine["condition"]) > 99.00:
             return zlib_resp({"err": 3, "msg": "Mine condition is too high to repair"})
-        repair_cost = max(100, int(MINE_TYPES.get(mine["item_id"],{}).get("cost",1000) * 0.05))
-        player = get_player(conn, hid)
-        if not player or player["credits"] < repair_cost:
-            return zlib_resp({"err": 2, "msg": "not enough credits"})
         # Settle pending production at old condition before restoring to 100.
         _, destroyed = collect_mine(conn, mine)
         if destroyed:
             conn.commit()
             return zlib_resp({"err": 1, "msg": "Mine was destroyed (condition too low)"})
+        mine = conn.execute("SELECT * FROM mines WHERE mine_id=?", (mine_id,)).fetchone()
+        repair_cost = compute_repair_cost(conn, mine)
+        player = get_player(conn, hid)
+        if not player or player["credits"] < repair_cost:
+            conn.commit()
+            return zlib_resp({"err": 2, "msg": "not enough credits", "cost": repair_cost})
         # Restore condition to exactly 100 and reset decay clock to now.
         conn.execute("UPDATE mines SET condition=100, last_coll=? WHERE mine_id=?",
                      (utcnow_iso(), mine_id))
@@ -2590,16 +2656,15 @@ async def mine_bulk_repair(request: Request):
             # Settle pending production at the old condition first (destroys doomed mines).
             destroyed = collect_mines_bulk(conn, hid, only_ids=set(ids))
             conn.execute("BEGIN IMMEDIATE")
-            rows = {r["mine_id"]: r for r in conn.execute(
-                "SELECT mine_id, item_id, condition FROM mines WHERE owner_hid=? AND mine_id IN "
-                "(SELECT mine_id FROM _only)", (hid,))}
+            rows = {r["mID"]: {"mine_id": r["mID"], "condition": r["cond"], "cost": r["repairCost"]}
+                    for r in mine_rows(conn, hid, where="AND m.mine_id IN (SELECT mine_id FROM _only)")}
             eligible = [rows[i] for i in dict.fromkeys(ids) if i in rows and float(rows[i]["condition"]) <= 99.00]
             player = get_player(conn, hid)
             done, spent = [], 0
             if mode == "pay":
                 credits = player["credits"]
                 for m in eligible:
-                    cost = max(100, int(MINE_TYPES.get(m["item_id"], {}).get("cost", 1000) * 0.05))
+                    cost = m["cost"]
                     if credits - spent < cost:
                         break
                     spent += cost
@@ -3125,7 +3190,8 @@ async def factory_collect(request: Request):
             return zlib_resp({"err": 2, "msg": "production not done yet", "end": factory["prod_end"]})
         row = get_player(conn, hid)
         cap = wh_capacity(row["wh_level"])
-        added = wh_add(conn, hid, factory["prod_item"], factory["prod_amount"], cap)
+        amount = apply_output_hooks(conn, hid, factory["prod_item"], factory["prod_amount"])
+        added = wh_add(conn, hid, factory["prod_item"], amount, cap)
         conn.execute(
             "UPDATE factories SET prod_item=NULL,prod_amount=NULL,prod_start=NULL,prod_end=NULL WHERE factory_id=?",
             (fid,))
@@ -4291,12 +4357,13 @@ with get_db() as _conn:
 SYSTEM_HELPERS = _types.SimpleNamespace(
     get_db=get_db, hid_from_sid=hid_from_sid, read_form=read_form, zlib_resp=zlib_resp,
     get_player=get_player, wh_capacity=wh_capacity, building_level=building_level,
-    mine_rate_hr=mine_rate_hr, collect_mine=collect_mine, collect_mines_bulk=collect_mines_bulk,
+    mine_rate_hr=mine_rate_hr, collect_mine=collect_mine, compute_repair_cost=compute_repair_cost, collect_mines_bulk=collect_mines_bulk,
     award_xp=award_xp, add_proto=add_proto, level_from_xp=level_from_xp, push=_push_to_player,
     mine_stats=mine_stats, mine_rows=mine_rows,
     MINE_TYPES=MINE_TYPES, SPECIAL_BUILDINGS=SPECIAL_BUILDINGS, HQ_BOOST_RADIUS=HQ_BOOST_RADIUS,
+    HQ_BOOST_FACTORS=HQ_BOOST_FACTORS, FACTORY_TYPES=FACTORY_TYPES,
     DRONE_SCAN_RANGES=DRONE_SCAN_RANGES, new_id=new_id, SYSTEM_PRICES=SYSTEM_PRICES,
-    LEVEL_UP_HOOKS=LEVEL_UP_HOOKS, CASINO_FIVE_HOOKS=CASINO_FIVE_HOOKS,
+    LEVEL_UP_HOOKS=LEVEL_UP_HOOKS, CASINO_FIVE_HOOKS=CASINO_FIVE_HOOKS, OUTPUT_HOOKS=OUTPUT_HOOKS,
 )
 INSTALLED_SYSTEMS = systems.install_all(app, SYSTEM_HELPERS)
 

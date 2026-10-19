@@ -8,6 +8,8 @@ class Mine {
   final double? hqBoost;
   final String lastColl;
   final String? sickUntil;
+  /// Repair cost from the server (cheaper for high-output mines, dearer with stationed defence).
+  final int repairCost;
 
   // Display: any positive fractional part rounds UP. 99.01 → 100%, 99.00 → 99%.
   int get conditionPct => condition.ceil();
@@ -17,7 +19,7 @@ class Mine {
     required this.itemId, required this.resId, required this.quality,
     required this.condition, required this.level,
     this.tu1 = 0, this.tu2 = 0, this.tu3 = 0, this.tu4 = 0,
-    this.rateHr = 0, this.hqBoost, this.lastColl = '', this.sickUntil,
+    this.rateHr = 0, this.hqBoost, this.lastColl = '', this.sickUntil, this.repairCost = 0,
   });
 
   // Total tech boost as a percentage (e.g. 175 = +175%)
@@ -50,6 +52,7 @@ class Mine {
     hqBoost: (j['hqBoost'] as num?)?.toDouble(),
     lastColl: j['lastColl'] as String? ?? '',
     sickUntil: j['sickUntil'] as String?,
+    repairCost: (j['repairCost'] as num? ?? 0).toInt(),
   );
 }
 

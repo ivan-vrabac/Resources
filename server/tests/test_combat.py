@@ -1,4 +1,6 @@
-"""Phase 6: attacks (dice battle, range, cooldown, loot from defender, deserters) and external repair."""
+"""Phase 6: attacks (dice battle, range, 24 h cooldown, created loot halving, damage, intel), repair cost,
+external repair."""
+import datetime
 import random
 
 import econ
@@ -53,40 +55,81 @@ def test_attack_rules_range_mafia_own_mine():
     assert qty(att, 104) == 10                                        # nothing taken on failure
 
 
-def test_strong_attack_succeeds_loots_defender_and_cooldown():
+def test_strong_attack_creates_loot_and_24h_cooldown():
     att, a_sid, _ = new_player("cb3")
     dfd, _, _ = new_player("cb4")
     set_building(att, C.MAFIA_HQ, 10)
+    with main.get_db() as conn:
+        conn.execute("UPDATE players SET wh_level=40 WHERE hID=?", (att,))
+        conn.commit()
     mid = _mine(dfd, lat=LAT + 0.01)
     res = main.MINE_TYPES[4]["res"]
     give(dfd, res, 1_000_000)
     give(att, 104, 500)
     r = call("/api/v1/combat/attack", a_sid, mineID=mid, lat=LAT + 0.01, lng=LNG, army=500, rid="x1")
     assert r["err"] == 0 and r["success"]
-    assert r["loot"] > 0
-    assert qty(dfd, res) == 1_000_000 - r["loot"]                     # loot moved, not created
+    assert r["loot"] > 0 and r["lootHalvings"] == 0
+    assert qty(dfd, res) == 1_000_000                                 # defender keeps stock: loot is new
     assert qty(att, res) == r["loot"]
     assert qty(att, 104) == sum(r["attackersLeft"])
-    # idempotent replay returns the same result, no second battle
+    assert 10 <= r["damage"] <= 70
     again = call("/api/v1/combat/attack", a_sid, mineID=mid, lat=LAT + 0.01, lng=LNG, army=500, rid="x1")
-    assert again["attackID"] == r["attackID"]
+    assert again["attackID"] == r["attackID"]                         # idempotent replay
     if not r["destroyed"]:
         assert _cond(mid) == r["condition"] < 100
         give(att, 104, 10)
+        with main.get_db() as conn:                                   # 23 h later: still cooling down
+            conn.execute("UPDATE attacks SET ts=? WHERE mine_id=?",
+                         ((econ.utcnow() - datetime.timedelta(hours=23)).isoformat(), mid))
+            conn.commit()
         assert call("/api/v1/combat/attack", a_sid, mineID=mid, lat=LAT + 0.01, lng=LNG, army=10)["code"] == "cooldown"
+    # second successful attack (another mine) in 24 h: loot halved
+    mid2 = _mine(dfd, lat=LAT + 0.011)
+    give(att, 104, 500)
+    r2 = call("/api/v1/combat/attack", a_sid, mineID=mid2, lat=LAT + 0.011, lng=LNG, army=500)
+    assert r2["success"] and r2["lootHalvings"] == 1
 
 
-def test_weak_attack_fails_and_deserters_join_defence():
+def test_weak_attack_fails_damages_less_and_deserters_join_defence():
     att, a_sid, _ = new_player("cb5")
-    dfd, _, _ = new_player("cb6")
+    dfd, d_sid, _ = new_player("cb6")
     set_building(att, C.MAFIA_HQ, 1)
     mid = _mine(dfd, lat=LAT + 0.02)
     give(att, 102, 100)                                               # 100 dogs vs 200 dogs + 5 staff + 1 elite
     r = call("/api/v1/combat/attack", a_sid, mineID=mid, lat=LAT + 0.02, lng=LNG, dogs=100)
-    assert r["err"] == 0 and not r["success"]
-    assert _cond(mid) == 100
-    info = call("/api/v1/combat/info", a_sid, mineID=mid)
-    assert info["target"]["stationed"][0] == r["deserters"][0] == int((100 - r["attackersLeft"][0]) * 0.1)
+    assert r["err"] == 0 and not r["success"] and "loot" not in r
+    assert 10 <= r["damage"] <= 30 and abs(_cond(mid) - (100 - r["damage"])) < 0.2
+    own = call("/api/v1/combat/info", d_sid, mineID=mid)["target"]
+    assert own["stationed"][0] == r["deserters"][0] == int((100 - r["attackersLeft"][0]) * 0.1)
+
+
+def test_damage_scales_with_strength_and_outcome():
+    assert C.attack_damage(0, True) == 10 and C.attack_damage(C.STRENGTH_FULL, True) == 70
+    assert C.attack_damage(C.STRENGTH_FULL, False) == 30
+    assert C.attack_damage(1000, True) < C.attack_damage(10000, True)
+
+
+def test_defence_estimate_exact_only_at_mafia_10():
+    exact, ok = C.estimate([200, 5, 1], 10, "k")
+    assert ok and exact == [200, 5, 1]
+    est, ok = C.estimate([1000, 100, 10], 3, "k")
+    assert not ok and est == C.estimate([1000, 100, 10], 3, "k")[0]          # stable
+    assert all(abs(e - t) <= t * 0.7 + 1 for e, t in zip(est, [1000, 100, 10]))
+
+
+def test_repair_cost_rewards_output_and_charges_defence():
+    plain = main.repair_cost_of(4, 100, 100, 0, 0, 0, 0, 1.0)
+    best = main.repair_cost_of(4, 100, 100, 100, 100, 100, 100, 10.0)
+    half = main.repair_cost_of(4, 100, 50, 0, 0, 0, 0, 1.0)
+    away = main.repair_cost_of(4, 100, 100, 100, 100, 100, 100, 1.0)
+    guarded = main.repair_cost_of(4, 100, 100, 0, 0, 0, 0, 1.0, 0, 0, 100)   # 100 elite = 10 000 pts
+    assert plain == 100 and best == main.REPAIR_MIN        # clay pit: 5 % of 2 000 = 100
+    big = main.repair_cost_of(82, 100, 100, 0, 0, 0, 0, 1.0)                 # diamond mine 50 000 → 2 500
+    assert big == 2500 and main.repair_cost_of(82, 100, 50, 0, 0, 0, 0, 1.0) == 5000
+    assert main.repair_cost_of(82, 100, 100, 100, 100, 100, 100, 1.0) == round(2500 / 6)     # +500 % tech
+    assert main.repair_cost_of(82, 100, 100, 0, 0, 0, 0, 10.0) == 250                      # HQ 10 area: 10× cheaper
+    assert half >= plain and away >= best and guarded >= plain
+    assert main.repair_cost_of(82, 100, 100, 0, 0, 0, 0, 1.0, 0, 0, 100) == 5000   # +100 %
 
 
 def test_station_defence_only_on_own_mine():

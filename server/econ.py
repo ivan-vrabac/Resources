@@ -142,6 +142,9 @@ def debit(conn, hid, amount, kind, ref=None) -> None:
     _ledger(conn, hid, kind, credits=-amount, ref=ref)
 
 
+CREDIT_HOOKS = []   # fn(conn, hid, amount, kind), run after every credit inside the same transaction
+
+
 def credit(conn, hid, amount, kind, ref=None) -> None:
     amount = round(float(amount))
     if amount < 0:
@@ -152,6 +155,8 @@ def credit(conn, hid, amount, kind, ref=None) -> None:
     if cur.rowcount != 1:
         raise GameError("no_player", "Player not found")
     _ledger(conn, hid, kind, credits=amount, ref=ref)
+    for hook in CREDIT_HOOKS:          # e.g. loan garnishment of sales (systems/loans.py)
+        hook(conn, hid, amount, kind)
 
 
 # ── items (warehouse) ────────────────────────────────────────────────────────

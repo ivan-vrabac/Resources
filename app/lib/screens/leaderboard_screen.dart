@@ -1,206 +1,237 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../constants.dart' show fmtNum;
+import '../constants.dart' show fmtNum, itemName;
 import '../models/player_provider.dart';
-import '../services/api_service.dart';
+import '../services/game_api.dart';
+import '../widgets/async_view.dart';
 import 'profile_screen.dart';
 
-class LeaderboardScreen extends StatefulWidget {
+/// Leaderboards: overall score, luxury points (with luxury items), and output per hour of one
+/// raw resource (mines) or factory product. Compact one-line rows; tap a row for the company sheet.
+class LeaderboardScreen extends StatelessWidget {
   const LeaderboardScreen({super.key});
+
   @override
-  State<LeaderboardScreen> createState() => _LeaderboardScreenState();
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: ModalRoute.of(context)?.canPop == true ? AppBar(toolbarHeight: 36) : null,
+      body: const DefaultTabController(
+        length: 3,
+        child: Column(children: [
+          TabBar(tabs: [Tab(text: 'Overall'), Tab(text: 'Luxury'), Tab(text: 'Resource')]),
+          Expanded(child: TabBarView(children: [_OverallBoard(), _LuxuryBoard(), _ResourceBoard()])),
+        ]),
+      ),
+    );
+  }
 }
 
-class _LeaderboardScreenState extends State<LeaderboardScreen> {
-  List<dynamic> _rows = [];
-  bool _loading = true;
-  bool _error = false;
-  bool _countryFilter = false;
+void _openProfile(BuildContext context, Map<String, dynamic> r) {
+  final pid = r['isMe'] == true ? null : r['pid'] as String?;
+  Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProfileScreen(pid: pid)));
+}
+
+/// One compact row: rank · name (+ optional middle widget) · value.
+Widget _row(BuildContext context, Map<String, dynamic> r, {Widget? middle, required String value, String? unit}) {
+  final isMe = r['isMe'] == true;
+  return InkWell(
+    onTap: () => _openProfile(context, r),
+    child: Container(
+      height: 34,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      color: isMe ? Colors.teal.withValues(alpha: 0.12) : null,
+      child: Row(children: [
+        SizedBox(width: 38, child: Text('#${r['rank']}', textAlign: TextAlign.right,
+            style: TextStyle(color: isMe ? Colors.tealAccent : Colors.white54, fontSize: 12, fontWeight: FontWeight.bold))),
+        const SizedBox(width: 8),
+        Expanded(
+          flex: 5,
+          child: Text(r['name'] as String? ?? '—', overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 13, color: isMe ? Colors.tealAccent : Colors.white,
+                  fontWeight: isMe ? FontWeight.bold : FontWeight.normal)),
+        ),
+        if (middle != null) Expanded(flex: 4, child: middle),
+        SizedBox(
+          width: 92,
+          child: Text(unit == null ? value : '$value $unit', textAlign: TextAlign.right,
+              style: TextStyle(color: isMe ? Colors.tealAccent : Colors.white70, fontSize: 13, fontWeight: FontWeight.bold)),
+        ),
+      ]),
+    ),
+  );
+}
+
+abstract class _BoardState<T extends StatefulWidget> extends State<T> with AutomaticKeepAliveClientMixin {
+  Map<String, dynamic>? data;
+  bool loading = true;
+  String? error;
+  String get path;
+  Map<String, dynamic> get params => const {};
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    load();
   }
 
-  Future<void> _load() async {
-    setState(() { _loading = true; _error = false; });
-    final sid = context.read<PlayerProvider>().sid;
-    final result = await ApiService.getLeaderboard(sid);
-    if (mounted) {
-      final rows = result?['leaderboard'] as List?;
-      setState(() {
-        _rows = rows ?? [];
-        _error = rows == null;
-        _loading = false;
-      });
-    }
+  Future<void> load() async {
+    setState(() => loading = true);
+    final r = await GameApi.call(path, context.read<PlayerProvider>().sid, params);
+    if (!mounted) return;
+    setState(() { loading = false; error = r.ok ? null : r.message; if (r.ok) data = r.data; });
   }
 
-  String? get _myCountry {
-    final me = _rows.where((r) => r['isMe'] == true).firstOrNull;
-    final code = me?['countryCode'] as String? ?? '';
-    return code.isEmpty ? null : code;
+  Widget list(List<Map<String, dynamic>> rows, Widget Function(Map<String, dynamic>) tile, {Widget? header}) {
+    final h = header != null ? 1 : 0;
+    return RefreshIndicator(
+      onRefresh: load,
+      child: ListView.separated(
+        itemCount: rows.length + h,
+        separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.white10),
+        itemBuilder: (_, i) => h == 1 && i == 0 ? header! : tile(rows[i - h]),
+      ),
+    );
   }
+}
 
-  List<dynamic> get _filtered {
-    if (!_countryFilter || _myCountry == null) return _rows;
-    return _rows.where((r) => r['countryCode'] == _myCountry).toList();
-  }
+class _OverallBoard extends StatefulWidget {
+  const _OverallBoard();
+  @override
+  State<_OverallBoard> createState() => _OverallBoardState();
+}
+
+class _OverallBoardState extends _BoardState<_OverallBoard> {
+  bool _country = false;
+  @override
+  String get path => '/api/v1/rank/players';
 
   @override
   Widget build(BuildContext context) {
-    final filtered = _filtered;
-    return Scaffold(
-      appBar: ModalRoute.of(context)?.canPop == true ? AppBar(toolbarHeight: 36) : null,
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error
-              ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Icon(Icons.cloud_off, size: 40, color: Colors.white38),
-                  const SizedBox(height: 8),
-                  const Text('Could not load leaderboard',
-                      style: TextStyle(color: Colors.white54)),
-                  const SizedBox(height: 12),
-                  TextButton(onPressed: _load, child: const Text('Retry')),
-                ]))
-          : Column(children: [
-              // Filter bar
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                child: Row(children: [
-                  const Text('Leaderboard',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                  const Spacer(),
-                  if (_myCountry != null)
-                    FilterChip(
-                      label: Text('My country',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: _countryFilter ? Colors.teal : Colors.white54,
-                          )),
-                      selected: _countryFilter,
-                      onSelected: (v) => setState(() => _countryFilter = v),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                ]),
-              ),
-              Expanded(
-                child: RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: filtered.length,
-                    itemBuilder: (_, i) {
-                      final r = filtered[i];
-                      final rank = (r['rank'] as num? ?? i + 1).toInt();
-                      final isMe = r['isMe'] == true;
-                      final code = r['countryCode'] as String? ?? '';
-                      final score = (r['score'] as num? ?? 0).toInt();
-                      final xp = (r['xp'] as num? ?? 0).toInt();
-                      final activity = (r['activity'] as num? ?? 0).toInt();
-                      final level = r['level'] as int? ?? 1;
-                      // hID is the public id for other players; your own row opens your stats.
-                      final pid = isMe ? null : r['hID'] as String?;
+    super.build(context);
+    return AsyncView(loading: loading && data == null, error: error, onRetry: load, builder: () {
+      var rows = (data!['rows'] as List).cast<Map<String, dynamic>>();
+      final me = rows.where((r) => r['isMe'] == true).firstOrNull;
+      final myCountry = (me?['country'] as String? ?? '');
+      if (_country && myCountry.isNotEmpty) rows = rows.where((r) => r['country'] == myCountry).toList();
+      return list(rows, (r) {
+        final act = (r['activity'] as num? ?? 0).toInt();
+        final code = r['country'] as String? ?? '';
+        return _row(context, r, value: fmtNum((r['score'] as num).toInt()), middle: Row(children: [
+          if (code.isNotEmpty)
+            Padding(padding: const EdgeInsets.only(right: 6), child: Image.asset('assets/images_countryflags/$code.png',
+                width: 18, height: 12, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox(width: 18))),
+          Text('Lv ${r['level']}', style: const TextStyle(color: Colors.white38, fontSize: 11)),
+          const SizedBox(width: 6),
+          Icon(Icons.bolt, size: 11, color: act >= 80 ? Colors.greenAccent : Colors.white38),
+          Text('$act%', style: TextStyle(color: act >= 80 ? Colors.greenAccent : Colors.white38, fontSize: 11)),
+        ]));
+      }, header: Row(children: [
+        Padding(padding: const EdgeInsets.all(8), child: Text(
+            data!['myRank'] != null ? 'Your rank: #${data!['myRank']}' : '', style: const TextStyle(color: Colors.white54))),
+        const Spacer(),
+        if (myCountry.isNotEmpty)
+          Padding(padding: const EdgeInsets.only(right: 8), child: FilterChip(
+              label: const Text('My country', style: TextStyle(fontSize: 11)), selected: _country,
+              visualDensity: VisualDensity.compact, onSelected: (v) => setState(() => _country = v))),
+      ]));
+    });
+  }
+}
 
-                      return GestureDetector(
-                        onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                            builder: (_) => ProfileScreen(pid: pid))),
-                        child: Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: isMe
-                              ? Colors.teal.withValues(alpha: 0.10)
-                              : Colors.white.withValues(alpha: 0.04),
-                          borderRadius: BorderRadius.circular(8),
-                          border: isMe
-                              ? Border.all(color: Colors.teal.withValues(alpha: 0.4))
-                              : null,
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          child: Row(children: [
-                            // Rank
-                            SizedBox(
-                              width: 32,
-                              child: Text('#$rank',
-                                textAlign: TextAlign.right,
-                                style: TextStyle(
-                                  color: isMe ? Colors.tealAccent : Colors.white54,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            // Flag
-                            SizedBox(
-                              width: 24,
-                              child: code.isNotEmpty
-                                  ? ClipRRect(
-                                      borderRadius: BorderRadius.circular(2),
-                                      child: Image.asset(
-                                        'assets/images_countryflags/$code.png',
-                                        width: 22, height: 15, fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) =>
-                                            const Icon(Icons.flag_outlined, size: 16,
-                                                color: Colors.white24),
-                                      ),
-                                    )
-                                  : const Icon(Icons.flag_outlined, size: 16,
-                                      color: Colors.white24),
-                            ),
-                            const SizedBox(width: 8),
-                            // Name + stats
-                            Expanded(child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text(r['name'] as String? ?? '—',
-                                style: TextStyle(
-                                  fontWeight: isMe ? FontWeight.bold : FontWeight.normal,
-                                  color: isMe ? Colors.tealAccent : Colors.white,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Row(children: [
-                                Text('Lv $level',
-                                    style: const TextStyle(color: Colors.white38, fontSize: 11)),
-                                const SizedBox(width: 8),
-                                Icon(Icons.bolt, size: 11,
-                                    color: activity >= 80
-                                        ? Colors.greenAccent : Colors.white38),
-                                Text('$activity%',
-                                    style: TextStyle(
-                                      color: activity >= 80
-                                          ? Colors.greenAccent : Colors.white38,
-                                      fontSize: 11,
-                                    )),
-                                const SizedBox(width: 8),
-                                Text('${fmtNum(xp)} XP',
-                                    style: const TextStyle(
-                                        color: Colors.white38, fontSize: 11)),
-                              ]),
-                            ])),
-                            // Score
-                            Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                              Text(fmtNum(score),
-                                style: TextStyle(
-                                  color: isMe ? Colors.tealAccent : Colors.white70,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              const Text('pts',
-                                  style: TextStyle(color: Colors.white38, fontSize: 10)),
-                            ]),
-                          ]),
-                        ),
-                      ));
-                    },
+class _LuxuryBoard extends StatefulWidget {
+  const _LuxuryBoard();
+  @override
+  State<_LuxuryBoard> createState() => _LuxuryBoardState();
+}
+
+class _LuxuryBoardState extends _BoardState<_LuxuryBoard> {
+  @override
+  String get path => '/api/v1/rank/luxury';
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return AsyncView(loading: loading && data == null, error: error, onRetry: load, builder: () {
+      final rows = (data!['rows'] as List).cast<Map<String, dynamic>>();
+      return list(rows, (r) {
+        final items = (r['items'] as List).cast<Map<String, dynamic>>();
+        return _row(context, r, value: fmtNum((r['points'] as num).toInt()), unit: 'LP',
+            middle: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(children: [
+                for (final it in items)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      ItemIcon((it['itemID'] as num).toInt(), size: 20),
+                      if ((it['qty'] as num) > 1)
+                        Text('×${it['qty']}', style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                    ]),
                   ),
+              ]),
+            ));
+      }, header: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Text('Your luxury points: ${fmtNum((data!['myPoints'] as num).toInt())} — earned only by bidding on '
+            'and winning luxury auctions', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+      ));
+    });
+  }
+}
+
+class _ResourceBoard extends StatefulWidget {
+  const _ResourceBoard();
+  @override
+  State<_ResourceBoard> createState() => _ResourceBoardState();
+}
+
+class _ResourceBoardState extends _BoardState<_ResourceBoard> {
+  String _kind = 'mine';
+  int? _item;
+  @override
+  String get path => '/api/v1/rank/resource';
+  @override
+  Map<String, dynamic> get params => {'kind': _kind, if (_item != null) 'item': _item};
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return AsyncView(loading: loading && data == null, error: error, onRetry: load, builder: () {
+      final rows = (data!['rows'] as List).cast<Map<String, dynamic>>();
+      final options = ((data!['options'] as Map)[_kind] as List).cast<int>();
+      final item = (data!['item'] as num).toInt();
+      return list(rows, (r) => _row(context, r, value: fmtNum((r['perHour'] as num).round()), unit: '/h',
+          middle: Text('${r['count']} ${_kind == 'mine' ? 'mines' : 'factories'}',
+              style: const TextStyle(color: Colors.white38, fontSize: 11))),
+          header: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+            child: Row(children: [
+              SegmentedButton<String>(
+                segments: const [ButtonSegment(value: 'mine', label: Text('Raw')), ButtonSegment(value: 'factory', label: Text('Factory'))],
+                selected: {_kind},
+                style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                onSelectionChanged: (v) { setState(() { _kind = v.first; _item = null; }); load(); },
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: DropdownButton<int>(
+                  isExpanded: true,
+                  value: options.contains(item) ? item : null,
+                  items: [
+                    for (final o in options)
+                      DropdownMenuItem(value: o, child: Row(children: [
+                        ItemIcon(o, size: 22), const SizedBox(width: 6),
+                        Flexible(child: Text(itemName(o), overflow: TextOverflow.ellipsis)),
+                      ])),
+                  ],
+                  onChanged: (v) { setState(() => _item = v); load(); },
                 ),
               ),
             ]),
-    );
+          ));
+    });
   }
 }

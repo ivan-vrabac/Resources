@@ -2720,11 +2720,7 @@ class _MapMineSheetState extends State<_MapMineSheet> {
     });
   }
 
-  int _repairCost() {
-    final deficit = 100 - mine.condition;
-    final base = (kMineBaseRate[mine.itemId] ?? 100) * 10;
-    return (deficit * base / 100).round();
-  }
+  int _repairCost() => mine.repairCost;
 
   Widget _badge(String text, Color color) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),

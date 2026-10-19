@@ -113,8 +113,9 @@ class _LoansScreenState extends State<LoansScreen> {
         const Padding(
           padding: EdgeInsets.only(top: 12),
           child: Text('Your rating comes from the money you earned in the last 30 days, how long you have '
-              'played and how you repaid earlier loans. Overdue loans are collected automatically '
-              'from your credits; after 7 overdue days a loan counts as defaulted.',
+              'played and how you repaid earlier loans. If a loan is not repaid by its due date, your rating '
+              'drops to D and for 30 days the game takes 50% of your mining output, factory output and sales '
+              'to pay the lender. After those 30 days the rest is forgiven, but your rating stays reset to D.',
               style: TextStyle(color: Colors.white54, fontSize: 12)),
         ),
       ]),
@@ -124,7 +125,7 @@ class _LoansScreenState extends State<LoansScreen> {
   Future<void> _requestDialog() async {
     final s = _status!;
     final ctl = TextEditingController();
-    var term = 7;
+    var term = (s['minTerm'] as num? ?? 10).toInt();
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(builder: (ctx, set) {
@@ -141,10 +142,14 @@ class _LoansScreenState extends State<LoansScreen> {
               onChanged: (_) => set(() {}),
             ),
             const SizedBox(height: 8),
-            SegmentedButton<int>(
-              segments: [for (final t in (s['terms'] as List).cast<int>()) ButtonSegment(value: t, label: Text('$t days'))],
-              selected: {term},
-              onSelectionChanged: (v) => set(() => term = v.first),
+            Text('Term: $term days'),
+            Slider(
+              value: term.toDouble(),
+              min: (s['minTerm'] as num? ?? 10).toDouble(),
+              max: (s['maxTerm'] as num? ?? 30).toDouble(),
+              divisions: ((s['maxTerm'] as num? ?? 30) - (s['minTerm'] as num? ?? 10)).toInt(),
+              label: '$term days',
+              onChanged: (v) => set(() => term = v.round()),
             ),
             const SizedBox(height: 8),
             Text('Interest ${fmtCredits(interest)} · repay ${fmtCredits(p + interest)}'),
@@ -197,7 +202,8 @@ class _LoansScreenState extends State<LoansScreen> {
         title: Text('Lend ${fmtCredits(l['principal'] as num)}?'),
         content: Text('Borrower: ${(l['borrower'] as Map)['name']} (rating ${l['rating']}, risk ${l['risk']}).\n'
             'Repayment of ${fmtCredits(l['total'] as num)} is due ${l['term_days']} days after funding. '
-            'Lending is at your own risk: defaulted loans are only collected when the borrower has credits.'),
+            'If it is late, 50% of the borrower\'s output and sales go to you for 30 days; whatever is still '
+            'unpaid after that is forgiven.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Lend')),
@@ -212,7 +218,7 @@ class _LoansScreenState extends State<LoansScreen> {
     final l = (_mine!['lent'] as List).cast<Map<String, dynamic>>();
     Color col(String s) => switch (s) {
           'overdue' => Colors.orange,
-          'defaulted' => Colors.red,
+          'forgiven' => Colors.red,
           'repaid' => Colors.green,
           'active' => Colors.lightBlueAccent,
           _ => Colors.white54,
@@ -220,7 +226,7 @@ class _LoansScreenState extends State<LoansScreen> {
     Widget tile(Map<String, dynamic> x, bool borrowed) {
       final other = (borrowed ? x['lender'] : x['borrower']) as Map?;
       final open = x['status'] == 'open';
-      final owes = ['active', 'overdue', 'defaulted'].contains(x['status']) && (x['outstanding'] as num) > 0;
+      final owes = ['active', 'overdue'].contains(x['status']) && (x['outstanding'] as num) > 0;
       return Card(
         child: ListTile(
           title: Text('${fmtCredits(x['principal'] as num)} · ${x['term_days']} days · ${x['rating']}'),

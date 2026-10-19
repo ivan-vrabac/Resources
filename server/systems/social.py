@@ -10,6 +10,8 @@ count, total mines ever built, total production per hour, country, member since,
 """
 from __future__ import annotations
 
+import datetime
+
 import secrets
 
 import econ
@@ -112,10 +114,38 @@ def public_profile(conn, h, viewer_hid: str, target_hid: str) -> dict:
         "isMe": viewer_hid == target_hid,
         "relations": sorted(rel),
     }
+    # public company sheet: age, mines by type, factories, special buildings, luxury, combat
+    try:
+        created = datetime.datetime.fromisoformat(p["created_at"])
+        out["ageDays"] = max(0, (econ.utcnow() - created).days)
+    except (TypeError, ValueError):
+        out["ageDays"] = None
+    out["minesByType"] = [{"itemID": r[0], "count": r[1]} for r in conn.execute(
+        "SELECT item_id, COUNT(*) FROM mines WHERE owner_hid=? GROUP BY item_id ORDER BY COUNT(*) DESC", (target_hid,))]
+    special = set(getattr(h, "SPECIAL_BUILDINGS", {}) or {})
+    facs = conn.execute("SELECT item_id, level FROM factories WHERE hid=? ORDER BY item_id", (target_hid,)).fetchall()
+    out["factories"] = [{"itemID": r[0], "level": r[1]} for r in facs if r[0] not in special]
+    out["specialBuildings"] = [{"itemID": r[0], "level": r[1]} for r in facs if r[0] in special]
+    lux = conn.execute("SELECT points FROM luxury_points WHERE hid=?", (target_hid,)).fetchone() \
+        if _has_table(conn, "luxury_points") else None
+    out["luxuryPoints"] = int(lux[0]) if lux else 0
+    out["luxuryItems"] = [{"itemID": r[0], "qty": int(r[1])} for r in conn.execute(
+        "SELECT item_id, qty FROM warehouse WHERE hid=? AND qty>=1 AND (item_id BETWEEN 128 AND 157 OR item_id=163) "
+        "ORDER BY item_id", (target_hid,))]
+    out["artifacts"] = int(conn.execute(
+        "SELECT COALESCE(SUM(qty),0) FROM warehouse WHERE hid=? AND item_id BETWEEN 172 AND 177", (target_hid,)).fetchone()[0])
+    if _has_table(conn, "attacks"):
+        a = conn.execute("SELECT COALESCE(SUM(success),0), COUNT(*) FROM attacks WHERE attacker_hid=?", (target_hid,)).fetchone()
+        d = conn.execute("SELECT COALESCE(SUM(1-success),0), COUNT(*) FROM attacks WHERE defender_hid=?", (target_hid,)).fetchone()
+        out["combat"] = {"attacksWon": a[0], "attacks": a[1], "defencesWon": d[0], "defences": d[1]}
     if viewer_hid == target_hid:  # private extras only for yourself
         out["xp"] = xp
         out["credits"] = p["credits"]
     return out
+
+
+def _has_table(conn, name) -> bool:
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
 
 
 def _summary(conn, hid) -> dict:

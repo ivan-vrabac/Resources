@@ -367,7 +367,7 @@ def _body(kind, d, p1, p2):
     if kind == "dividend":
         return f"{d.get('holders')} holders shared {int(d.get('paid', 0)):,} credits from the jackpot."
     if kind == "auction":
-        return f"Winning bid: {int(d.get('price', 0)):,} credits."
+        return f"Winning bid: {int(d.get('price', 0)):,} units of its resource."
     if kind == "earthquake":
         return (f"Radius {d.get('radius_km')} km · {d.get('affected_mines', 0):,} mines in the area · "
                 f"{d.get('damaged_mines', 0):,} damaged · {d.get('companies', 0):,} companies hit · "

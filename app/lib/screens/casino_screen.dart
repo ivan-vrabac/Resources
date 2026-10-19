@@ -226,7 +226,7 @@ class _CasinoScreenState extends State<CasinoScreen> {
     for (final d in (res['dividends'] as List? ?? const []).cast<Map<String, dynamic>>()) {
       final paid = (d['paid'] as num? ?? 0).toInt();
       _snack(paid > 0
-          ? '${kItemNames[d['itemID']] ?? 'Luxury item'} dividend: ꞓ${_fmtLarge(paid)} paid to ${d['holders']} holders'
+          ? '${kItemNames[d['itemID']] ?? 'Luxury item'} dividend: ${d['holders']} holders received ꞓ${_fmtLarge(paid)} in total'
           : 'Five of a kind! Nobody holds ${kItemNames[d['itemID']] ?? 'this item'} — no dividend');
     }
 

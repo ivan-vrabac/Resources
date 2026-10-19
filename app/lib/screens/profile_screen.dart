@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../constants.dart' show itemName;
 import '../models/player_provider.dart';
 import '../services/game_api.dart';
 import '../widgets/async_view.dart';
@@ -73,6 +74,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       );
 
+  /// A titled wrap of item images with a small label (count or level) under each.
+  Widget _itemSection(String title, dynamic list, String key, {String prefix = ''}) {
+    final items = (list as List? ?? const []).cast<Map<String, dynamic>>();
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+        const SizedBox(height: 6),
+        Wrap(spacing: 10, runSpacing: 8, children: [
+          for (final it in items)
+            Tooltip(
+              message: itemName((it['itemID'] as num).toInt()),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                ItemIcon((it['itemID'] as num).toInt(), size: 34),
+                Text('$prefix${it[key]}', style: const TextStyle(fontSize: 10, color: Colors.white70)),
+              ]),
+            ),
+        ]),
+      ]),
+    );
+  }
+
   Widget _relationChip(String kind, String label, IconData icon, Color color) {
     final rel = (_p?['relations'] as List? ?? const []).contains(kind);
     return FilterChip(
@@ -121,10 +145,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _stat('Production / h', fmtQty(p['productionPerHour'] as num? ?? 0)),
             ]),
             Row(children: [
+              _stat('Age', p['ageDays'] == null ? '?' : '${p['ageDays']} days', icon: Icons.cake_outlined),
+              _stat('Luxury points', fmtQty(p['luxuryPoints'] as num? ?? 0), icon: Icons.diamond_outlined),
+              _stat('Artifacts', '${p['artifacts'] ?? 0}', icon: Icons.museum_outlined),
+            ]),
+            Row(children: [
               _stat('Rank by XP', '#${p['rankXp']}'),
               _stat('Rank by mines', '#${p['rankMines']}'),
               if (isMe) _stat('Credits', fmtCredits(p['credits'] as num? ?? 0)),
             ]),
+            if (p['combat'] is Map)
+              Row(children: [
+                _stat('Attacks won', '${p['combat']['attacksWon']} / ${p['combat']['attacks']}', icon: Icons.gpp_bad_outlined),
+                _stat('Defences won', '${p['combat']['defencesWon']} / ${p['combat']['defences']}', icon: Icons.shield_outlined),
+              ]),
+            _itemSection('Mines', p['minesByType'], 'count', prefix: '×'),
+            _itemSection('Factories', p['factories'], 'level', prefix: 'Lv '),
+            _itemSection('Special buildings', p['specialBuildings'], 'level', prefix: 'Lv '),
+            _itemSection('Luxury items', p['luxuryItems'], 'qty', prefix: '×'),
             if (!isMe) ...[
               const SizedBox(height: 12),
               const Text('Contacts', style: TextStyle(color: Colors.white54, fontSize: 12)),

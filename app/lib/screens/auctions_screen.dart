@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../constants.dart';
@@ -6,9 +7,10 @@ import '../models/player_provider.dart';
 import '../services/game_api.dart';
 import '../widgets/async_view.dart';
 import '../widgets/top_banner.dart';
+import 'profile_screen.dart';
 
-/// Luxury item auctions (HQ level 10, max 10 of each item) and the player's luxury collection,
-/// which earns casino dividends when someone spins five of a kind of that item.
+/// The luxury auction: one item at a time, bid with that item's resource (HQ level 10, max 10 of
+/// each item). Bids give luxury points, wins give many more. Tap an item for its bid history.
 class AuctionsScreen extends StatefulWidget {
   const AuctionsScreen({super.key});
   @override
@@ -52,16 +54,24 @@ class _AuctionsScreenState extends State<AuctionsScreen> {
 
   Future<void> _bid(Map<String, dynamic> a) async {
     final min = (a['minBid'] as num).toInt();
+    final res = (a['resID'] as num).toInt();
     final ctl = TextEditingController(text: '$min');
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Bid on ${kItemNames[a['itemID']] ?? 'item'}'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
+        title: Text('Bid on ${itemName((a['itemID'] as num).toInt())}'),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            ItemIcon(res, size: 28),
+            const SizedBox(width: 8),
+            Expanded(child: Text('Paid in ${itemName(res)} · you have ${fmtQty(a['youHave'] as num)}')),
+          ]),
           TextField(controller: ctl, keyboardType: TextInputType.number,
-              decoration: InputDecoration(labelText: 'Your bid', helperText: 'minimum ${fmtCredits(min)}')),
+              decoration: InputDecoration(labelText: 'Your bid (${itemName(res)})', helperText: 'minimum ${fmtQty(min)}')),
           const SizedBox(height: 8),
-          const Text('The full bid is reserved now and refunded if someone outbids you.',
+          Text('Bid now: +${a['minBidPoints']} luxury points · winning: about +${a['winPoints']}',
+              style: const TextStyle(fontSize: 12, color: Colors.amberAccent)),
+          const Text('The resources leave your warehouse now and come back if someone outbids you.',
               style: TextStyle(fontSize: 12, color: Colors.white54)),
         ]),
         actions: [
@@ -81,6 +91,15 @@ class _AuctionsScreenState extends State<AuctionsScreen> {
     _load();
   }
 
+  void _history(int itemId) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1A1A2E),
+      builder: (_) => _ItemHistorySheet(itemId: itemId, sid: _sid),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AsyncView(
@@ -90,43 +109,221 @@ class _AuctionsScreenState extends State<AuctionsScreen> {
       builder: () {
         final d = _d!;
         final active = (d['active'] as List).cast<Map<String, dynamic>>();
+        final recent = (d['recent'] as List).cast<Map<String, dynamic>>().where((a) => a['status'] == 'sold').toList();
         final coll = (d['collection'] as Map).cast<String, dynamic>();
         final owned = coll.entries.where((e) => (e.value as num) > 0).toList();
         return RefreshIndicator(
           onRefresh: _load,
           child: ListView(padding: const EdgeInsets.all(8), children: [
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.diamond_outlined, color: Colors.amberAccent),
+                title: Text('${fmtQty(d['luxuryPoints'] as num)} luxury points'),
+                subtitle: const Text('Earned only by bidding on and winning luxury items'),
+              ),
+            ),
             if (d['eligible'] != true)
               Card(child: Padding(padding: const EdgeInsets.all(12),
                   child: Text('Bidding needs headquarters level ${d['hqRequired']} (yours: ${d['hqLevel']}).'))),
-            for (final a in active)
-              Card(
-                child: ListTile(
-                  leading: ItemIcon((a['itemID'] as num).toInt(), size: 40),
-                  title: Text(kItemNames[a['itemID']] ?? 'Item ${a['itemID']}'),
-                  subtitle: Text(
-                      '${(a['topBid'] as num) > 0 ? 'Top bid ${fmtCredits(a['topBid'] as num)}${a['youLead'] == true ? ' (you)' : ' · ${(a['leader'] as Map?)?['name'] ?? ''}'}' : 'Starts at ${fmtCredits(a['startPrice'] as num)}'}\n'
-                      'Ends in ${_left(a['endsAt'] as String)} · you own ${a['owned']}/${d['maxOwn']}'),
-                  isThreeLine: true,
-                  trailing: FilledButton(
-                    onPressed: d['eligible'] != true || a['youLead'] == true || _busy ? null : () => _bid(a),
-                    child: const Text('Bid'),
-                  ),
-                ),
+            for (final a in active) _lotCard(a, d),
+            if (recent.isNotEmpty)
+              const Padding(padding: EdgeInsets.fromLTRB(8, 12, 8, 4),
+                  child: Text('Recently sold', style: TextStyle(color: Colors.white54))),
+            for (final a in recent.take(10))
+              ListTile(
+                dense: true,
+                leading: ItemIcon((a['itemID'] as num).toInt(), size: 28),
+                title: Text(itemName((a['itemID'] as num).toInt())),
+                subtitle: Text('${(a['leader'] as Map?)?['name'] ?? '?'} · ${fmtQty(a['topBid'] as num)} '
+                    '${itemName((a['resID'] as num).toInt())}'),
+                onTap: () => _history((a['itemID'] as num).toInt()),
               ),
             const Divider(),
             const Padding(padding: EdgeInsets.all(8),
-                child: Text('Your luxury collection — when someone spins five of a kind of an item you hold, '
-                    'holders share 10% of the casino jackpot (up to 10 of each item count).',
+                child: Text('Your luxury collection — when someone spins five of a kind of an item you hold in the '
+                    'casino, you get 1% of the jackpot per item you hold (up to 10 items = 10%).',
                     style: TextStyle(color: Colors.white54, fontSize: 12))),
             if (owned.isEmpty) const Padding(padding: EdgeInsets.all(8), child: Text('No luxury items yet.')),
             Wrap(spacing: 8, runSpacing: 8, children: [
               for (final e in owned)
-                Chip(avatar: ItemIcon(int.parse(e.key), size: 20),
-                    label: Text('${kItemNames[int.parse(e.key)] ?? e.key} ×${(e.value as num).toInt()}')),
+                ActionChip(
+                  avatar: ItemIcon(int.parse(e.key), size: 20),
+                  label: Text('${itemName(int.parse(e.key))} ×${(e.value as num).toInt()}'),
+                  onPressed: () => _history(int.parse(e.key)),
+                ),
             ]),
           ]),
         );
       },
     );
   }
+
+  Widget _lotCard(Map<String, dynamic> a, Map<String, dynamic> d) {
+    final item = (a['itemID'] as num).toInt(), res = (a['resID'] as num).toInt();
+    final leader = (a['leader'] as Map?)?.cast<String, dynamic>();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          InkWell(
+            onTap: () => _history(item),
+            child: Row(children: [
+              ItemIcon(item, size: 64),
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(itemName(item), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                Text('Ends in ${_left(a['endsAt'] as String)} · ${a['bids']} bids',
+                    style: const TextStyle(color: Colors.white70)),
+                Text('You own ${a['owned']}/${d['maxOwn']} · tap for history',
+                    style: const TextStyle(color: Colors.white38, fontSize: 11)),
+              ])),
+            ]),
+          ),
+          const SizedBox(height: 10),
+          Row(children: [
+            ItemIcon(res, size: 24),
+            const SizedBox(width: 6),
+            Expanded(
+              child: (a['topBid'] as num) > 0
+                  ? Row(children: [
+                      Text('Top bid ${fmtQty(a['topBid'] as num)} ${itemName(res)} · '),
+                      Flexible(
+                        child: GestureDetector(
+                          onTap: leader?['pid'] == null ? null : () => ProfileScreen.open(context, leader!['pid'] as String),
+                          child: Text(a['youLead'] == true ? 'you' : (leader?['name'] as String? ?? ''),
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.lightBlueAccent, decoration: TextDecoration.underline)),
+                        ),
+                      ),
+                    ])
+                  : Text('Starts at ${fmtQty(a['startPrice'] as num)} ${itemName(res)}'),
+            ),
+          ]),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: d['eligible'] != true || a['youLead'] == true || _busy ? null : () => _bid(a),
+              child: Text(a['youLead'] == true ? 'You are leading' : 'Bid (min ${fmtQty(a['minBid'] as num)})'),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+class _ItemHistorySheet extends StatefulWidget {
+  final int itemId;
+  final String sid;
+  const _ItemHistorySheet({required this.itemId, required this.sid});
+  @override
+  State<_ItemHistorySheet> createState() => _ItemHistorySheetState();
+}
+
+class _ItemHistorySheetState extends State<_ItemHistorySheet> {
+  Map<String, dynamic>? _d;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    GameApi.call('/api/v1/auctions/item', widget.sid, {'itemID': widget.itemId}).then((r) {
+      if (mounted) setState(() { _error = r.ok ? null : r.message; if (r.ok) _d = r.data; });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final d = _d;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: d == null
+            ? SizedBox(height: 160, child: Center(child: _error != null ? Text(_error!) : const CircularProgressIndicator()))
+            : Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  ItemIcon(widget.itemId, size: 48),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(itemName(widget.itemId),
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+                ]),
+                const SizedBox(height: 4),
+                Text('Bought with ${itemName((d['resID'] as num).toInt())} · you own ${d['owned']}',
+                    style: const TextStyle(color: Colors.white70)),
+                const SizedBox(height: 12),
+                const Text('Recent bids', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                SizedBox(
+                  height: 160,
+                  width: double.infinity,
+                  child: (d['bids'] as List).isEmpty
+                      ? const Center(child: Text('No bids yet'))
+                      : CustomPaint(painter: _BidChart((d['bids'] as List)
+                          .map((b) => ((b as Map)['amount'] as num).toDouble()).toList())),
+                ),
+                const SizedBox(height: 12),
+                if (d['lastSale'] != null) ...[
+                  const Text('Last sold to', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                  _playerTile((d['lastSale'] as Map).cast<String, dynamic>(), d),
+                ] else
+                  const Text('Never sold yet.', style: TextStyle(color: Colors.white54)),
+                if ((d['bids'] as List).isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  const Text('Latest bidders', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                  for (final b in (d['bids'] as List).reversed.take(5).cast<Map<String, dynamic>>())
+                    _playerTile({'player': b['player'], 'price': b['amount'], 'ts': b['ts']}, d),
+                ],
+              ]),
+      ),
+    );
+  }
+
+  Widget _playerTile(Map<String, dynamic> s, Map<String, dynamic> d) {
+    final p = (s['player'] as Map?)?.cast<String, dynamic>() ?? {};
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.business, size: 20),
+      title: Text(p['name'] as String? ?? '?', style: const TextStyle(color: Colors.lightBlueAccent)),
+      subtitle: Text('${fmtQty(s['price'] as num)} ${itemName((d['resID'] as num).toInt())} · '
+          '${(s['ts'] as String? ?? '').replaceFirst('T', ' ').substring(0, min(16, (s['ts'] as String? ?? '').length))}'),
+      onTap: p['pid'] == null ? null : () => ProfileScreen.open(context, p['pid'] as String),
+    );
+  }
+}
+
+class _BidChart extends CustomPainter {
+  final List<double> v;
+  _BidChart(this.v);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final hi = v.reduce(max), lo = v.reduce(min);
+    final span = (hi - lo).abs() < 1e-9 ? 1.0 : hi - lo;
+    final grid = Paint()..color = Colors.white12..strokeWidth = 1;
+    for (var i = 0; i <= 3; i++) {
+      final y = size.height * i / 3;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
+    }
+    final path = Path();
+    for (var i = 0; i < v.length; i++) {
+      final x = v.length == 1 ? size.width / 2 : size.width * i / (v.length - 1);
+      final y = size.height - (v[i] - lo) / span * (size.height - 16) - 8;
+      i == 0 ? path.moveTo(x, y) : path.lineTo(x, y);
+      canvas.drawCircle(Offset(x, y), 2.5, Paint()..color = Colors.amberAccent);
+    }
+    canvas.drawPath(path, Paint()
+      ..color = Colors.amberAccent
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2);
+    final tp = TextPainter(textDirection: TextDirection.ltr);
+    for (final (val, y) in [(hi, 0.0), (lo, size.height - 12)]) {
+      tp.text = TextSpan(text: fmtQty(val), style: const TextStyle(color: Colors.white54, fontSize: 10));
+      tp.layout();
+      tp.paint(canvas, Offset(0, y));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _BidChart old) => old.v != v;
 }
