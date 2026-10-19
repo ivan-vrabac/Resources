@@ -143,13 +143,13 @@ class ArchaeologyLayers extends StatelessWidget {
             if (c.revealed != null)
               Marker(
                 point: LatLng((c.revealed!['lat'] as num).toDouble(), (c.revealed!['lng'] as num).toDouble()),
-                width: 44, height: 44,
+                width: 110, height: 110,                     // 2.5× the first size (owner)
                 child: GestureDetector(
                   onTap: () => _confirmRecover(ctx),
                   child: Container(
                     decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.black54,
-                        border: Border.all(color: Colors.yellowAccent, width: 2)),
-                    padding: const EdgeInsets.all(4),
+                        border: Border.all(color: Colors.yellowAccent, width: 3)),
+                    padding: const EdgeInsets.all(8),
                     child: Image.asset('assets/mapmarkers/artifact.png',
                         errorBuilder: (_, __, ___) => const Icon(Icons.diamond, color: Colors.yellowAccent)),
                   ),

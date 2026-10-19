@@ -243,8 +243,8 @@ class CargoLayers extends StatelessWidget {
           for (final c in controller.crates)
             Marker(
               point: LatLng((c['lat'] as num).toDouble(), (c['lng'] as num).toDouble()),
-              width: c['stacked'] == true ? 40 : 30,
-              height: c['stacked'] == true ? 40 : 30,
+              width: c['stacked'] == true ? 100 : 76,      // 2.5× the first size (owner)
+              height: c['stacked'] == true ? 100 : 76,
               child: GestureDetector(
                 onTap: () => onTapCrate(c),
                 child: Image.asset(cargoMarkerAsset(c), fit: BoxFit.contain,

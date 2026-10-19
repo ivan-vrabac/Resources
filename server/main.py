@@ -929,7 +929,8 @@ def apply_output_hooks(conn, hid, item_id, qty):
 
 CASINO_FIVE_HOOKS = []   # fn(conn, symbol, spinner_hid) -> dict | None, inside the roll transaction
 
-STARTING_CREDITS = 50000
+SCAN_COST_DIVISOR = 10
+STARTING_CREDITS = 500000   # new companies (owner: 10× the original 50 000, 2026-10-19)
 
 def record_daily_activity(conn, hid: str):
     today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
@@ -1771,7 +1772,7 @@ async def auth_session(request: Request):
             if problem:
                 return json_resp({"error": "weak_password", "message": problem})
             hid = new_hid()
-            conn.execute("INSERT INTO players(hID,company_name) VALUES(?,?)", (hid, canon))
+            conn.execute("INSERT INTO players(hID,company_name,credits) VALUES(?,?,?)", (hid, canon, STARTING_CREDITS))
             auth.set_password(conn, hid, password)
             created = True
         else:
@@ -1856,7 +1857,7 @@ async def player_new(request: Request):
                 return plain_resp("")  # password-protected account
             return plain_resp(ex["hID"])
         hid = new_hid()
-        conn.execute("INSERT INTO players(hID,company_name) VALUES(?,?)", (hid, canon))
+        conn.execute("INSERT INTO players(hID,company_name,credits) VALUES(?,?,?)", (hid, canon, STARTING_CREDITS))
         conn.commit()
     log_entry({"ts": utcnow_iso(), "endpoint": "playerNew", "name": canon, "hID": hid})
     return plain_resp(hid)
@@ -2070,8 +2071,9 @@ async def scanner_payscan(request: Request):
         mine_count = conn.execute(
             "SELECT COUNT(*) as cnt FROM mines WHERE owner_hid=?", (hid,)).fetchone()["cnt"]
 
-        raw_cost = (10 * (2.4 ** tc_level)) * (1 + mine_count / 1000)
-        scan_cost = max(5000, int(round(raw_cost / 5000) * 5000))
+        # owner: scans cost 10× less than the original formula (2026-10-19)
+        raw_cost = (10 * (2.4 ** tc_level)) * (1 + mine_count / 1000) / SCAN_COST_DIVISOR
+        scan_cost = max(5000 // SCAN_COST_DIVISOR, int(round(raw_cost / 500) * 500))
 
         drone_range = None
         if is_drone:
