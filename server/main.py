@@ -1498,6 +1498,8 @@ def maybe_run_events(conn, hid: str, wa: int):
     healthy = [m for m in mines if not is_sick(m)]
     sick_until_str = (now + datetime.timedelta(days=DISEASE_DURATION_DAYS)).isoformat()
     rng = random.Random()
+    hospital = building_level(conn, hid, protection.HOSPITAL)
+    spread_f = protection.spread_factor(hospital)
     infect = set()
 
     # Spread disease from sick mines to healthy mines within DISEASE_SPREAD_RADIUS_M.
@@ -1518,12 +1520,13 @@ def maybe_run_events(conn, hid: str, wa: int):
                 for dy in (-1, 0, 1):
                     for m in grid.get((cx + dx, cy + dy), ()):
                         if (haversine_m(sm["lat"], sm["lng"], m["lat"], m["lng"]) <= DISEASE_SPREAD_RADIUS_M
-                                and rng.random() < 0.30):
+                                and rng.random() < 0.30 * spread_f):
                             infect.add(m["mine_id"])
 
     # Random new disease if WA is low
     if wa < 70:
         disease_prob = max(0.0, (70 - wa) / 70) * 0.03  # up to 3% per hour per mine at WA=0
+        disease_prob *= protection.disease_factor(hospital)
         for m in healthy:
             if rng.random() < disease_prob:
                 infect.add(m["mine_id"])
@@ -3069,8 +3072,11 @@ async def factory_new_order(request: Request):
         # Random fire event based on WA
         wa = row["wa"] if row["wa"] is not None else 80
         fire_prob = max(0.0, (60 - wa) / 60) * 0.08  # up to 8% when WA=0
+        station = building_level(conn, hid, protection.FIRE_STATION)
+        fire_prob *= protection.fire_factor(station)
         if random.random() < fire_prob:
-            fire_until = (now + datetime.timedelta(days=FIRE_DURATION_DAYS)).isoformat()
+            fire_until = (now + datetime.timedelta(
+                days=FIRE_DURATION_DAYS * protection.fire_duration_factor(station))).isoformat()
             conn.execute("UPDATE factories SET fire_until=? WHERE factory_id=?", (fire_until, fid))
             add_proto(conn, hid, "factoryfire", {"fID": fid, "until": fire_until})
             conn.commit()
@@ -4144,6 +4150,7 @@ async def casino_new_roll(request: Request):
                     if hand == "jackpot" and not jackpot_won:
                         jackpot_won = True
                         win = jackpot_amt
+                        econ.emit(conn, "casino_jackpot", hid, {"amount": win})
                         jackpot_amt = _JACKPOT_START  # reset
                     else:
                         win = bet * _CASINO_PAYOUTS.get(hand, 0)
@@ -4250,6 +4257,7 @@ async def casino_use_diamond(request: Request):
 
 import types as _types
 import econ
+import protection
 import systems
 
 def public_refs(conn, hids, viewer_hid: str) -> dict:

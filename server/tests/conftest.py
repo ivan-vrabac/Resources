@@ -11,4 +11,5 @@ os.environ.pop("UPSTREAM_PROXY_FROM", None)
 os.environ.pop("UPSTREAM_PROXY_TO", None)
 os.environ.pop("SESSION_SECRET", None)
 os.environ["AUTH_MODE"] = "secure"
+os.environ["WORLD_EVENTS_THREAD"] = "0"
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
