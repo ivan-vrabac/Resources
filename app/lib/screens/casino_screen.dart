@@ -222,6 +222,14 @@ class _CasinoScreenState extends State<CasinoScreen> {
       return;
     }
 
+    // Five of a kind of a luxury item pays a dividend to that item's holders (server-side)
+    for (final d in (res['dividends'] as List? ?? const []).cast<Map<String, dynamic>>()) {
+      final paid = (d['paid'] as num? ?? 0).toInt();
+      _snack(paid > 0
+          ? '${kItemNames[d['itemID']] ?? 'Luxury item'} dividend: ꞓ${_fmtLarge(paid)} paid to ${d['holders']} holders'
+          : 'Five of a kind! Nobody holds ${kItemNames[d['itemID']] ?? 'this item'} — no dividend');
+    }
+
     // Update jackpot and spins
     _jackpot   = (res['jackpot']    as num? ?? _jackpot).toInt();
     _spinsLeft = (res['spins_left'] as num? ?? 0).toInt();

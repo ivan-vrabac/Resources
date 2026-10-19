@@ -22,6 +22,7 @@ import 'contacts_screen.dart';
 import 'profile_screen.dart';
 import 'quests_screen.dart';
 import 'loans_screen.dart';
+import 'auctions_screen.dart';
 import '../widgets/archaeology_map.dart';
 import 'placeholder_screen.dart';
 import 'settings_screen.dart';
@@ -58,7 +59,7 @@ final Map<GameTabId, _TabMeta> tabMeta = {
   GameTabId.specialBuildings: _TabMeta(label: 'Buildings', icon: Icons.account_balance_outlined,
       build: () => const SpecialBuildingsScreen()),
   GameTabId.auctions: _TabMeta(label: 'Auctions', icon: Icons.gavel,
-      build: () => const PlaceholderScreen(title: 'Auctions', icon: Icons.gavel, subtitle: 'Bid on rare items and resources')),
+      build: () => const AuctionsScreen(), needsScaffold: true),
   GameTabId.archeology: _TabMeta(label: 'Archeology', icon: Icons.museum_outlined,
       build: () => const _ArchaeologyTab(), needsScaffold: true),
   GameTabId.chat: _TabMeta(label: 'Chat', icon: Icons.chat_bubble_outline,

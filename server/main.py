@@ -920,6 +920,7 @@ def award_xp(conn, hid: str, credits_spent: int):
 
 # Called as hook(conn, hid, old_level, new_level) inside the transaction that levelled up.
 LEVEL_UP_HOOKS = []
+CASINO_FIVE_HOOKS = []   # fn(conn, symbol, spinner_hid) -> dict | None, inside the roll transaction
 
 STARTING_CREDITS = 50000
 
@@ -4114,68 +4115,75 @@ async def casino_new_roll(request: Request):
         if bet < 1_000_000 or bet > max_bet:
             return zlib_resp({"err": 4, "msg": f"bet must be 1M–{max_bet//1_000_000}M"})
 
-        state = _get_casino_state(conn, hid)
-        state = _maybe_reset(conn, hid, state)
-        if state["spins_left"] < count:
-            return zlib_resp({"err": 5, "msg": "not enough spins"})
-
-        player = get_player(conn, hid)
-        if not player:
-            return zlib_resp({"err": 6})
+        # (reset may commit, so it runs before the transaction)
+        _maybe_reset(conn, hid, _get_casino_state(conn, hid))
         total_cost = bet * count
-        if player["credits"] < total_cost:
-            return zlib_resp({"err": 7, "msg": "not enough credits"})
+        dividends = []
+        try:
+            with econ.tx(conn):
+                state = conn.execute("SELECT * FROM casino_state WHERE hid=?", (hid,)).fetchone()
+                if state["spins_left"] < count:
+                    raise econ.GameError("no_spins", "not enough spins")
+                # conditional debit: concurrent rolls can't overspend
+                econ.debit(conn, hid, total_cost, "casino_bet")
 
-        # Deduct bet
-        conn.execute("UPDATE players SET credits=credits-? WHERE hID=?", (total_cost, hid))
+                rng = random.Random()
+                total_win   = 0
+                jackpot_won = False
+                jackpot_amt = _get_jackpot(conn)
+                hand_counts: dict = {k: 0 for k in _CASINO_PAYOUTS}
+                last_reels  = [0, 0, 0, 0, 0]
+                last_hand   = "no_pair"
+                last_win    = 0
+                fives = []
 
-        # Spin the reels
-        rng = random.Random()
-        total_win   = 0
-        jackpot_won = False
+                for _ in range(count):
+                    reels = [rng.randint(0, _CASINO_SYMBOLS - 1) for _ in range(5)]
+                    hand  = _eval_hand(reels)
+                    hand_counts[hand] = hand_counts.get(hand, 0) + 1
+                    if hand == "jackpot" and not jackpot_won:
+                        jackpot_won = True
+                        win = jackpot_amt
+                        jackpot_amt = _JACKPOT_START  # reset
+                    else:
+                        win = bet * _CASINO_PAYOUTS.get(hand, 0)
+                        if hand == "five_of_a_kind":
+                            fives.append(reels[0])
+                    total_win   += win
+                    last_reels   = reels
+                    last_hand    = hand
+                    last_win     = win
+
+                # Increment jackpot by 1M per spin (unless won this batch)
+                if jackpot_won:
+                    conn.execute("UPDATE jackpot SET amount=? WHERE id=1", (jackpot_amt,))
+                else:
+                    conn.execute("UPDATE jackpot SET amount=amount+? WHERE id=1",
+                                 (_JACKPOT_INCREMENT * count,))
+
+                # five of a kind of a luxury symbol → dividend to holders of that item (systems/auctions.py)
+                for sym in fives:
+                    for hook in CASINO_FIVE_HOOKS:
+                        d = hook(conn, sym, hid)
+                        if d:
+                            dividends.append(d)
+
+                econ.credit(conn, hid, total_win, "casino_win")
+
+                # Decrement spins; start timer if first spin this cycle
+                new_spins = state["spins_left"] - count
+                reset_at  = state["reset_at"]
+                if reset_at is None:
+                    reset_at = (datetime.datetime.utcnow() +
+                                datetime.timedelta(hours=24)).isoformat()
+                conn.execute(
+                    "UPDATE casino_state SET spins_left=?, reset_at=? WHERE hid=?",
+                    (new_spins, reset_at, hid))
+        except econ.GameError as e:
+            return zlib_resp({"err": 5 if e.code == "no_spins" else 7, "msg": e.message})
         jackpot_amt = _get_jackpot(conn)
-        hand_counts: dict = {k: 0 for k in _CASINO_PAYOUTS}
-        last_reels  = [0, 0, 0, 0, 0]
-        last_hand   = "no_pair"
-        last_win    = 0
 
-        for _ in range(count):
-            reels = [rng.randint(0, _CASINO_SYMBOLS - 1) for _ in range(5)]
-            hand  = _eval_hand(reels)
-            hand_counts[hand] = hand_counts.get(hand, 0) + 1
-            if hand == "jackpot" and not jackpot_won:
-                jackpot_won = True
-                win = jackpot_amt
-                jackpot_amt = _JACKPOT_START  # reset
-            else:
-                win = bet * _CASINO_PAYOUTS.get(hand, 0)
-            total_win   += win
-            last_reels   = reels
-            last_hand    = hand
-            last_win     = win
-
-        # Increment jackpot by 1M per spin (unless won this batch)
-        if jackpot_won:
-            conn.execute("UPDATE jackpot SET amount=? WHERE id=1", (jackpot_amt,))
-        else:
-            conn.execute("UPDATE jackpot SET amount=amount+? WHERE id=1",
-                         (_JACKPOT_INCREMENT * count,))
-
-        # Credit winnings
-        conn.execute("UPDATE players SET credits=credits+? WHERE hID=?", (total_win, hid))
-
-        # Decrement spins; start timer if first spin this cycle
-        new_spins = state["spins_left"] - count
-        reset_at  = state["reset_at"]
-        if reset_at is None:
-            reset_at = (datetime.datetime.utcnow() +
-                        datetime.timedelta(hours=24)).isoformat()
-        conn.execute(
-            "UPDATE casino_state SET spins_left=?, reset_at=? WHERE hid=?",
-            (new_spins, reset_at, hid))
-        conn.commit()
-
-    new_jackpot = _get_jackpot(conn) if not jackpot_won else jackpot_amt
+    new_jackpot = jackpot_amt
 
     if count == 1:
         return zlib_resp({
@@ -4187,6 +4195,7 @@ async def casino_new_roll(request: Request):
             "spins_left":  new_spins,
             "jackpot":     new_jackpot,
             "jackpot_won": jackpot_won,
+            "dividends":   dividends,
         })
     else:
         return zlib_resp({
@@ -4199,6 +4208,7 @@ async def casino_new_roll(request: Request):
             "spins_left":  new_spins,
             "jackpot":     new_jackpot,
             "jackpot_won": jackpot_won,
+            "dividends":   dividends,
         })
 
 @app.post("/flut23/casinoUseDiamond.php")
@@ -4278,7 +4288,7 @@ SYSTEM_HELPERS = _types.SimpleNamespace(
     mine_stats=mine_stats, mine_rows=mine_rows,
     MINE_TYPES=MINE_TYPES, SPECIAL_BUILDINGS=SPECIAL_BUILDINGS, HQ_BOOST_RADIUS=HQ_BOOST_RADIUS,
     DRONE_SCAN_RANGES=DRONE_SCAN_RANGES, new_id=new_id, SYSTEM_PRICES=SYSTEM_PRICES,
-    LEVEL_UP_HOOKS=LEVEL_UP_HOOKS,
+    LEVEL_UP_HOOKS=LEVEL_UP_HOOKS, CASINO_FIVE_HOOKS=CASINO_FIVE_HOOKS,
 )
 INSTALLED_SYSTEMS = systems.install_all(app, SYSTEM_HELPERS)
 
