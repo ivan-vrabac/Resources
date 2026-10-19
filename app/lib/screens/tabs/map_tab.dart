@@ -31,6 +31,7 @@ import '../../widgets/top_banner.dart';
 import '../../widgets/foreign_target_sheet.dart';
 import '../../widgets/cargo_map.dart';
 import '../../widgets/archaeology_map.dart';
+import '../../widgets/combat_actions.dart';
 import 'mines_tab.dart' show TechUpgradeSheet;
 
 // ── Heatmap data from server ───────────────────────────────────────────────────
@@ -694,6 +695,7 @@ class _MapTabState extends State<MapTab> {
         if (sid.isEmpty) return;
         unawaited(_cargo.refreshInfo(sid));
         _arch.attach(() => context.read<PlayerProvider>().sid, () => _pos);
+      CombatActions.register();
         try {
           final bounds = _mapCtrl.camera.visibleBounds;
           unawaited(_loadHqMarkers(sid, bounds));
