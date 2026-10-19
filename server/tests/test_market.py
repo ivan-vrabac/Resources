@@ -24,10 +24,11 @@ def test_system_trade_prices_and_restrictions():
     r = call(M + "system", sid, side="buy", itemID=CLAY, qty=100)
     assert r["cost"] == 750 + 112 and r["tax"] == 112 and qty(hid, CLAY) == 100   # 150% + 15% tax
     assert credits(hid) == 1_000_000 + 5000 - 862
-    r = call(M + "system", sid, side="buy", itemID=48, qty=1)       # TU IV: system sells it …
-    assert r["err"] == 0 and qty(hid, 48) == 1
-    assert call(M + "order", sid, side="buy", itemID=48, qty=1, price=10)["code"] == "restricted"  # … players can't trade it
-    for restricted in (42, 48, 175):
+    for banned in (42, 48):                                         # Giant Diamonds, TU IV: not tradeable at all
+        assert call(M + "system", sid, side="buy", itemID=banned, qty=1)["code"] == "restricted"
+    give(hid, 172, 1)                                               # artifacts are tradeable now
+    assert call(M + "system", sid, side="sell", itemID=172, qty=1)["err"] == 0
+    for restricted in (42, 48, 130):
         give(hid, restricted, 1)
         assert call(M + "system", sid, side="sell", itemID=restricted, qty=1)["code"] == "restricted"
         assert call(M + "order", sid, side="buy", itemID=restricted, qty=1, price=10)["code"] == "restricted"
@@ -46,55 +47,56 @@ def test_buy_order_escrow_tax_fill_and_refund():
     b_hid, b_sid, _ = new_player("buyer", credits=100_000, wh_level=3)
     s_hid, s_sid, _ = new_player("seller", credits=0, wh_level=3)
     set_building(b_hid, 123, 5)                                     # 10% tax
-    q = call(M + "quote", b_sid, action="buy_order", itemID=GOLD, qty=100, price=400)
-    assert q == {"err": 0, "value": 40000, "tax": 4000, "total": 44000, "taxRate": 0.10}
-    r = call(M + "order", b_sid, side="buy", itemID=GOLD, qty=100, price=400)
-    assert r["escrow"] == 44000 and credits(b_hid) == 100_000 - 44000
+    q = call(M + "quote", b_sid, action="buy_order", itemID=GOLD, qty=100, price=600)
+    assert q == {"err": 0, "value": 60000, "tax": 6000, "total": 66000, "taxRate": 0.10}
+    r = call(M + "order", b_sid, side="buy", itemID=GOLD, qty=100, price=600)
+    assert r["escrow"] == 66000 and credits(b_hid) == 100_000 - 66000
     give(s_hid, GOLD, 60)
     r = call(M + "take", s_sid, orderID=r["orderID"], qty=60)           # seller fills 60 (taker, no tax)
-    assert r["value"] == 24000 and credits(s_hid) == 24000 and qty(b_hid, GOLD) == 60
+    assert r["value"] == 36000 and credits(s_hid) == 36000 and qty(b_hid, GOLD) == 60
     mine = call(M + "mine", b_sid)["orders"][0]
-    assert mine["qtyOpen"] == 40 and mine["escrow"] == 44000 - 24000 - 2400
+    assert mine["qtyOpen"] == 40 and mine["escrow"] == 66000 - 36000 - 3600
     r = call(M + "cancel", b_sid, orderID=mine["id"])
-    assert r["refunded"] == 17600
-    assert credits(b_hid) == 100_000 - 24000 - 2400
+    assert r["refunded"] == 26400
+    assert credits(b_hid) == 100_000 - 36000 - 3600
 
 
 def test_one_order_per_item_edit_and_priority():
     a_hid, a_sid, _ = new_player("onea", credits=10_000_000, wh_level=3)
     b_hid, b_sid, _ = new_player("oneb", credits=10_000_000, wh_level=3)
-    oa = call(M + "order", a_sid, side="buy", itemID=GOLD, qty=10, price=300)["orderID"]
-    assert call(M + "order", a_sid, side="buy", itemID=GOLD, qty=5, price=310)["code"] == "duplicate"
-    call(M + "order", b_sid, side="buy", itemID=GOLD, qty=10, price=300)
+    oa = call(M + "order", a_sid, side="buy", itemID=GOLD, qty=10, price=520)["orderID"]
+    assert call(M + "order", a_sid, side="buy", itemID=GOLD, qty=5, price=530)["code"] == "duplicate"
+    assert call(M + "order", b_sid, side="buy", itemID=GOLD, qty=10, price=499)["code"] == "price_too_low"
+    call(M + "order", b_sid, side="buy", itemID=GOLD, qty=10, price=520)
     book = call(M + "book", b_sid, itemID=GOLD)
-    same = [x for x in book["bids"] if x["price"] == 300]
+    same = [x for x in book["bids"] if x["price"] == 520]
     assert same[0]["id"] == oa                                     # same price: older first
     assert book["myOrder"] and book["freeSpace"] > 0
     before = credits(a_hid)
-    r = call(M + "edit", a_sid, orderID=oa, qty=20, price=320)
-    assert r["err"] == 0 and credits(a_hid) == before + 3450 - (6400 + 960)   # old escrow back, new escrow held
+    r = call(M + "edit", a_sid, orderID=oa, qty=20, price=540)
+    assert r["err"] == 0 and credits(a_hid) == before + 5980 - (10800 + 1620)  # old escrow back, new escrow held
     assert call(M + "book", b_sid, itemID=GOLD)["bids"][0]["id"] == oa       # higher price on top
 
 
 def test_bid_cap_own_orders_and_idempotency():
     a_hid, a_sid, _ = new_player("capa", credits=10_000_000, wh_level=3)
     b_hid, b_sid, _ = new_player("capb", credits=10_000_000, wh_level=3)
-    call(M + "order", a_sid, side="buy", itemID=14, qty=10, price=100)          # gold ore, sys 200
-    assert call(M + "order", b_sid, side="buy", itemID=14, qty=10, price=126)["code"] == "price_too_high"
-    assert call(M + "order", b_sid, side="buy", itemID=14, qty=10, price=125)["err"] == 0
+    call(M + "order", a_sid, side="buy", itemID=14, qty=10, price=200)          # gold ore, sys 200 (floor)
+    assert call(M + "order", b_sid, side="buy", itemID=14, qty=10, price=251)["code"] == "price_too_high"
+    assert call(M + "order", b_sid, side="buy", itemID=14, qty=10, price=250)["err"] == 0
     assert call(M + "order", b_sid, side="buy", itemID=13, qty=1, price=31)["code"] == "price_too_high"  # > 150% sys
     own = call(M + "mine", b_sid)["orders"][0]
     assert call(M + "take", b_sid, orderID=own["id"], qty=1)["code"] == "own_order"
     rid = uuid.uuid4().hex
-    first = call(M + "order", a_sid, side="buy", itemID=3, qty=5, price=5, rid=rid)
-    again = call(M + "order", a_sid, side="buy", itemID=3, qty=5, price=5, rid=rid)
+    first = call(M + "order", a_sid, side="buy", itemID=3, qty=5, price=6, rid=rid)
+    again = call(M + "order", a_sid, side="buy", itemID=3, qty=5, price=6, rid=rid)
     assert first == again
     assert sum(1 for o in call(M + "mine", a_sid)["orders"] if o["itemID"] == 3) == 1
 
 
 def test_concurrent_sellers_never_overfill():
     b_hid, b_sid, _ = new_player("race", credits=10_000, wh_level=3)
-    order = call(M + "order", b_sid, side="buy", itemID=CLAY, qty=100, price=4)["orderID"]
+    order = call(M + "order", b_sid, side="buy", itemID=CLAY, qty=100, price=6)["orderID"]
     sellers = [new_player(f"rs{i}", credits=0, wh_level=3) for i in range(8)]
     for s in sellers:
         give(s[0], CLAY, 30)
@@ -107,12 +109,12 @@ def test_concurrent_sellers_never_overfill():
         t.join()
     assert qty(b_hid, CLAY) == 100                                        # exactly what was asked
     assert sum(1 for r in results if r["err"] == 0) == 4                  # 30+30+30+10
-    assert sum(credits(s[0]) for s in sellers) == 400
+    assert sum(credits(s[0]) for s in sellers) == 600
 
 
 def test_expired_order_refunds():
     hid, sid, _ = new_player("exp", credits=10_000, wh_level=3)
-    call(M + "order", sid, side="buy", itemID=CLAY, qty=100, price=5)
+    call(M + "order", sid, side="buy", itemID=CLAY, qty=100, price=6)
     with main.get_db() as conn:
         conn.execute("UPDATE mkt_orders SET expires_at='2000-01-01' WHERE hid=?", (hid,))
         conn.commit()

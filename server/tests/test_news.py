@@ -20,7 +20,7 @@ def _emit(type_, hid, data, **kw):
         conn.commit()
 
 
-def test_news_from_events_once_with_privacy():
+def test_news_from_events_once():
     hid, sid, name = new_player("nw1")
     _emit("casino_jackpot", hid, {"amount": 123})
     _digest()
@@ -28,11 +28,7 @@ def test_news_from_events_once_with_privacy():
     items = [i for i in call("/api/v1/news", sid, category="casino")["items"] if i["kind"] == "jackpot"
              and i["players"] and i["players"][0].get("name") == name]
     assert len(items) == 1 and name in items[0]["title"]
-    other, o_sid, _ = new_player("nw2")
-    call("/api/v1/news/privacy", sid, anonymous=1)
-    seen = call("/api/v1/news", o_sid, category="casino")["items"]
-    assert not any(name in i["title"] for i in seen)
-    assert "hid" not in str(seen).lower().replace("hid2", "")
+    assert hid not in str(items)
 
 
 def test_mines_24h_milestone_dedup():

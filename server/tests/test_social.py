@@ -58,3 +58,20 @@ def test_chat_order_history_blocking_and_rate_limit():
     assert all(m["pid"] != a_pid for m in call("/api/v1/chat/messages", b_sid)["messages"])
     assert any(m["pid"] == a_pid for m in call("/api/v1/chat/messages", a_sid)["messages"])
     assert call("/api/v1/chat/send", b_sid, msg="x" * 501)["code"] == "bad_input"
+
+
+def test_private_messages_threads_read_and_block():
+    a, a_sid, a_name = new_player("dma")
+    b, b_sid, b_name = new_player("dmb")
+    a_pid = call("/api/v1/social/profile", a_sid)["profile"]["pid"]
+    b_pid = call("/api/v1/social/profile", b_sid)["profile"]["pid"]
+    assert call("/api/v1/chat/dm/send", a_sid, pid=b_pid, msg="hello b")["err"] == 0
+    th = call("/api/v1/chat/dm/threads", b_sid)
+    assert th["unread"] == 1 and th["threads"][0]["name"] == a_name and th["threads"][0]["last"] == "hello b"
+    conv = call("/api/v1/chat/dm/messages", b_sid, pid=a_pid)
+    assert [m["msg"] for m in conv["messages"]] == ["hello b"] and not conv["messages"][0]["isMe"]
+    assert call("/api/v1/chat/dm/threads", b_sid)["unread"] == 0                 # read now
+    assert a not in str(th) and a not in str(conv)
+    call("/api/v1/social/contact", b_sid, pid=a_pid, kind="blacklist")
+    assert call("/api/v1/chat/dm/send", a_sid, pid=b_pid, msg="again")["code"] == "blocked"
+    assert call("/api/v1/chat/dm/send", a_sid, pid=a_pid, msg="me")["code"] == "bad_input"

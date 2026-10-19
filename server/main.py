@@ -1617,6 +1617,22 @@ def maybe_run_events(conn, hid: str, wa: int):
 MAX_MINES_PER_PLAYER = 10000
 REMOTE_BUILD_COOLDOWN_H = 12   # owner's rule: one drone (remote) construction per 12 hours (Astrolabium: 11/10/8)
 
+HQ_SUB_LEVEL_POINTS = 10_000   # owner: HQ 10_1 … 10_6 unlock with every 10 000 luxury points
+HQ_SUB_LEVEL_MAX = 6
+
+def luxury_points_of(conn, hid: str) -> int:
+    try:
+        r = conn.execute("SELECT points FROM luxury_points WHERE hid=?", (hid,)).fetchone()
+    except Exception:
+        return 0
+    return int(r[0]) if r else 0
+
+def hq_sub_level(conn, hid: str, level: int) -> int:
+    """HQ level 10 sub-level from luxury points (0 below level 10)."""
+    if level < 10:
+        return 0
+    return min(HQ_SUB_LEVEL_MAX, luxury_points_of(conn, hid) // HQ_SUB_LEVEL_POINTS)
+
 def artifact_effect(conn, hid: str, item_id: int) -> float:
     """Effect of an invested artifact kind (systems/archaeology.py ARTIFACT_EFFECTS)."""
     from systems import archaeology
@@ -1987,7 +2003,8 @@ def build_player_data(conn, row, include_mines: bool = True) -> dict:
             (hid, hq_row["level"] + 1)).fetchall()
         hq_deposits = {str(d["item_id"]): d["amount"] for d in dep_rows}
         hq = {"lat": hq_row["lat"], "lng": hq_row["lng"], "lvl": hq_row["level"],
-              "deposits": hq_deposits}
+              "deposits": hq_deposits, "sub_lvl": hq_sub_level(conn, hid, hq_row["level"]),
+              "luxuryPoints": luxury_points_of(conn, hid)}
 
     # Factories
     now = datetime.datetime.utcnow()
@@ -2840,9 +2857,11 @@ async def hq_get_markers(request: Request):
             "AND (h.hid = ? OR h.level >= ?)",
             (lat1,lat2,lng1,lng2,hid,min_level)).fetchall()
         refs = public_refs(conn, {r["hid"] for r in rows}, hid)
+        subs = {r["hid"]: hq_sub_level(conn, r["hid"], r["level"]) for r in rows if r["level"] >= 10}
     return zlib_resp([{
         "ownerHID": refs[r["hid"]], "ownerName": r["company_name"],
-        "lat": r["lat"], "lng": r["lng"], "lvl": r["level"], "isMine": r["hid"]==hid
+        "lat": r["lat"], "lng": r["lng"], "lvl": r["level"], "isMine": r["hid"]==hid,
+        "sub_lvl": subs.get(r["hid"], 0),
     } for r in rows])
 
 @app.post("/flut23/HQNewPosition.php")
@@ -3675,15 +3694,30 @@ async def items_get_data(request: Request):
 
 # System ("AI") price per unit — the existing game price definitions. The market buys at
 # 100% and sells at 150% of these (systems/market.py).
+# System market prices (what the system pays; it sells at 150 % + tax). Owner 2026-10-19: the system
+# trades nearly everything, which also bounds player bids (min = this price, max = the system's
+# selling price). Not tradeable at all: Giant Diamonds (42), Tech Upgrade IV (48), luxury items
+# (auctions), buildings. Products without an original price: srx.txt recipe inputs + recipe credits
+# per unit, +30 %; found objects: about what they recycle into. A placeholder until the economy rework.
 SYSTEM_PRICES = {
+    # raw resources and the original products
     2: 5, 3: 5, 7: 20, 8: 15, 10: 40, 12: 18, 13: 20, 14: 200,
     15: 80, 20: 8, 24: 25, 26: 35, 30: 60, 32: 90, 35: 150,
     36: 120, 38: 70, 49: 45, 53: 6, 79: 500, 81: 400, 90: 300, 169: 350,
-    # former developer-shop items, now sold by the system market: price × 1.5 = old shop price
-    43: 333, 44: 3333, 45: 10000, 46: 23333, 48: 46667, 117: 1333,
+    # factory products (srx.txt recipes)
+    22: 18, 59: 590, 28: 95, 57: 57, 92: 10270, 93: 36865, 87: 14925, 67: 32484, 66: 6187,
+    51: 3367, 75: 15074, 84: 292923, 171: 8973, 124: 89312,
+    # former shop items (× 1.5 = old shop price)
+    43: 333, 44: 3333, 45: 10000, 46: 23333, 117: 1333,
+    # found objects (≈ recycling value)
+    41: 30, 55: 30, 40: 80, 70: 15, 74: 12, 77: 6, 78: 40, 115: 5, 120: 40,
+    # production boosters, units, archaeology
+    158: 10000, 159: 10000, 160: 10000, 161: 10000,
+    95: 200, 97: 1500, 98: 4000, 102: 250, 103: 2000, 104: 5000,
+    166: 3200000, 167: 1000,
+    # artifacts (rarer = dearer)
+    172: 3333, 173: 10000, 174: 5000, 175: 6667, 176: 20000, 177: 5000,
 }
-# items the system sells but that players may not trade between themselves (Tech Upgrade IV)
-SYSTEM_ONLY_BUY = {48}
 
 @app.post("/flut23/itemsGetKurse.php")
 async def items_get_kurse(request: Request):
@@ -4393,7 +4427,7 @@ SYSTEM_HELPERS = _types.SimpleNamespace(
     mine_stats=mine_stats, mine_rows=mine_rows,
     MINE_TYPES=MINE_TYPES, SPECIAL_BUILDINGS=SPECIAL_BUILDINGS, HQ_BOOST_RADIUS=HQ_BOOST_RADIUS,
     HQ_BOOST_FACTORS=HQ_BOOST_FACTORS, FACTORY_TYPES=FACTORY_TYPES,
-    DRONE_SCAN_RANGES=DRONE_SCAN_RANGES, new_id=new_id, SYSTEM_PRICES=SYSTEM_PRICES, SYSTEM_ONLY_BUY=SYSTEM_ONLY_BUY,
+    DRONE_SCAN_RANGES=DRONE_SCAN_RANGES, new_id=new_id, SYSTEM_PRICES=SYSTEM_PRICES,
     LEVEL_UP_HOOKS=LEVEL_UP_HOOKS, CASINO_FIVE_HOOKS=CASINO_FIVE_HOOKS, OUTPUT_HOOKS=OUTPUT_HOOKS,
 )
 INSTALLED_SYSTEMS = systems.install_all(app, SYSTEM_HELPERS)

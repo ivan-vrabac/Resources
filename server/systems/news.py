@@ -2,8 +2,8 @@
 
 News items are created only from real backend events (game_events) by a sweep that keeps a
 cursor, so every event is considered once; items carry a UNIQUE dedup key. Names are resolved
-when news is read, so a player who turns on anonymous news (/api/v1/news/privacy) disappears
-from past items too. Player locations are rounded to 0.01° (~1 km).
+when news is read. (The anonymity option was removed by the owner on 2026-10-19; the table stays
+so older data keeps working.) Player locations are rounded to 0.01° (~1 km).
 
 Earthquakes (configurable, documented): one per UTC day at a time of day derived from the
 date; epicenter in one of SEISMIC_ZONES (real seismically active regions) with up to ~150 km
@@ -406,18 +406,8 @@ def install(api) -> None:
         rows = conn.execute(sql + " ORDER BY id DESC LIMIT ?", (*args, PAGE + 1)).fetchall()
         more = len(rows) > PAGE
         rows = rows[:PAGE]
-        priv = conn.execute("SELECT anonymous FROM news_privacy WHERE hid=?", (hid,)).fetchone()
         return {"err": 0, "items": render(conn, rows, hid), "more": more,
-                "next": rows[-1]["id"] if more and rows else None, "categories": CATEGORIES,
-                "anonymous": bool(priv and priv[0])}
-
-    @api.endpoint("/api/v1/news/privacy", feature="NEWS")
-    def privacy(conn, hid, form):
-        anon = 1 if int_arg(form, "anonymous", 0, 0, 1) else 0
-        with econ.tx(conn):
-            conn.execute("INSERT INTO news_privacy(hid, anonymous) VALUES(?,?) ON CONFLICT(hid) "
-                         "DO UPDATE SET anonymous=excluded.anonymous", (hid, anon))
-        return {"err": 0, "anonymous": bool(anon)}
+                "next": rows[-1]["id"] if more and rows else None, "categories": CATEGORIES}
 
     @api.endpoint("/api/v1/news/earthquakes", feature="EARTHQUAKES")
     def quakes(conn, hid, form):

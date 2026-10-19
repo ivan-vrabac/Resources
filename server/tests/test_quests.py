@@ -105,8 +105,10 @@ def test_seven_and_thirty_day_streak_milestones_paid_once():
     for q in call(Q, sid)["quests"]:
         paid += call(Q + "/claim", sid, id=q["id"])["milestones"]
     # day 30 completes: 7,14,21,28 (5 GD each) + 30 (10 GD)
-    assert sorted((m["days"], m["diamonds"]) for m in paid) == [(7, 5), (14, 5), (21, 5), (28, 5), (30, 10)]
+    assert sorted((m["days"], m["diamonds"]) for m in paid if "diamonds" in m) == \
+        [(7, 5), (14, 5), (21, 5), (28, 5), (30, 10)]
     assert qty(hid, 42) == 30
+    assert [m["qty"] for m in paid if m.get("daily")] == [50]          # day 30 of the streak: 50 Tech Upgrades I
     with main.get_db() as conn:
         assert quests.pay_milestones(conn, hid, today.isoformat()) == []   # never twice
         assert quests.current_streak(conn, hid) == 30
@@ -129,7 +131,7 @@ def test_broken_streak_restarts_milestones():
     _events(hid, "scan", 10)
     q = call(Q, sid)["quests"][0]
     r = call(Q + "/claim", sid, id=q["id"])
-    assert [(m["days"], m["diamonds"]) for m in r["milestones"]] == [(7, 5)]   # new streak, new milestone
+    assert [(m["days"], m["diamonds"]) for m in r["milestones"] if "diamonds" in m] == [(7, 5)]   # new streak
     assert qty(hid, 42) == 10
 
 
@@ -142,3 +144,15 @@ def test_level_up_grants_cargo():
         lvl = conn.execute("SELECT level FROM players WHERE hID=?", (hid,)).fetchone()[0]
         assert lvl > 1
         assert cargo.stock(conn, hid) - before == 30 * (lvl - 1)
+
+
+def test_daily_tech_upgrade_tiers_and_variable_targets():
+    assert [quests.daily_tu(d) for d in (1, 2, 10, 11, 40)] == [5, 10, 10, 50, 50]
+    t = {quests.target_of("cargo", f"h{i}", "2026-01-01") for i in range(200)}
+    assert min(t) >= 5 and max(t) <= 20 and len(t) > 5
+    assert all(1 <= quests.target_of("artifacts", f"h{i}", "2026-01-02") <= 3 for i in range(50))
+    hid, sid, _ = new_player("qtu")
+    codes = {q["code"] for q in call(Q, sid)["quests"]}
+    assert "artifacts" not in codes                                     # needs an Archaeological Center
+    plan = call(Q, sid)["rewardPlan"]
+    assert plan["daily"][0]["qty"] == 5 and plan["milestones"][0]["every"] == 7

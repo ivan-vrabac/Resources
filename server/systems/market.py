@@ -15,8 +15,9 @@ Rules (documented assumptions, see .private/NEXT-PROGRESS.md):
   The side that fills an existing order (taker) pays no tax. No trade is taxed twice.
 - A buy order may bid at most 25% above the current best bid (eva.txt), and never more than the
   system's buy price (150%) when the item has a system price (buying from the system is cheaper).
-- Not tradeable here: Giant Diamonds (42), Tech Upgrade IV (48), luxury items (auction-only,
-  ownership-capped), artifacts, special buildings.
+- Not tradeable at all: Giant Diamonds (42), Tech Upgrade IV (48), luxury items (auction-only,
+  ownership-capped), special buildings. Player bids must lie between the system's buying price
+  (floor) and its selling price (ceiling).
 All movements go through econ (atomic, non-negative, ledgered); order placement accepts an
 idempotency key `rid` so a retried request never places a second order.
 """
@@ -95,8 +96,6 @@ def install(api) -> None:
             raise econ.GameError("restricted", f"{RESTRICTED[item_id]} can't be traded on the market")
         if item_id in LUXURY_ITEMS:
             raise econ.GameError("restricted", "Luxury items are only sold at auctions")
-        if item_id in ARTIFACTS:
-            raise econ.GameError("restricted", "Artifacts can't be traded")
         if item_id in h.SPECIAL_BUILDINGS or item_id in h.MINE_TYPES or item_id <= 1:
             raise econ.GameError("restricted", "This can't be traded")
 
@@ -193,6 +192,8 @@ def install(api) -> None:
         sp = prices.get(item_id)
         if sp and price > sp * SYSTEM_BUY_MARKUP:
             raise econ.GameError("price_too_high", "Buying from the system is cheaper")
+        if sp and price < sp:      # the system's buying price is the floor
+            raise econ.GameError("price_too_low", f"Bid at least the system price ({sp:g})")
 
     # ── read endpoints ──────────────────────────────────────────────────────
 
@@ -301,8 +302,7 @@ def install(api) -> None:
         """side=sell: sell to the system at 100%. side=buy: buy from the system at 150%."""
         side = form.get("side", "")
         item_id, qty = parse_order(form)
-        if not (side == "buy" and item_id in getattr(h, "SYSTEM_ONLY_BUY", ())):
-            check_tradeable(item_id)
+        check_tradeable(item_id)
         p = prices.get(item_id)
         if not p:
             raise econ.GameError("no_price", "The system doesn't trade this item")

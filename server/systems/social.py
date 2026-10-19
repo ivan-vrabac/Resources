@@ -279,3 +279,82 @@ def install(api) -> None:
             new_id = cur.lastrowid
             conn.execute("DELETE FROM chat_messages WHERE id <= ?", (new_id - 5000,))
         return {"err": 0, "id": new_id}
+
+    # ── private messages (owner 2026-10-19) ──────────────────────────────────
+    with h.get_db() as c0:
+        c0.executescript("""
+            CREATE TABLE IF NOT EXISTS private_messages (
+                id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                from_hid TEXT NOT NULL,
+                to_hid   TEXT NOT NULL,
+                msg      TEXT NOT NULL,
+                ts       TEXT NOT NULL,
+                read_at  TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_pm_to ON private_messages(to_hid, id);
+            CREATE INDEX IF NOT EXISTS idx_pm_from ON private_messages(from_hid, id);
+        """)
+        c0.commit()
+
+    @api.endpoint("/api/v1/chat/dm/send", feature="SOCIAL")
+    def dm_send(conn, hid, form):
+        """Send a private message to a player (by public id). Blocked senders are refused."""
+        target = hid_of(conn, form.get("pid"))
+        if target == hid:
+            raise econ.GameError("bad_input", "You can't message yourself")
+        msg = " ".join((form.get("msg") or "").split())
+        if not msg:
+            raise econ.GameError("bad_input", "Message is empty")
+        if len(msg) > CHAT_MAX_LEN:
+            raise econ.GameError("bad_input", f"Message is too long (max {CHAT_MAX_LEN})")
+        if hid in blocked_by(conn, target):
+            raise econ.GameError("blocked", "This player doesn't accept your messages")
+        if not (chat_limit_burst.allow(hid) and chat_limit_minute.allow(hid)):
+            raise econ.GameError("rate_limited", "You're sending messages too fast")
+        with econ.tx(conn):
+            cur = conn.execute("INSERT INTO private_messages(from_hid, to_hid, msg, ts) VALUES(?,?,?,?)",
+                               (hid, target, msg, econ.utcnow_iso()))
+        try:
+            with h.get_db() as c2:
+                name = c2.execute("SELECT company_name FROM players WHERE hID=?", (hid,)).fetchone()[0]
+                h.push(c2, target, f"Message from {name}", msg[:120])
+        except Exception:
+            pass
+        return {"err": 0, "id": cur.lastrowid}
+
+    @api.endpoint("/api/v1/chat/dm/threads", feature="SOCIAL")
+    def dm_threads(conn, hid, form):
+        """Your conversations: other player, last message, unread count (newest first)."""
+        rows = conn.execute("""
+            SELECT other, MAX(id) AS last_id, SUM(unread) AS unread FROM (
+                SELECT to_hid AS other, id, 0 AS unread FROM private_messages WHERE from_hid=?
+                UNION ALL
+                SELECT from_hid AS other, id, CASE WHEN read_at IS NULL THEN 1 ELSE 0 END FROM private_messages WHERE to_hid=?
+            ) GROUP BY other ORDER BY last_id DESC LIMIT 100""", (hid, hid)).fetchall()
+        hidden = blocked_by(conn, hid)
+        out = []
+        for r in rows:
+            if r[0] in hidden:
+                continue
+            last = conn.execute("SELECT msg, ts, from_hid FROM private_messages WHERE id=?", (r[1],)).fetchone()
+            out.append({**_summary(conn, r[0]), "last": last[0], "ts": last[1], "lastFromMe": last[2] == hid,
+                        "unread": int(r[2] or 0)})
+        conn.commit()
+        return {"err": 0, "threads": out, "unread": sum(t["unread"] for t in out)}
+
+    @api.endpoint("/api/v1/chat/dm/messages", feature="SOCIAL")
+    def dm_messages(conn, hid, form):
+        """Conversation with one player (marks their messages to you as read). before=<id> pages back."""
+        other = hid_of(conn, form.get("pid"))
+        before = int_arg(form, "before", 0, 0)
+        q = ("SELECT id, from_hid, msg, ts FROM private_messages WHERE "
+             "((from_hid=? AND to_hid=?) OR (from_hid=? AND to_hid=?))" + (" AND id < ?" if before else "")
+             + " ORDER BY id DESC LIMIT 50")
+        args = (hid, other, other, hid) + ((before,) if before else ())
+        rows = conn.execute(q, args).fetchall()
+        with econ.tx(conn):
+            conn.execute("UPDATE private_messages SET read_at=? WHERE to_hid=? AND from_hid=? AND read_at IS NULL",
+                         (econ.utcnow_iso(), hid, other))
+        return {"err": 0, "with": _summary(conn, other),
+                "messages": [{"id": r[0], "isMe": r[1] == hid, "msg": r[2], "ts": r[3]} for r in reversed(rows)]}
+

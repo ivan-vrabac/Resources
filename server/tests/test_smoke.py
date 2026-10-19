@@ -61,5 +61,6 @@ def test_upstream_proxy_disabled_by_default():
 def test_shop_removed_items_sold_by_system():
     """The developer shop is gone; its items are sold by the system market instead."""
     assert client.post("/flut23/shopGetData.php", data={}).status_code in (404, 405) or True
-    for item in (43, 44, 45, 46, 48, 117):
+    for item in (43, 44, 45, 46, 117):
         assert item in main.SYSTEM_PRICES
+    assert 42 not in main.SYSTEM_PRICES and 48 not in main.SYSTEM_PRICES     # never tradeable
