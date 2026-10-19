@@ -30,6 +30,7 @@ import '../../services/api_service.dart';
 import '../../widgets/top_banner.dart';
 import '../../widgets/foreign_target_sheet.dart';
 import '../../widgets/cargo_map.dart';
+import '../../widgets/archaeology_map.dart';
 import 'mines_tab.dart' show TechUpgradeSheet;
 
 // ── Heatmap data from server ───────────────────────────────────────────────────
@@ -626,6 +627,7 @@ class MapTab extends StatefulWidget {
 class _MapTabState extends State<MapTab> {
   final _mapCtrl = MapController();
   final _cargo = CargoController();   // Cargo Rain crates, ring, stock (widgets/cargo_map.dart)
+  final _arch = ArchaeologyController(); // artifact detector (widgets/archaeology_map.dart)
   LatLng? _pos;        // GPS position
   LatLng? _lastLoadPos; // GPS position at last _loadMarkers call
   LatLng? _mapCenter;  // Map center = crosshair target
@@ -691,6 +693,7 @@ class _MapTabState extends State<MapTab> {
         final sid = context.read<PlayerProvider>().sid;
         if (sid.isEmpty) return;
         unawaited(_cargo.refreshInfo(sid));
+        _arch.attach(() => context.read<PlayerProvider>().sid, () => _pos);
         try {
           final bounds = _mapCtrl.camera.visibleBounds;
           unawaited(_loadHqMarkers(sid, bounds));
@@ -741,6 +744,7 @@ class _MapTabState extends State<MapTab> {
   @override
   void dispose() {
     _cargo.dispose();
+    _arch.dispose();
     _markerTimer?.cancel();
     _markerDebounce?.cancel();
     _mapMoveDebounce?.cancel();
@@ -811,6 +815,7 @@ class _MapTabState extends State<MapTab> {
       _mapCenter ??= ll;
       if (pos.heading >= 0) _heading = pos.heading;
     });
+    _arch.onMoved();
     // Do not move camera during an in-flight scan to avoid displacing heatmap anchor
     if (_following && !_scanInFlight) _mapCtrl.move(ll, _mapCtrl.camera.zoom);
     if (_lastLoadPos == null || _distM(_lastLoadPos!, ll) > 50) {
@@ -1650,6 +1655,9 @@ class _MapTabState extends State<MapTab> {
               }
               return MarkerLayer(markers: markers);
             }),
+          // Artifact detector: direction triangle, revealed artifact, optional reveal ring
+          ArchaeologyLayers(controller: _arch, pos: _pos),
+
           // Cargo Rain: collection ring (toggle in the cargo panel) + crate markers
           CargoLayers(
             controller: _cargo,
@@ -1919,6 +1927,8 @@ class _MapTabState extends State<MapTab> {
             onPressed: () => _cargo.openPanel(context, context.read<PlayerProvider>().sid, _pos,
                 () => _loadMarkers()),
           ),
+          const SizedBox(height: 8),
+          DetectorButton(controller: _arch),
         ]),
       ),
 

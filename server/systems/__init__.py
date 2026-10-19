@@ -64,7 +64,7 @@ def install_all(app, helpers) -> list[str]:
 
 
 # Order matters only for documentation; modules are independent.
-SYSTEMS = ["social", "market", "cargo", "quests"]
+SYSTEMS = ["social", "market", "cargo", "quests", "archaeology"]
 
 
 def int_arg(form, name, default=None, lo=None, hi=None) -> int:

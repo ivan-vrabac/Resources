@@ -21,6 +21,7 @@ import 'chat_screen.dart';
 import 'contacts_screen.dart';
 import 'profile_screen.dart';
 import 'quests_screen.dart';
+import '../widgets/archaeology_map.dart';
 import 'placeholder_screen.dart';
 import 'settings_screen.dart';
 import 'login_screen.dart';
@@ -58,7 +59,7 @@ final Map<GameTabId, _TabMeta> tabMeta = {
   GameTabId.auctions: _TabMeta(label: 'Auctions', icon: Icons.gavel,
       build: () => const PlaceholderScreen(title: 'Auctions', icon: Icons.gavel, subtitle: 'Bid on rare items and resources')),
   GameTabId.archeology: _TabMeta(label: 'Archeology', icon: Icons.museum_outlined,
-      build: () => const PlaceholderScreen(title: 'Archeology', icon: Icons.museum, subtitle: 'Discover ancient artifacts')),
+      build: () => const _ArchaeologyTab(), needsScaffold: true),
   GameTabId.chat: _TabMeta(label: 'Chat', icon: Icons.chat_bubble_outline,
       build: () => const ChatScreen()),
   GameTabId.loans: _TabMeta(label: 'Loans', icon: Icons.account_balance_wallet_outlined,
@@ -507,4 +508,12 @@ class _MoreTabState extends State<_MoreTab> {
     child: Text(title.toUpperCase(),
         style: const TextStyle(fontSize: 11, color: Colors.white38, letterSpacing: 1.2)),
   );
+}
+
+
+class _ArchaeologyTab extends StatelessWidget {
+  const _ArchaeologyTab();
+  @override
+  Widget build(BuildContext context) =>
+      ArchaeologyScreen(sid: () => context.read<PlayerProvider>().sid);
 }
