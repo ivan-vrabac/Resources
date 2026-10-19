@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../constants.dart' show fmtNum;
 import '../models/player_provider.dart';
+import '../screens/profile_screen.dart';
 import '../screens/settings_screen.dart' show mapPanelOpacityNotifier;
 
 class PlayerHud extends StatelessWidget {
@@ -11,7 +12,11 @@ class PlayerHud extends StatelessWidget {
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>().player;
     if (player == null) return const SizedBox();
-    return ValueListenableBuilder<double>(
+    // tap the bar (name, credits, level, XP) to open your own company stats
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileScreen())),
+      child: ValueListenableBuilder<double>(
       valueListenable: mapPanelOpacityNotifier,
       builder: (context, opacity, _) => Container(
         color: Theme.of(context).colorScheme.surface.withValues(alpha: opacity.clamp(0.0, 1.0)),
@@ -49,6 +54,7 @@ class PlayerHud extends StatelessWidget {
           ]),
           const SizedBox(height: 6),
         ]),
+      ),
       ),
     );
   }

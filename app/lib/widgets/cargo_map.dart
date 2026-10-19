@@ -7,13 +7,47 @@ import '../services/game_api.dart';
 import 'async_view.dart';
 import 'top_banner.dart';
 
+/// Holiday crate art: the week (Mon–Sun) containing Christmas, Easter Sunday or Halloween uses
+/// its own crate set; otherwise the regular cargo box / container art.
+String? _holiday(DateTime d) {
+  bool sameWeek(DateTime a, DateTime b) {
+    final ma = DateTime(a.year, a.month, a.day).subtract(Duration(days: a.weekday - 1));
+    final mb = DateTime(b.year, b.month, b.day).subtract(Duration(days: b.weekday - 1));
+    return ma == mb;
+  }
+  if (sameWeek(d, DateTime(d.year, 12, 25))) return 'chris';
+  if (sameWeek(d, DateTime(d.year, 10, 31))) return 'hw';
+  if (sameWeek(d, _easter(d.year))) return 'easter';
+  return null;
+}
+
+DateTime _easter(int y) {            // Anonymous Gregorian algorithm
+  final a = y % 19, b = y ~/ 100, c = y % 100, d = b ~/ 4, e = b % 4, f = (b + 8) ~/ 25;
+  final g = (b - f + 1) ~/ 3, h = (19 * a + b - d - g + 15) % 30, i = c ~/ 4, k = c % 4;
+  final l = (32 + 2 * e + 2 * i - h - k) % 7, m = (a + 11 * h + 22 * l) ~/ 451;
+  final month = (h + l - 7 * m + 114) ~/ 31, day = ((h + l - 7 * m + 114) % 31) + 1;
+  return DateTime(y, month, day);
+}
+
+/// Map marker image for a crate (variant picked from its id so it stays the same).
+String cargoMarkerAsset(Map<String, dynamic> c) {
+  final v = (c['id'] as String? ?? '').hashCode.abs();
+  if (c['stacked'] == true) return 'assets/mapmarkers/stacked${1 + v % 2}_map.png';
+  final h = _holiday(DateTime.now());
+  if (h != null) return 'assets/mapmarkers/cargo$h${v % 5}_map.png';
+  return v % 5 == 0 ? 'assets/mapmarkers/cargobox_map.png' : 'assets/mapmarkers/cargocontainer${v % 4}_map.png';
+}
+
 /// Cargo Rain on the map: crate markers, the Museum collection-range ring and the left-side
-/// control (stock, drop). Kept out of map_tab.dart; the map only forwards bounds and taps.
+/// controls (stock/drop, trucks). Kept out of map_tab.dart; the map only forwards bounds and taps.
 class CargoController extends ChangeNotifier {
   List<Map<String, dynamic>> crates = [];
   Map<String, dynamic> info = const {};
   bool showRing = false;
   bool _loading = false;
+
+  int get haulageLevel => (info['haulage'] as num? ?? 0).toInt();
+  int get trucks => (info['trucks'] as num? ?? 0).toInt();
 
   int get stock => (info['crates'] as num? ?? 0).toInt();
   double get collectRange => (info['collectRange'] as num? ?? 50).toDouble();
@@ -87,7 +121,7 @@ class CargoController extends ChangeNotifier {
         {'id': crate['id'], 'method': method, 'lat': pos.latitude, 'lng': pos.longitude});
     if (!context.mounted) return;
     if (r.ok) {
-      AppNotify.show(context, 'Found ${fmtQty(r.data['qty'] as num)} ${itemName(r.data['itemID'] as int)}');
+      AppNotify.show(context, 'Found ${(r.data['qty'] as num).toInt()} × ${itemName(r.data['itemID'] as int)}');
       crates.removeWhere((c) => c['id'] == crate['id']);
       notifyListeners();
       refreshInfo(sid);
@@ -98,6 +132,76 @@ class CargoController extends ChangeNotifier {
         notifyListeners();
       }
     }
+  }
+
+  /// Haulage Firm ≥ 5: collect every crate in truck range in one go.
+  Future<void> truckCollect(BuildContext context, String sid, LatLng? pos) async {
+    if (pos == null) {
+      AppNotify.show(context, 'Waiting for GPS…', isError: true);
+      return;
+    }
+    final p = await GameApi.call('/api/v1/cargo/truck', sid, {'lat': pos.latitude, 'lng': pos.longitude, 'preview': 1});
+    if (!context.mounted) return;
+    if (!p.ok) {
+      AppNotify.show(context, p.message ?? 'Trucks unavailable', isError: true);
+      return;
+    }
+    final n = (p.data['crates'] as num).toInt(), st = (p.data['stacks'] as num).toInt();
+    final need = (p.data['trucksNeeded'] as num).toInt(), have = (p.data['trucks'] as num).toInt();
+    if (n + st == 0) {
+      AppNotify.show(context, 'No cargo within ${(p.data['range'] as num).round()} m');
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Collect cargo by truck'),
+        content: Text('Use ${min(need, have)}/$have trucks to collect cargo nearby?\n\n'
+            '$n crate${n == 1 ? '' : 's'}${st > 0 ? ' and $st stack${st == 1 ? '' : 's'}' : ''} within '
+            '${(p.data['range'] as num).round()} m'
+            '${need > have ? '\nYou need $need trucks to take everything at once.' : ''}'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: have < 1 ? null : () => Navigator.pop(ctx, true), child: const Text('Collect')),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    final r = await GameApi.call('/api/v1/cargo/truck', sid, {'lat': pos.latitude, 'lng': pos.longitude});
+    if (!context.mounted) return;
+    if (!r.ok) {
+      AppNotify.show(context, r.message ?? 'Collection failed', isError: true);
+      return;
+    }
+    final items = (r.data['items'] as List).cast<Map<String, dynamic>>();
+    crates = [];                       // the map reloads what is still there
+    notifyListeners();
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Collected ${r.data['collected']} crate${r.data['collected'] == 1 ? '' : 's'}'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            if (items.isEmpty) const Text('Nothing fit into your warehouse.'),
+            for (final it in items)
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: ItemIcon((it['itemID'] as num).toInt(), size: 32),
+                title: Text(itemName((it['itemID'] as num).toInt())),
+                trailing: Text('× ${fmtNum((it['qty'] as num).toInt())}',
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            if ((r.data['left'] as num) > 0)
+              Text('${r.data['left']} crates are still waiting — you need more trucks.',
+                  style: const TextStyle(color: Colors.white54, fontSize: 12)),
+          ]),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+      ),
+    );
+    refreshInfo(sid);
   }
 
   Future<void> openPanel(BuildContext context, String sid, LatLng? pos, VoidCallback onDropped) async {
@@ -139,19 +243,12 @@ class CargoLayers extends StatelessWidget {
           for (final c in controller.crates)
             Marker(
               point: LatLng((c['lat'] as num).toDouble(), (c['lng'] as num).toDouble()),
-              width: c['stacked'] == true ? 34 : 24,
-              height: c['stacked'] == true ? 34 : 24,
+              width: c['stacked'] == true ? 40 : 30,
+              height: c['stacked'] == true ? 40 : 30,
               child: GestureDetector(
                 onTap: () => onTapCrate(c),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: c['stacked'] == true ? Colors.deepOrange.withValues(alpha: 0.85) : const Color(0xCC6D4C2F),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: Colors.amberAccent, width: 1),
-                  ),
-                  child: Icon(c['stacked'] == true ? Icons.layers : Icons.inventory_2,
-                      size: c['stacked'] == true ? 20 : 14, color: Colors.white),
-                ),
+                child: Image.asset(cargoMarkerAsset(c), fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const Icon(Icons.inventory_2, color: Colors.amberAccent)),
               ),
             ),
         ]),
@@ -179,7 +276,8 @@ class CargoButton extends StatelessWidget {
           child: SizedBox(
             width: 46, height: 46,
             child: Stack(alignment: Alignment.center, clipBehavior: Clip.none, children: [
-              const Icon(Icons.inventory_2_outlined, color: Colors.amberAccent),
+              Image.asset('assets/mapmarkers/boxrainicon.png', width: 30, height: 30,
+                  errorBuilder: (_, __, ___) => const Icon(Icons.inventory_2_outlined, color: Colors.amberAccent)),
               if (controller.stock > 0)
                 Positioned(
                   right: -2, top: -2,
@@ -194,6 +292,45 @@ class CargoButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Left-side truck control (Haulage Firm ≥ 5): collect all cargo nearby.
+class TruckButton extends StatelessWidget {
+  final CargoController controller;
+  final VoidCallback onPressed;
+  const TruckButton({super.key, required this.controller, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (_, __) => controller.haulageLevel < 5
+          ? const SizedBox.shrink()
+          : Material(
+              color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: onPressed,
+                child: SizedBox(
+                  width: 46, height: 46,
+                  child: Stack(alignment: Alignment.center, clipBehavior: Clip.none, children: [
+                    Image.asset('assets/mapmarkers/rangelooticon124.png', width: 32, height: 32,
+                        errorBuilder: (_, __, ___) => const Icon(Icons.local_shipping_outlined, color: Colors.amberAccent)),
+                    Positioned(
+                      right: -2, top: -2,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(color: Colors.blueGrey, borderRadius: BorderRadius.circular(8)),
+                        child: Text('${controller.trucks}', style: const TextStyle(fontSize: 9, color: Colors.white)),
+                      ),
+                    ),
+                  ]),
+                ),
+              ),
+            ),
     );
   }
 }
@@ -252,7 +389,8 @@ class _CargoPanelState extends State<_CargoPanel> {
         padding: const EdgeInsets.all(16),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            const Icon(Icons.inventory_2_outlined, color: Colors.amberAccent),
+            Image.asset('assets/mapmarkers/boxrainicon.png', width: 28, height: 28,
+                errorBuilder: (_, __, ___) => const Icon(Icons.inventory_2_outlined, color: Colors.amberAccent)),
             const SizedBox(width: 8),
             Text('Cargo Rain: $stock crates', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
           ]),

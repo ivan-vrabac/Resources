@@ -113,9 +113,10 @@ class _UnitQtyRow extends StatefulWidget {
   final String name;
   final num value;
   final int have;
+  final bool showValue;
   final ValueChanged<int> onChanged;
   const _UnitQtyRow({required this.itemId, required this.name, required this.value, required this.have,
-      required this.onChanged});
+      required this.onChanged, this.showValue = true});
   @override
   State<_UnitQtyRow> createState() => _UnitQtyRowState();
 }
@@ -143,10 +144,13 @@ class _UnitQtyRowState extends State<_UnitQtyRow> {
       child: Row(children: [
         ItemIcon(widget.itemId, size: 32),
         const SizedBox(width: 8),
-        Expanded(child: Text('${widget.name}\nvalue ${widget.value} · have ${fmtQty(widget.have)}',
-            style: const TextStyle(fontSize: 12))),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Text(widget.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+          Text(widget.showValue ? 'value ${widget.value} · have ${fmtQty(widget.have)}' : 'you have ${fmtQty(widget.have)}',
+              maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white54)),
+        ])),
         SizedBox(
-          width: 84,
+          width: 96,
           child: TextField(
             controller: _ctl,
             keyboardType: TextInputType.number,
@@ -258,25 +262,40 @@ class _DefenceDialogState extends State<_DefenceDialog> {
     final have = (widget.info['units'] as Map).cast<String, dynamic>();
     final t = (widget.info['target'] as Map).cast<String, dynamic>();
     final def = (t['defence'] as List?) ?? [0, 0, 0];
-    final vals = (t['defenceValues'] as List?) ?? [0, 0, 0];
+    Widget now(int item, Object n) => Expanded(
+          child: Column(children: [
+            ItemIcon(item, size: 28),
+            Text(fmtQty(n as num), style: const TextStyle(fontWeight: FontWeight.bold)),
+          ]),
+        );
     return AlertDialog(
-      title: const Text('Mine defence'),
-      content: SingleChildScrollView(
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Now: ${def[0]} watch dogs · ${def[1]} security staff · ${def[2]} elite'
-              '${t['inHqArea'] == true ? '\nInside your HQ area: +25% defence' : ''}',
-              style: const TextStyle(fontSize: 12)),
-          const Text('Every mine has 200 / 5 / 1 free guards; they return after a repair once defeated. '
-              'Stationed units stay on the mine permanently and make its repairs more expensive '
-              '(+1% per 100 defence points).', style: TextStyle(fontSize: 11, color: Colors.white54)),
-          const SizedBox(height: 8),
-          for (var k = 0; k < _units.length; k++)
-            _UnitQtyRow(
-              itemId: _units[k].$1, name: _units[k].$3, value: vals[k] as num,
-              have: (have['${_units[k].$1}'] as num? ?? 0).toInt(),
-              onChanged: (v) => setState(() => _n[_units[k].$2] = v),
-            ),
-        ]),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      title: Row(children: [
+        const Expanded(child: Text('Mine defence')),
+        if (t['inHqArea'] == true)
+          const Chip(label: Text('HQ area +25%', style: TextStyle(fontSize: 11)), visualDensity: VisualDensity.compact),
+      ]),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Defending now', style: TextStyle(color: Colors.white54, fontSize: 12)),
+            const SizedBox(height: 6),
+            Row(children: [now(95, def[0]), now(97, def[1]), now(98, def[2])]),
+            const Divider(height: 24),
+            const Text('Station more', style: TextStyle(color: Colors.white54, fontSize: 12)),
+            for (var k = 0; k < _units.length; k++)
+              _UnitQtyRow(
+                itemId: _units[k].$1, name: _units[k].$3, value: 0, showValue: false,
+                have: (have['${_units[k].$1}'] as num? ?? 0).toInt(),
+                onChanged: (v) => setState(() => _n[_units[k].$2] = v),
+              ),
+            const SizedBox(height: 8),
+            const Text('Stationed units stay on the mine and make its repairs more expensive. '
+                'The free 200 / 5 / 1 guards come back after a repair.',
+                style: TextStyle(fontSize: 11, color: Colors.white38)),
+          ]),
+        ),
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),

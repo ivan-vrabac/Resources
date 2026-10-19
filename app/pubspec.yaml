@@ -35,4 +35,5 @@ flutter:
     - assets/images_res/2x/
     - assets/images_res/3x/
     - assets/images_countryflags/
+    - assets/mapmarkers/
     - assets/branding/

@@ -65,6 +65,8 @@ abstract class _BoardState<T extends StatefulWidget> extends State<T> with Autom
   Map<String, dynamic>? data;
   bool loading = true;
   String? error;
+  bool country = false;   // only my country (ranks recounted by the server)
+  int page = 0;           // 100 players per page
   String get path;
   Map<String, dynamic> get params => const {};
 
@@ -79,9 +81,40 @@ abstract class _BoardState<T extends StatefulWidget> extends State<T> with Autom
 
   Future<void> load() async {
     setState(() => loading = true);
-    final r = await GameApi.call(path, context.read<PlayerProvider>().sid, params);
+    final r = await GameApi.call(path, context.read<PlayerProvider>().sid,
+        {...params, 'page': page, if (country) 'country': 1});
     if (!mounted) return;
     setState(() { loading = false; error = r.ok ? null : r.message; if (r.ok) data = r.data; });
+  }
+
+  /// "My country" filter and page arrows, shown on every board.
+  Widget controls({String? note}) {
+    final d = data!;
+    final pages = (d['pages'] as num? ?? 1).toInt();
+    final hasCountry = (d['myCountry'] as String? ?? '').isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+      child: Row(children: [
+        if (hasCountry)
+          FilterChip(
+            label: const Text('My country', style: TextStyle(fontSize: 11)),
+            selected: country, visualDensity: VisualDensity.compact,
+            onSelected: (v) { setState(() { country = v; page = 0; }); load(); },
+          ),
+        const SizedBox(width: 8),
+        Expanded(child: Text(note ?? (d['myRank'] != null ? 'Your rank: #${d['myRank']}' : ''),
+            style: const TextStyle(color: Colors.white54, fontSize: 12), overflow: TextOverflow.ellipsis)),
+        IconButton(
+          visualDensity: VisualDensity.compact, icon: const Icon(Icons.chevron_left),
+          onPressed: page > 0 ? () { setState(() => page--); load(); } : null,
+        ),
+        Text('${page + 1}/$pages', style: const TextStyle(fontSize: 12)),
+        IconButton(
+          visualDensity: VisualDensity.compact, icon: const Icon(Icons.chevron_right),
+          onPressed: page + 1 < pages ? () { setState(() => page++); load(); } : null,
+        ),
+      ]),
+    );
   }
 
   Widget list(List<Map<String, dynamic>> rows, Widget Function(Map<String, dynamic>) tile, {Widget? header}) {
@@ -104,7 +137,6 @@ class _OverallBoard extends StatefulWidget {
 }
 
 class _OverallBoardState extends _BoardState<_OverallBoard> {
-  bool _country = false;
   @override
   String get path => '/api/v1/rank/players';
 
@@ -112,10 +144,7 @@ class _OverallBoardState extends _BoardState<_OverallBoard> {
   Widget build(BuildContext context) {
     super.build(context);
     return AsyncView(loading: loading && data == null, error: error, onRetry: load, builder: () {
-      var rows = (data!['rows'] as List).cast<Map<String, dynamic>>();
-      final me = rows.where((r) => r['isMe'] == true).firstOrNull;
-      final myCountry = (me?['country'] as String? ?? '');
-      if (_country && myCountry.isNotEmpty) rows = rows.where((r) => r['country'] == myCountry).toList();
+      final rows = (data!['rows'] as List).cast<Map<String, dynamic>>();
       return list(rows, (r) {
         final act = (r['activity'] as num? ?? 0).toInt();
         final code = r['country'] as String? ?? '';
@@ -128,15 +157,7 @@ class _OverallBoardState extends _BoardState<_OverallBoard> {
           Icon(Icons.bolt, size: 11, color: act >= 80 ? Colors.greenAccent : Colors.white38),
           Text('$act%', style: TextStyle(color: act >= 80 ? Colors.greenAccent : Colors.white38, fontSize: 11)),
         ]));
-      }, header: Row(children: [
-        Padding(padding: const EdgeInsets.all(8), child: Text(
-            data!['myRank'] != null ? 'Your rank: #${data!['myRank']}' : '', style: const TextStyle(color: Colors.white54))),
-        const Spacer(),
-        if (myCountry.isNotEmpty)
-          Padding(padding: const EdgeInsets.only(right: 8), child: FilterChip(
-              label: const Text('My country', style: TextStyle(fontSize: 11)), selected: _country,
-              visualDensity: VisualDensity.compact, onSelected: (v) => setState(() => _country = v))),
-      ]));
+      }, header: controls());
     });
   }
 }
@@ -173,11 +194,8 @@ class _LuxuryBoardState extends _BoardState<_LuxuryBoard> {
                   ),
               ]),
             ));
-      }, header: Padding(
-        padding: const EdgeInsets.all(8),
-        child: Text('Your luxury points: ${fmtNum((data!['myPoints'] as num).toInt())} — earned only by bidding on '
-            'and winning luxury auctions', style: const TextStyle(color: Colors.white54, fontSize: 12)),
-      ));
+      }, header: controls(note: 'Your luxury points: ${fmtNum((data!['myPoints'] as num).toInt())}'
+          '${data!['myRank'] != null ? ' · #${data!['myRank']}' : ''}'));
     });
   }
 }
@@ -206,14 +224,15 @@ class _ResourceBoardState extends _BoardState<_ResourceBoard> {
       return list(rows, (r) => _row(context, r, value: fmtNum((r['perHour'] as num).round()), unit: '/h',
           middle: Text('${r['count']} ${_kind == 'mine' ? 'mines' : 'factories'}',
               style: const TextStyle(color: Colors.white38, fontSize: 11))),
-          header: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+          header: Column(mainAxisSize: MainAxisSize.min, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
             child: Row(children: [
               SegmentedButton<String>(
                 segments: const [ButtonSegment(value: 'mine', label: Text('Raw')), ButtonSegment(value: 'factory', label: Text('Factory'))],
                 selected: {_kind},
                 style: const ButtonStyle(visualDensity: VisualDensity.compact),
-                onSelectionChanged: (v) { setState(() { _kind = v.first; _item = null; }); load(); },
+                onSelectionChanged: (v) { setState(() { _kind = v.first; _item = null; page = 0; }); load(); },
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -227,11 +246,13 @@ class _ResourceBoardState extends _BoardState<_ResourceBoard> {
                         Flexible(child: Text(itemName(o), overflow: TextOverflow.ellipsis)),
                       ])),
                   ],
-                  onChanged: (v) { setState(() => _item = v); load(); },
+                  onChanged: (v) { setState(() { _item = v; page = 0; }); load(); },
                 ),
               ),
             ]),
-          ));
+          ),
+          controls(),
+          ]));
     });
   }
 }

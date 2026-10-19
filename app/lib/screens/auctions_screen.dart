@@ -111,7 +111,6 @@ class _AuctionsScreenState extends State<AuctionsScreen> {
         final active = (d['active'] as List).cast<Map<String, dynamic>>();
         final recent = (d['recent'] as List).cast<Map<String, dynamic>>().where((a) => a['status'] == 'sold').toList();
         final coll = (d['collection'] as Map).cast<String, dynamic>();
-        final owned = coll.entries.where((e) => (e.value as num) > 0).toList();
         return RefreshIndicator(
           onRefresh: _load,
           child: ListView(padding: const EdgeInsets.all(8), children: [
@@ -143,18 +142,48 @@ class _AuctionsScreenState extends State<AuctionsScreen> {
                 child: Text('Your luxury collection — when someone spins five of a kind of an item you hold in the '
                     'casino, you get 1% of the jackpot per item you hold (up to 10 items = 10%).',
                     style: TextStyle(color: Colors.white54, fontSize: 12))),
-            if (owned.isEmpty) const Padding(padding: EdgeInsets.all(8), child: Text('No luxury items yet.')),
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              for (final e in owned)
-                ActionChip(
-                  avatar: ItemIcon(int.parse(e.key), size: 20),
-                  label: Text('${itemName(int.parse(e.key))} ×${(e.value as num).toInt()}'),
-                  onPressed: () => _history(int.parse(e.key)),
-                ),
-            ]),
+            GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: 4,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              children: [
+                for (final e in coll.entries)
+                  _luxurySquare(int.parse(e.key), (e.value as num).toInt()),
+              ],
+            ),
           ]),
         );
       },
+    );
+  }
+
+  /// One luxury item: picture (dimmed if you have none) with your count; tap for its history.
+  Widget _luxurySquare(int item, int qty) {
+    final have = qty > 0;
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () => _history(item),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: have ? 0.08 : 0.03),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: have ? Colors.amberAccent.withValues(alpha: 0.7) : Colors.white12),
+        ),
+        child: Stack(children: [
+          Center(child: Opacity(opacity: have ? 1 : 0.45, child: ItemIcon(item, size: 52))),
+          if (have)
+            Positioned(
+              right: 4, top: 4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(color: Colors.amber.shade800, borderRadius: BorderRadius.circular(8)),
+                child: Text('×$qty', style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+            ),
+        ]),
+      ),
     );
   }
 

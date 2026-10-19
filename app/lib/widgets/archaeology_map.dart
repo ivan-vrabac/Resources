@@ -6,78 +6,80 @@ import '../services/game_api.dart';
 import 'async_view.dart';
 import 'top_banner.dart';
 
-/// Artifact detector on the map: while active it asks the server for the direction to the
-/// nearest artifact (every 20 s, and when the player moved > 25 m) and draws a yellow triangle
-/// from the player towards it. The exact spot only appears once within the reveal range.
+/// Artifact detector on the map. Every scan uses up one Artifact Detector (server rule): the
+/// result (a yellow triangle towards the nearest artifact, or the artifact itself once within the
+/// reveal range) stays on the map for [resultTtl] or until the next scan.
 class ArchaeologyController extends ChangeNotifier {
-  bool active = false;
+  static const resultTtl = Duration(minutes: 10);
   bool showRing = false;
+  bool scanning = false;
   double? bearing;
   String? band;
   double revealRange = 0;
+  int? detectorsLeft;
   Map<String, dynamic>? revealed;
-  String? message;
-  Timer? _timer;
-  LatLng? _lastQueryPos;
+  DateTime? _scannedAt;
+  Timer? _expiry;
   String Function()? _sid;
   LatLng? Function()? _pos;
-  bool _busy = false;
+
+  /// A scan result is showing on the map.
+  bool get active => _scannedAt != null;
 
   void attach(String Function() sid, LatLng? Function() pos) {
     _sid = sid;
     _pos = pos;
   }
 
-  Future<void> toggle(BuildContext context) async {
-    active = !active;
-    if (active) {
-      await query(force: true);
-      if (message != null && context.mounted) AppNotify.show(context, message!, isError: true);
-      if (message != null) {
-        active = false;
-      } else {
-        _timer = Timer.periodic(const Duration(seconds: 20), (_) => query());
-      }
-    } else {
-      _timer?.cancel();
-      bearing = null;
-      revealed = null;
-    }
-    notifyListeners();
-  }
+  /// Kept for the map's GPS hook; scans are only made on purpose now (they cost a detector).
+  void onMoved() {}
 
-  /// Called by the map when the GPS position changes; re-queries after real movement only.
-  void onMoved() {
-    if (!active) return;
-    final p = _pos?.call(), last = _lastQueryPos;
-    if (p != null && (last == null || const Distance().as(LengthUnit.Meter, p, last) > 25)) query();
-  }
-
-  Future<void> query({bool force = false}) async {
+  Future<void> scan(BuildContext context) async {
     final sid = _sid?.call(), pos = _pos?.call();
-    if (sid == null || pos == null || _busy) {
-      if (pos == null) message = 'Waiting for GPS…';
+    if (sid == null || scanning) return;
+    if (pos == null) {
+      AppNotify.show(context, 'Waiting for GPS…', isError: true);
       return;
     }
-    _busy = true;
+    scanning = true;
+    notifyListeners();
     final r = await GameApi.call('/api/v1/archaeology/detect', sid, {'lat': pos.latitude, 'lng': pos.longitude});
-    _busy = false;
-    _lastQueryPos = pos;
+    scanning = false;
     if (!r.ok) {
-      message = r.message;
-    } else {
-      message = null;
-      revealRange = (r.data['revealRange'] as num? ?? 0).toDouble();
-      if (r.data['found'] == true) {
-        bearing = (r.data['bearing'] as num).toDouble();
-        band = r.data['band'] as String?;
-        revealed = r.data['revealed'] as Map<String, dynamic>?;
-      } else {
-        bearing = null;
-        band = null;
-        revealed = null;
-      }
+      notifyListeners();
+      if (context.mounted) AppNotify.show(context, r.message ?? 'Scan failed', isError: true);
+      return;
     }
+    detectorsLeft = (r.data['detectorsLeft'] as num?)?.toInt();
+    revealRange = (r.data['revealRange'] as num? ?? revealRange).toDouble();
+    if (r.data['found'] == true) {
+      bearing = (r.data['bearing'] as num).toDouble();
+      band = r.data['band'] as String?;
+      revealed = r.data['revealed'] as Map<String, dynamic>?;
+    } else {
+      bearing = null;
+      band = null;
+      revealed = null;
+    }
+    _scannedAt = DateTime.now();
+    _expiry?.cancel();
+    _expiry = Timer(resultTtl, clear);
+    notifyListeners();
+    if (context.mounted) {
+      AppNotify.show(context, r.data['found'] == true
+          ? (revealed != null ? 'Artifact found: ${revealed!['name']} (${revealed!['distance']} m)'
+                              : 'Artifact signal ${band ?? ''} — follow the yellow triangle')
+          : 'No artifact signal in range'
+          '${detectorsLeft != null ? ' · $detectorsLeft detectors left' : ''}');
+    }
+  }
+
+  void clear() {
+    _expiry?.cancel();
+    _scannedAt = null;
+    bearing = null;
+    band = null;
+    revealed = null;
     notifyListeners();
   }
 
@@ -89,8 +91,7 @@ class ArchaeologyController extends ChangeNotifier {
     if (!context.mounted) return;
     if (r.ok) {
       AppNotify.show(context, 'Recovered ${r.data['name']}! (${r.data['archaeologistsUsed']} archaeologists)');
-      revealed = null;
-      await query(force: true);
+      clear();
     } else {
       AppNotify.show(context, r.message ?? 'Recovery failed', isError: true);
     }
@@ -103,7 +104,7 @@ class ArchaeologyController extends ChangeNotifier {
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _expiry?.cancel();
     super.dispose();
   }
 }
@@ -149,7 +150,7 @@ class ArchaeologyLayers extends StatelessWidget {
                     decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.black54,
                         border: Border.all(color: Colors.yellowAccent, width: 2)),
                     padding: const EdgeInsets.all(4),
-                    child: Image.asset('assets/images/imgArtifact${c.revealed!['itemID']}.png',
+                    child: Image.asset('assets/mapmarkers/artifact.png',
                         errorBuilder: (_, __, ___) => const Icon(Icons.diamond, color: Colors.yellowAccent)),
                   ),
                 ),
@@ -212,16 +213,29 @@ class DetectorButton extends StatelessWidget {
         shape: const CircleBorder(),
         child: InkWell(
           customBorder: const CircleBorder(),
-          onTap: () => controller.toggle(context),
+          onTap: () => controller.scan(context),
           onLongPress: controller.active ? controller.toggleRing : null,
           child: SizedBox(
             width: 46, height: 46,
             child: Tooltip(
-              message: controller.active
-                  ? 'Detector on${controller.band != null ? ' · artifact ${controller.band}' : ' · nothing in range'}'
-                      ' (long-press: reveal ring)'
-                  : 'Artifact detector',
-              child: Icon(Icons.track_changes, color: controller.active ? Colors.black : Colors.yellowAccent),
+              message: 'Scan for artifacts (uses 1 Artifact Detector)'
+                  '${controller.active ? ' · long-press: reveal ring' : ''}',
+              child: Stack(alignment: Alignment.center, clipBehavior: Clip.none, children: [
+                controller.scanning
+                    ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
+                    : Image.asset('assets/mapmarkers/artifactscanicon.png', width: 30, height: 30,
+                        errorBuilder: (_, __, ___) => Icon(Icons.track_changes,
+                            color: controller.active ? Colors.black : Colors.yellowAccent)),
+                if (controller.detectorsLeft != null)
+                  Positioned(
+                    right: -2, top: -2,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                      decoration: BoxDecoration(color: Colors.amber.shade800, borderRadius: BorderRadius.circular(8)),
+                      child: Text('${controller.detectorsLeft}', style: const TextStyle(fontSize: 9, color: Colors.white)),
+                    ),
+                  ),
+              ]),
             ),
           ),
         ),
@@ -278,8 +292,10 @@ class _ArchaeologyScreenState extends State<ArchaeologyScreen> {
             row('Archaeologists per recovery', '${d['archaeologistsNeeded']} (you have ${fmtQty(d['archaeologists'] as num)})'),
             row('Artifact Detectors', fmtQty(d['detectors'] as num)),
             const Padding(padding: EdgeInsets.fromLTRB(4, 12, 4, 4),
-                child: Text('Turn on the detector with the yellow button on the left of the map. '
-                    'Follow the triangle; the artifact appears when you are close enough.',
+                child: Text('Scan with the detector button on the left of the map — each scan uses one '
+                    'Artifact Detector. Follow the triangle and scan again when closer; the artifact appears '
+                    'within your reveal range. Several players can recover the same artifact; it disappears '
+                    '15 minutes after the first recovery.',
                     style: TextStyle(color: Colors.white54, fontSize: 12))),
             const Divider(),
             const Text('Collection', style: TextStyle(color: Colors.white54, fontSize: 12)),

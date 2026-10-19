@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../constants.dart' show itemName;
+import '../constants.dart' show itemName, kMineNames, kMineResource;
 import '../models/player_provider.dart';
 import '../services/game_api.dart';
 import '../widgets/async_view.dart';
@@ -75,7 +75,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
 
   /// A titled wrap of item images with a small label (count or level) under each.
-  Widget _itemSection(String title, dynamic list, String key, {String prefix = ''}) {
+  Widget _itemSection(String title, dynamic list, String key, {String prefix = '', Widget Function(int)? image}) {
     final items = (list as List? ?? const []).cast<Map<String, dynamic>>();
     if (items.isEmpty) return const SizedBox.shrink();
     return Padding(
@@ -86,9 +86,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         Wrap(spacing: 10, runSpacing: 8, children: [
           for (final it in items)
             Tooltip(
-              message: itemName((it['itemID'] as num).toInt()),
+              message: kMineNames[(it['itemID'] as num).toInt()] ?? itemName((it['itemID'] as num).toInt()),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-                ItemIcon((it['itemID'] as num).toInt(), size: 34),
+                image != null ? image((it['itemID'] as num).toInt()) : ItemIcon((it['itemID'] as num).toInt(), size: 34),
                 Text('$prefix${it[key]}', style: const TextStyle(fontSize: 10, color: Colors.white70)),
               ]),
             ),
@@ -159,7 +159,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 _stat('Attacks won', '${p['combat']['attacksWon']} / ${p['combat']['attacks']}', icon: Icons.gpp_bad_outlined),
                 _stat('Defences won', '${p['combat']['defencesWon']} / ${p['combat']['defences']}', icon: Icons.shield_outlined),
               ]),
-            _itemSection('Mines', p['minesByType'], 'count', prefix: '×'),
+            _itemSection('Mines', p['minesByType'], 'count', prefix: '×',
+                image: (id) => Image.asset('assets/mapmarkers/map_res${kMineResource[id] ?? id}.png',
+                    width: 34, height: 34, errorBuilder: (_, __, ___) => ItemIcon(kMineResource[id] ?? id, size: 34))),
             _itemSection('Factories', p['factories'], 'level', prefix: 'Lv '),
             _itemSection('Special buildings', p['specialBuildings'], 'level', prefix: 'Lv '),
             _itemSection('Luxury items', p['luxuryItems'], 'qty', prefix: '×'),

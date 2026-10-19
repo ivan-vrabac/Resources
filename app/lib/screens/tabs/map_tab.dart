@@ -639,6 +639,7 @@ class _MapTabState extends State<MapTab> {
   bool _showClouds   = false;
   bool _showHQs      = true;
   bool _showMines    = true;
+  bool _showLoot     = true;   // Cargo Rain crates + artifacts on the map
   bool _mockDetected = false;
   double? _heading;
 
@@ -709,6 +710,7 @@ class _MapTabState extends State<MapTab> {
     if (!mounted) return;
     setState(() {
       _showMines = p.getBool('map_show_mines') ?? true;
+    _showLoot = p.getBool('map_show_loot') ?? true;
       _showHQs   = p.getBool('map_show_hqs')   ?? true;
     });
   }
@@ -1234,14 +1236,14 @@ class _MapTabState extends State<MapTab> {
   void _onForeignTap(LatLng tapped) {
     Map<String, dynamic>? best;
     double bestD = double.infinity;
-    for (final m in _markers) {
+    for (final m in _showMines ? _markers : const <Map<String, dynamic>>[]) {
       if (m['type'] == 'hq' || m['isMine'] == true || m['wip'] == true) continue;
       final lat = (m['lat'] as num?)?.toDouble(), lng = (m['lng'] as num?)?.toDouble();
       if (lat == null || lng == null) continue;
       final d = _distM(tapped, LatLng(lat, lng));
       if (d <= 15 && d < bestD) { best = m; bestD = d; }
     }
-    if (best == null) {
+    if (best == null && _showHQs) {
       for (final h in _hqMarkers.cast<Map<String, dynamic>>()) {
         if (h['isMine'] == true) continue;
         final d = _distM(tapped, LatLng((h['lat'] as num).toDouble(), (h['lng'] as num).toDouble()));
@@ -1263,6 +1265,10 @@ class _MapTabState extends State<MapTab> {
     }
     final prov = context.read<PlayerProvider>();
     if (prov.player == null) return;
+    if (!_showMines) {          // hidden mines can't be tapped; HQs only when shown
+      _onForeignTap(tapped);
+      return;
+    }
     // Own mines within 15m (asked from the server — player data no longer carries
     // every mine), then pick the single closest one. Tie-break by mine ID for
     // determinism at shared borders/vertices.
@@ -1658,14 +1664,15 @@ class _MapTabState extends State<MapTab> {
               return MarkerLayer(markers: markers);
             }),
           // Artifact detector: direction triangle, revealed artifact, optional reveal ring
-          ArchaeologyLayers(controller: _arch, pos: _pos),
+          if (_showLoot) ArchaeologyLayers(controller: _arch, pos: _pos),
 
           // Cargo Rain: collection ring (toggle in the cargo panel) + crate markers
-          CargoLayers(
-            controller: _cargo,
-            pos: _pos,
-            onTapCrate: (c) => _cargo.collect(context, context.read<PlayerProvider>().sid, c, _pos),
-          ),
+          if (_showLoot)
+            CargoLayers(
+              controller: _cargo,
+              pos: _pos,
+              onTapCrate: (c) => _cargo.collect(context, context.read<PlayerProvider>().sid, c, _pos),
+            ),
 
           // Own HQ boost radius — rendered above mines so it's visible
           if (player?.hq != null && _showHQs) (() {
@@ -1760,6 +1767,20 @@ class _MapTabState extends State<MapTab> {
                   await p.setBool('map_show_mines', _showMines);
                 },
                 active: _showMines, tip: 'Mines',
+              ),
+              const SizedBox(width: 4),
+              // Cargo / artifacts visibility toggle
+              _mapBtnW(
+                Image.asset(_showLoot ? 'assets/mapmarkers/showboxes_on.png' : 'assets/mapmarkers/showboxes_off.png',
+                    width: 24, height: 24,
+                    errorBuilder: (_, __, ___) => Icon(Icons.inventory_2_outlined,
+                        color: _showLoot ? Colors.white : Colors.white70)),
+                () async {
+                  setState(() => _showLoot = !_showLoot);
+                  final p = await SharedPreferences.getInstance();
+                  await p.setBool('map_show_loot', _showLoot);
+                },
+                active: _showLoot, tip: 'Cargo & artifacts',
               ),
               const Spacer(),
               // Navigation
@@ -1931,6 +1952,14 @@ class _MapTabState extends State<MapTab> {
           ),
           const SizedBox(height: 8),
           DetectorButton(controller: _arch),
+          const SizedBox(height: 8),
+          TruckButton(
+            controller: _cargo,
+            onPressed: () async {
+              await _cargo.truckCollect(context, context.read<PlayerProvider>().sid, _pos);
+              if (mounted) _loadMarkers();
+            },
+          ),
         ]),
       ),
 
