@@ -62,3 +62,10 @@ def test_no_foreign_hid_in_responses():
     ]
     for r in responses:
         assert b not in json.dumps(r), r
+
+
+def test_public_health_check_is_cors_readable_and_leaks_nothing():
+    r = client.get("/api/v1/health")
+    assert r.status_code == 200 and r.json()["ok"] is True
+    assert r.headers["access-control-allow-origin"] == "*"
+    assert set(r.json()) == {"ok", "time"}

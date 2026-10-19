@@ -25,4 +25,11 @@ class Branding {
 
   /// Optional logo asset shown above the title on the login screen. Empty = no logo.
   static const logoAsset = String.fromEnvironment('LOGO_ASSET');
+
+  /// Where published builds live (`<url>/latest.json` + the APK). Empty = no in-app updates.
+  static const updateUrl = String.fromEnvironment('UPDATE_URL');
+
+  /// Set by the build script (`--dart-define=BUILD_NUMBER=… --dart-define=BUILD_NAME=…`).
+  static const buildNumber = int.fromEnvironment('BUILD_NUMBER');
+  static const buildName = String.fromEnvironment('BUILD_NAME', defaultValue: 'dev');
 }

@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 import auth
 import re
@@ -3775,6 +3775,12 @@ async def news(request: Request):
         "body": "Private server running. Scan for resources and build your empire!",
         "ts": "2024-01-01T00:00:00",
     }])
+
+@app.get("/api/v1/health")
+async def health():
+    """Public liveness check (used by the download page, so any origin may read it)."""
+    return JSONResponse({"ok": True, "time": utcnow_iso()},
+                        headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "no-store"})
 
 # ── Master field pre-generation (background thread at startup) ────────────────────
 

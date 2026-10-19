@@ -1,3 +1,4 @@
+import '../widgets/update_dialog.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -102,6 +103,8 @@ class _GameScreenState extends State<GameScreen> {
       final prov = context.read<PlayerProvider>();
       prov.addListener(_onProviderChanged);
       prov.pollChatUnread();
+      // offer a newer published build (once per build; Settings > Updates anytime)
+      Future.delayed(const Duration(seconds: 4), () { if (mounted) UpdateDialog.checkOnStart(context); });
     });
     _chatPoll = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) context.read<PlayerProvider>().pollChatUnread();

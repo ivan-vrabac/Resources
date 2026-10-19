@@ -7,6 +7,8 @@ import '../models/player_provider.dart';
 import '../models/tab_config.dart';
 import '../services/api_service.dart';
 import '../services/launcher_icon_service.dart';
+import '../services/update_service.dart';
+import '../widgets/update_dialog.dart';
 import '../constants.dart' show kNumDecimals;
 import 'game_screen.dart' show tabMeta;
 
@@ -118,6 +120,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _categoryTile(context, Icons.speed, 'Performance',
             'GPS update interval', () => Navigator.push(context, MaterialPageRoute(
               builder: (_) => const _PerformancePage()))),
+        if (UpdateService.supported)
+          _categoryTile(context, Icons.system_update, 'Updates',
+              'Version ${Branding.buildName} (build ${Branding.buildNumber}) · check for a newer build',
+              () => UpdateDialog.open(context)),
         _categoryTile(context, Icons.pin, 'Numbers & Display',
             'Decimal places in compact notation', () => Navigator.push(context, MaterialPageRoute(
               builder: (_) => const _NumbersDisplayPage()))),

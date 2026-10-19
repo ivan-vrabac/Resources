@@ -1,7 +1,13 @@
 package com.example.resources
 
 import android.content.ComponentName
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.core.content.FileProvider
+import java.io.File
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -27,6 +33,33 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+        // In-app updates: Dart downloads the APK into updateDir, then asks us to install it.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "resources/updater")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "updateDir" -> result.success(File(cacheDir, "updates").apply { mkdirs() }.absolutePath)
+                    "install" -> {
+                        val path = call.argument<String>("path")
+                        if (path == null) result.success("error") else result.success(install(File(path)))
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    /** "started", or "permission" when the user must first allow installs from this app. */
+    private fun install(apk: File): String {
+        if (!apk.exists()) return "error"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
+            startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+            return "permission"
+        }
+        val uri = FileProvider.getUriForFile(this, "$packageName.updates", apk)
+        startActivity(Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        })
+        return "started"
     }
 
     private fun isEnabled(id: String): Boolean {
