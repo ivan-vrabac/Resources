@@ -1265,6 +1265,14 @@ class _MapTabState extends State<MapTab> {
     }
     final prov = context.read<PlayerProvider>();
     if (prov.player == null) return;
+    // Cargo Rain crates are painted (not widgets): resolve taps on them first
+    if (_showLoot) {
+      final crate = _cargo.hitTest(tapped, _mapZoom);
+      if (crate != null) {
+        _cargo.collect(context, prov.sid, crate, _pos);
+        return;
+      }
+    }
     if (!_showMines) {          // hidden mines can't be tapped; HQs only when shown
       _onForeignTap(tapped);
       return;
@@ -1668,12 +1676,7 @@ class _MapTabState extends State<MapTab> {
           if (_showLoot) ArchaeologyLayers(controller: _arch, pos: _pos),
 
           // Cargo Rain: collection ring (toggle in the cargo panel) + crate markers
-          if (_showLoot)
-            CargoLayers(
-              controller: _cargo,
-              pos: _pos,
-              onTapCrate: (c) => _cargo.collect(context, context.read<PlayerProvider>().sid, c, _pos),
-            ),
+          if (_showLoot) CargoLayers(controller: _cargo, pos: _pos),
 
           // Own HQ boost radius — rendered above mines so it's visible
           if (player?.hq != null && _showHQs) (() {

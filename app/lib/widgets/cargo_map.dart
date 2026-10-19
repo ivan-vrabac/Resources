@@ -1,4 +1,6 @@
 import 'dart:math';
+import 'dart:ui' as ui;
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -47,6 +49,25 @@ class CargoController extends ChangeNotifier {
   bool _loading = false;
 
   int get haulageLevel => (info['haulage'] as num? ?? 0).toInt();
+
+  /// Repaint once a marker image has been decoded.
+  void repaint() => notifyListeners();
+
+  /// The crate under a map tap (within its drawn size), or null.
+  Map<String, dynamic>? hitTest(LatLng tap, double zoom) {
+    final mpp = metersPerPixel(tap.latitude, zoom);
+    Map<String, dynamic>? best;
+    var bestD = double.infinity;
+    for (final c in crates) {
+      final d = const Distance().as(LengthUnit.Meter, tap, LatLng((c['lat'] as num).toDouble(), (c['lng'] as num).toDouble()));
+      final r = max(cargoMeters(c), 24 * mpp) / 2;          // at least a finger-sized target
+      if (d <= r && d < bestD) {
+        best = c;
+        bestD = d;
+      }
+    }
+    return best;
+  }
   int get trucks => (info['trucks'] as num? ?? 0).toInt();
 
   int get stock => (info['crates'] as num? ?? 0).toInt();
@@ -216,18 +237,51 @@ class CargoController extends ChangeNotifier {
   }
 }
 
-/// The two map layers: collection ring (optional) and crate markers.
+/// Real-world crate sizes on the map (metres across), so crates keep their size relative to the
+/// ground when zooming instead of covering the map. Containers are twice a cargo box.
+const double kCargoBoxMeters = 40;
+const double kCargoContainerMeters = 80;
+const double kCargoStackMeters = 100;
+const double _kMinCratePx = 6;
+
+double cargoMeters(Map<String, dynamic> c) {
+  if (c['stacked'] == true) return kCargoStackMeters;
+  return cargoMarkerAsset(c).contains('cargobox') ? kCargoBoxMeters : kCargoContainerMeters;
+}
+
+double metersPerPixel(double lat, double zoom) => 156543.03392 * cos(lat * pi / 180) / pow(2, zoom);
+
+/// Decoded marker images, shared by every crate (decoded once per asset).
+class _CrateImages {
+  static final Map<String, ui.Image> _ready = {};
+  static final Set<String> _pending = {};
+
+  static ui.Image? get(String path, VoidCallback onLoaded) {
+    final img = _ready[path];
+    if (img != null || _pending.contains(path)) return img;
+    _pending.add(path);
+    rootBundle.load(path).then((data) async {
+      final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
+      _ready[path] = (await codec.getNextFrame()).image;
+      onLoaded();
+    }).catchError((_) {});
+    return null;
+  }
+}
+
+/// The two map layers: collection ring (optional) and crate markers. Crates are painted in one
+/// pass (no widget per crate), which keeps zooming smooth with many crates; taps are resolved by
+/// [CargoController.hitTest] from the map's tap handler.
 class CargoLayers extends StatelessWidget {
   final CargoController controller;
   final LatLng? pos;
-  final void Function(Map<String, dynamic> crate) onTapCrate;
-  const CargoLayers({super.key, required this.controller, required this.pos, required this.onTapCrate});
+  const CargoLayers({super.key, required this.controller, required this.pos});
 
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: controller,
-      builder: (_, __) => Stack(children: [
+      builder: (ctx, __) => Stack(children: [
         if (controller.showRing && pos != null)
           CircleLayer(circles: [
             CircleMarker(
@@ -239,22 +293,44 @@ class CargoLayers extends StatelessWidget {
               borderStrokeWidth: 1.5,
             ),
           ]),
-        MarkerLayer(markers: [
-          for (final c in controller.crates)
-            Marker(
-              point: LatLng((c['lat'] as num).toDouble(), (c['lng'] as num).toDouble()),
-              width: c['stacked'] == true ? 100 : 76,      // 2.5× the first size (owner)
-              height: c['stacked'] == true ? 100 : 76,
-              child: GestureDetector(
-                onTap: () => onTapCrate(c),
-                child: Image.asset(cargoMarkerAsset(c), fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => const Icon(Icons.inventory_2, color: Colors.amberAccent)),
-              ),
+        if (controller.crates.isNotEmpty)
+          MobileLayerTransformer(
+            child: CustomPaint(
+              size: Size.infinite,
+              painter: _CratePainter(MapCamera.of(ctx), controller.crates, controller.repaint),
             ),
-        ]),
+          ),
       ]),
     );
   }
+}
+
+class _CratePainter extends CustomPainter {
+  final MapCamera camera;
+  final List<Map<String, dynamic>> crates;
+  final VoidCallback onImage;
+  _CratePainter(this.camera, this.crates, this.onImage);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..filterQuality = FilterQuality.low;
+    final mpp = metersPerPixel(camera.center.latitude, camera.zoom);
+    for (final c in crates) {
+      final img = _CrateImages.get(cargoMarkerAsset(c), onImage);
+      final o = camera.getOffsetFromOrigin(LatLng((c['lat'] as num).toDouble(), (c['lng'] as num).toDouble()));
+      final px = max(_kMinCratePx, cargoMeters(c) / mpp);
+      final dst = Rect.fromCenter(center: o, width: px, height: px);
+      if (dst.right < 0 || dst.bottom < 0 || dst.left > size.width || dst.top > size.height) continue;
+      if (img == null) {
+        canvas.drawRect(dst, Paint()..color = const Color(0xCC6D4C2F));
+      } else {
+        canvas.drawImageRect(img, Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()), dst, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _CratePainter old) => true;
 }
 
 /// Left-side map control with the Cargo Rain stock.

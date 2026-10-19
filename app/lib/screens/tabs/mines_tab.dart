@@ -477,7 +477,18 @@ class _MinesTabState extends State<MinesTab> {
       Map<int, List<Mine>> grouped, List<Mine> allMines, Player player) {
     final result = <Widget>[];
 
-    for (final entry in grouped.entries) {
+    // Categories ordered by the category as a whole (total output / average quality /
+    // average condition), not by their single best mine.
+    double catValue(List<Mine> ms) => switch (_sort) {
+          _SortMode.output    => ms.fold(0.0, (s, m) => s + m.rateHr),
+          _SortMode.quality   => ms.fold(0.0, (s, m) => s + m.quality) / ms.length,
+          _SortMode.condition => ms.fold(0.0, (s, m) => s + m.condition) / ms.length,
+        };
+    final cats = grouped.entries.toList()
+      ..sort((a, b) => _sortAsc
+          ? catValue(a.value).compareTo(catValue(b.value))
+          : catValue(b.value).compareTo(catValue(a.value)));
+    for (final entry in cats) {
       final itemId    = entry.key;
       final mines     = entry.value;
       final expanded  = _expandedIds.contains(itemId);

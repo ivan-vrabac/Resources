@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -143,7 +144,8 @@ class ArchaeologyLayers extends StatelessWidget {
             if (c.revealed != null)
               Marker(
                 point: LatLng((c.revealed!['lat'] as num).toDouble(), (c.revealed!['lng'] as num).toDouble()),
-                width: 110, height: 110,                     // 2.5× the first size (owner)
+                // real-world size (60 m across), never smaller than a tappable 36 px
+                width: _artifactPx(ctx), height: _artifactPx(ctx),
                 child: GestureDetector(
                   onTap: () => _confirmRecover(ctx),
                   child: Container(
@@ -159,6 +161,12 @@ class ArchaeologyLayers extends StatelessWidget {
         ]);
       },
     );
+  }
+
+  static double _artifactPx(BuildContext ctx) {
+    final cam = MapCamera.of(ctx);
+    final mpp = 156543.03392 * cos(cam.center.latitude * pi / 180) / pow(2, cam.zoom);
+    return max(36.0, 60 / mpp);
   }
 
   Future<void> _confirmRecover(BuildContext context) async {
@@ -269,6 +277,70 @@ class _ArchaeologyScreenState extends State<ArchaeologyScreen> {
     setState(() { _loading = false; _error = r.ok ? null : r.message; if (r.ok) _d = r.data; });
   }
 
+  /// Artifact sheet: level, the three level effects, and investing 100 / 500 / 1000 of them.
+  Future<void> _openArtifact(Map<String, dynamic> a) async {
+    final owned = (a['owned'] as num? ?? 0).toInt();
+    final invested = (a['invested'] as num? ?? 0).toInt();
+    final level = (a['level'] as num? ?? 0).toInt();
+    final effects = ((a['effects'] as List?) ?? const []).cast<String>();
+    final levelAt = ((_d?['levelAt'] as List?) ?? const [100, 500, 1000]).cast<num>();
+    final qty = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A2E),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Image.asset('assets/images/imgArtifact${a['itemID']}.png', height: 56,
+                  errorBuilder: (_, __, ___) => const Icon(Icons.diamond, size: 40)),
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(a['name'] as String, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                Text('Level $level · invested $invested · you have $owned',
+                    style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              ])),
+            ]),
+            const SizedBox(height: 12),
+            for (var i = 0; i < effects.length; i++)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(children: [
+                  Icon(level > i ? Icons.check_circle : Icons.radio_button_unchecked, size: 18,
+                      color: level > i ? Colors.yellowAccent : Colors.white38),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text('Level ${i + 1} (${levelAt[i]} invested): ${effects[i]}',
+                      style: TextStyle(color: level > i ? Colors.white : Colors.white54))),
+                ]),
+              ),
+            const SizedBox(height: 12),
+            const Text('Invested artifacts are used up and raise the level permanently.',
+                style: TextStyle(color: Colors.white38, fontSize: 11)),
+            const SizedBox(height: 8),
+            Row(children: [
+              for (final n in const [100, 500, 1000])
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    child: FilledButton(
+                      onPressed: owned >= n ? () => Navigator.pop(ctx, n) : null,
+                      child: FittedBox(child: Text('Invest $n')),
+                    ),
+                  ),
+                ),
+            ]),
+          ]),
+        ),
+      ),
+    );
+    if (qty == null || !mounted) return;
+    final r = await GameApi.call('/api/v1/archaeology/invest', widget.sid(), {'itemID': a['itemID'], 'qty': qty});
+    if (!mounted) return;
+    AppNotify.show(context, r.ok ? '${a['name']} is now level ${r.data['level']}' : (r.message ?? 'Failed'),
+        isError: !r.ok);
+    _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     return AsyncView(
@@ -305,14 +377,19 @@ class _ArchaeologyScreenState extends State<ArchaeologyScreen> {
               crossAxisCount: 3,
               children: [
                 for (final a in coll)
-                  Opacity(
-                    opacity: (a['found'] as num) > 0 ? 1 : 0.3,
-                    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      Image.asset('assets/images/imgArtifact${a['itemID']}.png', height: 56,
-                          errorBuilder: (_, __, ___) => const Icon(Icons.diamond, size: 40)),
-                      Text(a['name'] as String, textAlign: TextAlign.center, style: const TextStyle(fontSize: 11)),
-                      Text('found ${a['found']}', style: const TextStyle(fontSize: 10, color: Colors.white54)),
-                    ]),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () => _openArtifact(a),
+                    child: Opacity(
+                      opacity: (a['found'] as num) > 0 || (a['invested'] as num? ?? 0) > 0 ? 1 : 0.35,
+                      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        Image.asset('assets/images/imgArtifact${a['itemID']}.png', height: 56,
+                            errorBuilder: (_, __, ___) => const Icon(Icons.diamond, size: 40)),
+                        Text(a['name'] as String, textAlign: TextAlign.center, style: const TextStyle(fontSize: 11)),
+                        Text('level ${a['level'] ?? 0} · have ${a['owned'] ?? 0}',
+                            style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                      ]),
+                    ),
                   ),
               ],
             ),

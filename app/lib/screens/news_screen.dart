@@ -20,11 +20,11 @@ class NewsScreen extends StatefulWidget {
 
 class _NewsScreenState extends State<NewsScreen> {
   static const _labels = {
-    '': 'All', 'world': 'World', 'casino': 'Casino', 'auctions': 'Auctions', 'archaeology': 'Archaeology',
+    '': 'All', 'world': 'World', 'awards': 'Awards', 'casino': 'Casino', 'auctions': 'Auctions', 'archaeology': 'Archaeology',
     'combat': 'Combat', 'players': 'Players', 'cargo': 'Cargo', 'quests': 'Quests',
   };
   static const _icons = {
-    'world': Icons.public, 'casino': Icons.casino, 'auctions': Icons.gavel, 'archaeology': Icons.museum_outlined,
+    'world': Icons.public, 'awards': Icons.workspace_premium_outlined, 'casino': Icons.casino, 'auctions': Icons.gavel, 'archaeology': Icons.museum_outlined,
     'combat': Icons.gpp_bad_outlined, 'players': Icons.emoji_events_outlined, 'cargo': Icons.inventory_2_outlined,
     'quests': Icons.local_fire_department_outlined,
   };

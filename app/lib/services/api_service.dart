@@ -404,20 +404,6 @@ class ApiService {
     } catch (_) { return null; }
   }
 
-  // ── Shop ─────────────────────────────────────────────────────────────────
-
-  static Future<Map<String, dynamic>?> buyShopItem(
-      String sid, int itemId, int qty) async {
-    try {
-      final r = await http.post(Uri.parse('$kBaseUrl/flut23/shopBuyItem.php'),
-          body: {'sid': sid, 'itemID': itemId.toString(), 'qty': qty.toString()})
-          .timeout(const Duration(seconds: 10));
-      return _zlibJson(r.bodyBytes);
-    } catch (_) { return null; }
-  }
-
-  // ── Log ──────────────────────────────────────────────────────────────────
-
   static Future<Map<String, dynamic>?> getLog(String sid, {int offset = 0, String type = ''}) async {
     try {
       final r = await http.post(Uri.parse('$kBaseUrl/flut23/protokollGetData.php'),

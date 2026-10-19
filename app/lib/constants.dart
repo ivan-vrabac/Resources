@@ -87,28 +87,13 @@ const int kMaxMineLevel = 5;
 // tech level → required item_id
 const Map<int, int> kTechUpgradeItem = {1: 44, 2: 45, 3: 46, 4: 48};
 
-// shop: item_id → price per unit
-const Map<int, int> kShopPrice = {
-  43: 500, 44: 5000, 45: 15000, 46: 35000, 48: 70000, 117: 2000,
-};
-
-const Map<int, String> kShopDesc = {
-  43: 'Repairs a mine to 100% condition',
-  44: 'Tech I: up to +100% output (100 items max)',
-  45: 'Tech II: up to +200% output (100 items max)',
-  46: 'Tech III: up to +350% output (100 items max)',
-  48: 'Tech IV: up to +500% output (100 items max)',
-  117: 'Increases scan yield & range',
-};
-
-const List<int> kShopItemIds = [43, 117, 44, 45, 46, 48];
 
 // Factory item_id → factory name
 const Map<int, String> kFactoryNames = {
   6: 'Concrete Factory', 23: 'Fertilizer Factory', 25: 'Brick Factory',
   29: 'Insecticide Factory', 31: 'Ironworks', 33: 'Aluminium Factory',
   34: 'Silver Refinery', 37: 'Copper Refinery', 39: 'Oil Refinery',
-  52: 'Titanium Refinery', 58: 'Recycling Plant', 60: 'Glazier Workshop',
+  52: 'Titanium Refinery', 58: 'Recycling Plant', 60: "Glazier's Workshop", 94: 'Battery Factory',
   61: 'Casino', 62: 'Plastic Factory', 63: 'Drone Factory',
   65: 'Museum', 68: 'Silicon Refinery', 69: 'Electronics Factory',
   71: 'Hospital', 72: 'Law Firm', 76: 'Medical Tech Inc',
@@ -131,8 +116,9 @@ String itemName(int id) => kItemNames[id] ?? kMineNames[id] ?? kFactoryNames[id]
 String mineName(int id) => kMineNames[id] ?? 'Mine';
 String factoryName(int id) => kFactoryNames[id] ?? itemName(id);
 
-// Factory types: item_id → {produces, out(units/batch), hrs(per batch)}
-const Map<int, Map<String, dynamic>> kFactoryTypes = {
+// Factory types: item_id → {produces, out(units/batch), hrs(per batch)}. Starts with the original
+// eight and is completed from the server catalog (factory_screen.dart), which lists all factories.
+final Map<int, Map<String, dynamic>> kFactoryTypes = {
   6:  {'produces': 7,  'out': 50,  'hrs': 2},
   25: {'produces': 24, 'out': 80,  'hrs': 2},
   31: {'produces': 30, 'out': 40,  'hrs': 4},
@@ -442,6 +428,11 @@ void precacheResImages(BuildContext ctx) {
 
 /// Number of decimal places used by [fmtNum]. Changed at runtime from settings.
 int kNumDecimals = 1;
+
+/// Market colours: ASK red / BID green like a stock ticker; Settings > Numbers & Display can invert.
+bool kInvertAskBid = false;
+Color get kAskColor => kInvertAskBid ? const Color(0xFF4CAF50) : const Color(0xFFEF5350);
+Color get kBidColor => kInvertAskBid ? const Color(0xFFEF5350) : const Color(0xFF4CAF50);
 
 /// Format large numbers with suffix. Uses [kNumDecimals] decimal places.
 /// kNumDecimals == -1 → full digits with comma separators (no suffix).

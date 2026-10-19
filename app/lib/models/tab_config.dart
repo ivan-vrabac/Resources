@@ -7,7 +7,6 @@ enum GameTabId {
   warehouse,
   factories,
   market,
-  shop,
   log,
   leaderboard,
   headquarters,

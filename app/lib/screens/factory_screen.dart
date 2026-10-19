@@ -44,6 +44,10 @@ class _FactoryScreenState extends State<FactoryScreen> {
     if (!silent) setState(() => _loading = true);
     final sid = context.read<PlayerProvider>().sid;
     final result = await ApiService.getFactories(sid);
+    // the server catalog lists every factory type; keep the shared table in sync with it
+    for (final c in (result?['catalog'] as List? ?? const []).cast<Map<String, dynamic>>()) {
+      kFactoryTypes[(c['itemID'] as num).toInt()] = {'produces': c['produces'], 'out': c['out'], 'hrs': c['hrs']};
+    }
     if (mounted) setState(() { _data = result; _loading = false; });
   }
 

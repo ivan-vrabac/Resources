@@ -162,12 +162,23 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
 
   Widget _itemTile(Map<String, dynamic> e) {
     final id = e['itemID'] as int;
-    String p(String k) => e[k] == null ? '–' : fmtCredits(e[k] as num);
+    // ASK = cheapest price you can buy at (the system's selling price);
+    // BID = best price you can sell at (highest player bid or what the system pays).
+    final ask = e['systemBuy'] as num?;
+    final bids = [e['bestBid'] as num?, e['systemSell'] as num?].whereType<num>();
+    final bid = bids.isEmpty ? null : bids.reduce((a, b) => a > b ? a : b);
+    Widget quote(String label, num? v, Color c) => Text.rich(TextSpan(children: [
+          TextSpan(text: '$label ', style: TextStyle(fontSize: 10, color: c.withValues(alpha: 0.8), fontWeight: FontWeight.bold)),
+          TextSpan(text: v == null ? '–' : fmtCredits(v), style: TextStyle(fontSize: 12, color: c, fontWeight: FontWeight.bold)),
+        ]));
     return ListTile(
       leading: ItemIcon(id),
       title: Text(itemName(id)),
-      subtitle: Text('System buys ${p('systemSell')} · sells ${p('systemBuy')} · top bid ${p('bestBid')}',
-          style: const TextStyle(fontSize: 11)),
+      subtitle: Row(children: [
+        quote('ASK', ask, kAskColor),
+        const SizedBox(width: 12),
+        quote('BID', bid, kBidColor),
+      ]),
       trailing: Text(fmtQty(e['owned'] as num? ?? 0), style: const TextStyle(color: Colors.white54)),
       onTap: () async {
         await Navigator.of(context).push(MaterialPageRoute(builder: (_) => MarketItemScreen(itemId: id)));
@@ -220,10 +231,11 @@ class _MarketItemScreenState extends State<MarketItemScreen> {
 
   /// Quantity-only trades: buy from / sell to the system, sell into a player's buy order.
   Future<void> _qtyTrade({required String title, required num price, required int maxQty,
-      required bool selling, required Future<ApiResult> Function(int qty) run}) async {
+      required bool selling, required Future<ApiResult> Function(int qty) run, double taxRate = 0}) async {
     final q = await showDialog<int>(
       context: context,
-      builder: (_) => _QtyDialog(title: title, itemId: widget.itemId, price: price, maxQty: maxQty, selling: selling),
+      builder: (_) => _QtyDialog(title: title, itemId: widget.itemId, price: price, maxQty: maxQty,
+          selling: selling, taxRate: taxRate),
     );
     if (q == null || q <= 0) return;
     final r = await run(q);
@@ -319,10 +331,10 @@ class _MarketItemScreenState extends State<MarketItemScreen> {
               const SizedBox(height: 4),
               if (sysBuy != null)
                 _bookRow(
-                  label: 'System sells', price: sysBuy, qtyText: 'unlimited', color: Colors.lightBlueAccent,
+                  label: 'System sells', price: sysBuy, qtyText: '', color: kAskColor,
                   action: 'Buy', onTap: () => _qtyTrade(
-                    title: 'Buy from the system', price: sysBuy, selling: false,
-                    maxQty: max(0, min(space, (credits / sysBuy).floor())),
+                    title: 'Buy from the system', price: sysBuy, selling: false, taxRate: tax,
+                    maxQty: max(0, min(space, (credits / (sysBuy * (1 + tax))).floor())),
                     run: (q) => GameApi.call('/api/v1/market/system', _sid,
                         {'side': 'buy', 'itemID': widget.itemId, 'qty': q, 'rid': _rid()})),
                 ),
@@ -342,7 +354,7 @@ class _MarketItemScreenState extends State<MarketItemScreen> {
                 ),
               if (sysSell != null)
                 _bookRow(
-                  label: 'System buys', price: sysSell, qtyText: 'unlimited', color: Colors.orangeAccent,
+                  label: 'System buys', price: sysSell, qtyText: '', color: kBidColor,
                   action: 'Sell', onTap: owned <= 0 ? null : () => _qtyTrade(
                     title: 'Sell to the system', price: sysSell, selling: true, maxQty: owned,
                     run: (q) => GameApi.call('/api/v1/market/system', _sid,
@@ -407,8 +419,9 @@ class _QtyDialog extends StatefulWidget {
   final int itemId, maxQty;
   final num price;
   final bool selling;
+  final double taxRate;      // added on top when buying from the system
   const _QtyDialog({required this.title, required this.itemId, required this.price, required this.maxQty,
-      required this.selling});
+      required this.selling, this.taxRate = 0});
   @override
   State<_QtyDialog> createState() => _QtyDialogState();
 }
@@ -425,14 +438,17 @@ class _QtyDialogState extends State<_QtyDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final total = (_q * widget.price).round();
+    final value = (_q * widget.price).round();
+    final tax = (value * widget.taxRate).round();
+    final total = value + tax;
     return AlertDialog(
       title: Text(widget.title),
       content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           ItemIcon(widget.itemId, size: 32),
           const SizedBox(width: 8),
-          Expanded(child: Text('${fmtCredits(widget.price)} per unit')),
+          Expanded(child: Text('${fmtCredits(widget.price)} per unit'
+              '${widget.taxRate > 0 ? ' + ${(widget.taxRate * 100).round()}% tax' : ''}')),
         ]),
         if (widget.maxQty <= 0)
           Padding(padding: const EdgeInsets.only(top: 12), child: Text(widget.selling
@@ -449,6 +465,11 @@ class _QtyDialogState extends State<_QtyDialog> {
             onChanged: (t) => _set(int.tryParse(t) ?? 0),
           ),
           const SizedBox(height: 10),
+          if (tax > 0)
+            Row(children: [
+              const Expanded(child: Text('Transport tax', style: TextStyle(color: Colors.white70))),
+              Text(fmtCredits(tax)),
+            ]),
           Row(children: [
             Expanded(child: Text(widget.selling ? 'You receive' : 'You pay', style: const TextStyle(color: Colors.white70))),
             Text(fmtCredits(total), style: const TextStyle(fontWeight: FontWeight.bold)),

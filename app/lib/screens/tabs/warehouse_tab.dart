@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/player_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/game_api.dart';
 import '../../constants.dart';
+import '../../widgets/top_banner.dart';
 
 class WarehouseTab extends StatefulWidget {
   const WarehouseTab({super.key});
@@ -15,6 +17,8 @@ class _WarehouseTabState extends State<WarehouseTab> {
   int _whLevel = 1;
   int _whCap = 5000;
   bool _loading = false;
+  Map<int, Map<String, dynamic>> _recipes = {};   // recyclable found objects (Recycling Plant)
+  int _plantLevel = 0;
 
   @override
   void initState() {
@@ -26,6 +30,11 @@ class _WarehouseTabState extends State<WarehouseTab> {
     setState(() => _loading = true);
     final sid = context.read<PlayerProvider>().sid;
     final result = await ApiService.getWarehouse(sid);
+    final rec = await GameApi.call('/api/v1/cargo/recycling', sid);
+    if (rec.ok) {
+      _plantLevel = (rec.data['plantLevel'] as num? ?? 0).toInt();
+      _recipes = {for (final r in (rec.data['recipes'] as List).cast<Map<String, dynamic>>()) (r['itemID'] as num).toInt(): r};
+    }
     if (mounted && result != null && result['err'] == 0) {
       setState(() {
         _items = (result['items'] as Map<String, dynamic>).map(
@@ -132,6 +141,54 @@ class _WarehouseTabState extends State<WarehouseTab> {
     );
   }
 
+  /// Recycle found objects in the Recycling Plant (outputs and yield come from the server).
+  Future<void> _recycle(int itemId, int owned) async {
+    final recipe = _recipes[itemId]!;
+    final outs = (recipe['outputs'] as List).cast<Map<String, dynamic>>();
+    if (_plantLevel < 1) {
+      AppNotify.show(context, 'Build a Recycling Plant (Special Buildings) to recycle', isError: true);
+      return;
+    }
+    var qty = owned;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, set) => AlertDialog(
+        title: Text('Recycle ${itemName(itemId)}'),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Recycle $qty of $owned', style: const TextStyle(fontWeight: FontWeight.bold)),
+          if (owned > 1)
+            Slider(value: qty.toDouble(), min: 1, max: owned.toDouble(), onChanged: (v) => set(() => qty = v.round())),
+          const Text('You get about', style: TextStyle(color: Colors.white54, fontSize: 12)),
+          for (final o in outs)
+            ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: _ItemIcon(itemId: (o['itemID'] as num).toInt()),
+              title: Text(itemName((o['itemID'] as num).toInt())),
+              trailing: Text(fmtNum(((o['perUnit'] as num) * qty).floor())),
+            ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Recycle')),
+        ],
+      )),
+    );
+    if (ok != true || !mounted) return;
+    final r = await GameApi.call('/api/v1/cargo/recycle', context.read<PlayerProvider>().sid,
+        {'itemID': itemId, 'qty': qty});
+    if (!mounted) return;
+    if (r.ok) {
+      final got = (r.data['outputs'] as List).cast<Map<String, dynamic>>()
+          .map((o) => '${fmtNum(o['qty'] as num)} ${itemName((o['itemID'] as num).toInt())}').join(', ');
+      AppNotify.show(context, got.isEmpty ? 'Recycled (warehouse full?)' : 'Recycled: $got');
+      context.read<PlayerProvider>().refresh();
+      _load();
+    } else {
+      AppNotify.show(context, r.message ?? 'Recycling failed', isError: true);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator());
@@ -187,14 +244,23 @@ class _WarehouseTabState extends State<WarehouseTab> {
           else
             ...entries.map((e) {
               final id = int.tryParse(e.key) ?? 0;
+              final recyclable = _recipes.containsKey(id);
               return ListTile(
                 dense: true,
                 leading: _ItemIcon(itemId: id),
                 title: Text(itemName(id)),
-                trailing: Text(
-                  fmtNum(e.value),
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.amber, fontSize: 14),
-                ),
+                subtitle: recyclable
+                    ? const Text('tap to recycle', style: TextStyle(fontSize: 11, color: Colors.lightGreenAccent))
+                    : null,
+                onTap: recyclable ? () => _recycle(id, e.value.floor()) : null,
+                trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                  if (recyclable) const Padding(padding: EdgeInsets.only(right: 6),
+                      child: Icon(Icons.recycling, size: 16, color: Colors.lightGreenAccent)),
+                  Text(
+                    fmtNum(e.value),
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.amber, fontSize: 14),
+                  ),
+                ]),
               );
             }),
         ],

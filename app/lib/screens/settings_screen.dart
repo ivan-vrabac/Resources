@@ -9,7 +9,7 @@ import '../services/api_service.dart';
 import '../services/launcher_icon_service.dart';
 import '../services/update_service.dart';
 import '../widgets/update_dialog.dart';
-import '../constants.dart' show kNumDecimals;
+import '../constants.dart' show kNumDecimals, kInvertAskBid;
 import 'game_screen.dart' show tabMeta;
 
 // ── Notification settings ──────────────────────────────────────────────────────
@@ -657,6 +657,18 @@ class _NumbersDisplayPageState extends State<_NumbersDisplayPage> {
             ]),
           ]),
         ),
+        _settingsSectionHeader('Market'),
+        SwitchListTile(
+          title: const Text('Invert ASK / BID colours'),
+          subtitle: Text(kInvertAskBid ? 'ASK green · BID red' : 'ASK red · BID green',
+              style: const TextStyle(color: Colors.white38, fontSize: 12)),
+          value: kInvertAskBid,
+          onChanged: (v) async {
+            setState(() => kInvertAskBid = v);
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setBool('invert_ask_bid', v);
+          },
+        ),
       ]),
     );
   }
@@ -988,6 +1000,7 @@ class _NotificationsPageState extends State<_NotificationsPage> {
 Future<void> loadNumDecimalsPrefs() async {
   final prefs = await SharedPreferences.getInstance();
   kNumDecimals = prefs.getInt('numDecimals') ?? 1;
+  kInvertAskBid = prefs.getBool('invert_ask_bid') ?? false;
   kCloudOpacity = (prefs.getDouble('res_cloud_opacity') ?? 0.35).clamp(0.10, 0.90);
   final droneC = prefs.getInt('drone_ring_color');
   if (droneC != null) kDroneRingColor = Color(droneC);

@@ -8,7 +8,6 @@ import '../factory_screen.dart';
 import '../leaderboard_screen.dart';
 import '../market_screen.dart';
 import '../log_screen.dart';
-import '../shop_screen.dart';
 
 class MoreTab extends StatefulWidget {
   const MoreTab({super.key});
@@ -105,8 +104,6 @@ class _MoreTabState extends State<MoreTab> {
             'Build and manage production factories', const FactoryScreen()),
         _tile(context, Icons.storefront_outlined, 'Market',
             'Buy and sell resources', const MarketScreen()),
-        _tile(context, Icons.shopping_bag_outlined, 'Shop',
-            'Buy kits, tech upgrades, and drones', const ShopScreen()),
         _tile(context, Icons.history, 'Activity Log',
             'View recent game events', const LogScreen()),
 

@@ -13,7 +13,6 @@ import 'tabs/mines_tab.dart';
 import 'tabs/warehouse_tab.dart';
 import 'factory_screen.dart';
 import 'market_screen.dart';
-import 'shop_screen.dart';
 import 'log_screen.dart';
 import 'leaderboard_screen.dart';
 import 'headquarters_screen.dart';
@@ -51,8 +50,6 @@ final Map<GameTabId, _TabMeta> tabMeta = {
       build: () => const FactoryScreen()),
   GameTabId.market: _TabMeta(label: 'Market', icon: Icons.storefront_outlined,
       build: () => const MarketScreen(), needsScaffold: true),
-  GameTabId.shop: _TabMeta(label: 'Shop', icon: Icons.shopping_bag_outlined,
-      build: () => const ShopScreen()),
   GameTabId.log: _TabMeta(label: 'Log', icon: Icons.history,
       build: () => const LogScreen()),
   // Leaderboard accessible from the More tab profile card — not a standalone tab

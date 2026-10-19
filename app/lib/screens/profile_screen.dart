@@ -122,17 +122,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
           onRefresh: _load,
           child: ListView(padding: const EdgeInsets.all(12), children: [
             Row(children: [
-              CircleAvatar(radius: 26, child: Text((p['name'] as String? ?? '?').characters.first.toUpperCase(),
-                  style: const TextStyle(fontSize: 20))),
+              // country flag in place of an avatar (letter avatar only when no country is set)
+              (p['country'] as String? ?? '').isNotEmpty
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: Image.asset('assets/images_countryflags/${(p['country'] as String).toLowerCase()}.png',
+                          width: 52, height: 36, fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Icon(Icons.flag_outlined, size: 36)),
+                    )
+                  : CircleAvatar(radius: 26, child: Text((p['name'] as String? ?? '?').characters.first.toUpperCase(),
+                      style: const TextStyle(fontSize: 20))),
               const SizedBox(width: 12),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(p['name'] as String? ?? '', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                 Text('Member since ${p['memberSince'] ?? '?'}',
                     style: const TextStyle(color: Colors.white54, fontSize: 12)),
               ])),
-              if ((p['country'] as String? ?? '').isNotEmpty)
-                Image.asset('assets/images_countryflags/${(p['country'] as String).toLowerCase()}.png',
-                    width: 32, errorBuilder: (_, __, ___) => const SizedBox()),
             ]),
             const SizedBox(height: 12),
             Row(children: [
@@ -194,7 +199,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
     if (widget.embedded) return body;
     return Scaffold(
-      appBar: AppBar(toolbarHeight: 40, title: Text(_p?['name'] as String? ?? 'Profile')),
+      appBar: AppBar(toolbarHeight: 40, title: const Text('Company')),
       body: body,
     );
   }
