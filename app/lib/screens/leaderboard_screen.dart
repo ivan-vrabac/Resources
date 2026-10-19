@@ -146,16 +146,12 @@ class _OverallBoardState extends _BoardState<_OverallBoard> {
     return AsyncView(loading: loading && data == null, error: error, onRetry: load, builder: () {
       final rows = (data!['rows'] as List).cast<Map<String, dynamic>>();
       return list(rows, (r) {
-        final act = (r['activity'] as num? ?? 0).toInt();
         final code = r['country'] as String? ?? '';
         return _row(context, r, value: fmtNum((r['score'] as num).toInt()), middle: Row(children: [
           if (code.isNotEmpty)
             Padding(padding: const EdgeInsets.only(right: 6), child: Image.asset('assets/images_countryflags/$code.png',
                 width: 18, height: 12, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox(width: 18))),
           Text('Lv ${r['level']}', style: const TextStyle(color: Colors.white38, fontSize: 11)),
-          const SizedBox(width: 6),
-          Icon(Icons.bolt, size: 11, color: act >= 80 ? Colors.greenAccent : Colors.white38),
-          Text('$act%', style: TextStyle(color: act >= 80 ? Colors.greenAccent : Colors.white38, fontSize: 11)),
         ]));
       }, header: controls());
     });
