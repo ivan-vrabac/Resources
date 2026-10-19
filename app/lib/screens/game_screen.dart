@@ -212,6 +212,22 @@ class _GameScreenState extends State<GameScreen> {
     });
   }
 
+  /// The top bar opens the Stats tab: switch to it if it's in the bottom bar, otherwise open it
+  /// the same way the More tab does.
+  void _openStats() {
+    final idx = _config.bottomTabs.indexOf(GameTabId.stats);
+    if (idx >= 0) {
+      _goToTab(idx);
+      return;
+    }
+    final meta = tabMeta[GameTabId.stats]!;
+    Navigator.push(context, MaterialPageRoute(builder: (_) => Scaffold(
+      backgroundColor: const Color(0xFF0D0D0D),
+      appBar: AppBar(title: Text(meta.label), toolbarHeight: 44),
+      body: meta.build(),
+    )));
+  }
+
   void _openSettings() {
     Navigator.push(
       context,
@@ -234,7 +250,7 @@ class _GameScreenState extends State<GameScreen> {
       body: SafeArea(
         bottom: false,
         child: Column(children: [
-        const PlayerHud(),
+        PlayerHud(onTap: _openStats),
         Expanded(
           child: PageView(
             controller: _pageCtrl,

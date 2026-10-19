@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../constants.dart' show fmtNum;
 import '../models/player_provider.dart';
-import '../screens/profile_screen.dart';
 import '../screens/settings_screen.dart' show mapPanelOpacityNotifier;
 
 class PlayerHud extends StatelessWidget {
-  const PlayerHud({super.key});
+  /// Tap on the bar (name, credits, level, XP): the game screen opens the Stats tab.
+  final VoidCallback? onTap;
+  const PlayerHud({super.key, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -15,7 +16,7 @@ class PlayerHud extends StatelessWidget {
     // tap the bar (name, credits, level, XP) to open your own company stats
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileScreen())),
+      onTap: onTap,
       child: ValueListenableBuilder<double>(
       valueListenable: mapPanelOpacityNotifier,
       builder: (context, opacity, _) => Container(

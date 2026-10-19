@@ -500,10 +500,20 @@ class _MinesTabState extends State<MinesTab> {
       final selCount  = mines.where((m) => _selected.contains(m.id)).length;
 
       // ── Category header ────────────────────────────────────────────
+      void selectCategory(bool on) => setState(() {
+            for (final m in mines) {
+              on ? _selected.add(m.id) : _selected.remove(m.id);
+            }
+          });
       result.add(SliverToBoxAdapter(
         child: InkWell(
           onTap: () => setState(() =>
               expanded ? _expandedIds.remove(itemId) : _expandedIds.add(itemId)),
+          // long-press a category: start selecting and pick all of its mines
+          onLongPress: () {
+            if (!_massMode) _toggleMassMode();
+            selectCategory(true);
+          },
           child: Container(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
             decoration: BoxDecoration(
@@ -552,6 +562,15 @@ class _MinesTabState extends State<MinesTab> {
                       style: TextStyle(fontSize: 11, color: condColor)),
                 ]),
               ])),
+              if (_massMode)
+                Tooltip(
+                  message: 'Select all ${kMineNames[itemId] ?? 'mines'}',
+                  child: Checkbox(
+                    tristate: true,
+                    value: selCount == 0 ? false : selCount == mines.length ? true : null,
+                    onChanged: (_) => selectCategory(selCount < mines.length),
+                  ),
+                ),
               Icon(expanded ? Icons.expand_less : Icons.expand_more,
                   color: Colors.white38, size: 20),
             ]),

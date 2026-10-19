@@ -217,7 +217,8 @@ class DetectorButton extends StatelessWidget {
     return ListenableBuilder(
       listenable: controller,
       builder: (_, __) => Material(
-        color: controller.active ? Colors.yellow.shade700 : Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
+        // plain button like Cargo Rain; the scan result shows on the map, not on the button
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
         shape: const CircleBorder(),
         child: InkWell(
           customBorder: const CircleBorder(),
@@ -232,8 +233,7 @@ class DetectorButton extends StatelessWidget {
                 controller.scanning
                     ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
                     : Image.asset('assets/mapmarkers/artifactscanicon.png', width: 30, height: 30,
-                        errorBuilder: (_, __, ___) => Icon(Icons.track_changes,
-                            color: controller.active ? Colors.black : Colors.yellowAccent)),
+                        errorBuilder: (_, __, ___) => const Icon(Icons.track_changes, color: Colors.yellowAccent)),
                 if (controller.detectorsLeft != null)
                   Positioned(
                     right: -2, top: -2,
@@ -277,66 +277,20 @@ class _ArchaeologyScreenState extends State<ArchaeologyScreen> {
     setState(() { _loading = false; _error = r.ok ? null : r.message; if (r.ok) _d = r.data; });
   }
 
-  /// Artifact sheet: level, the three level effects, and investing 100 / 500 / 1000 of them.
+  /// Artifact sheet in the style of the tech-upgrade sheet: level bars, a slider for how many to
+  /// invest (with a preview on the bars) and the effect of every level.
   Future<void> _openArtifact(Map<String, dynamic> a) async {
-    final owned = (a['owned'] as num? ?? 0).toInt();
-    final invested = (a['invested'] as num? ?? 0).toInt();
-    final level = (a['level'] as num? ?? 0).toInt();
-    final effects = ((a['effects'] as List?) ?? const []).cast<String>();
-    final levelAt = ((_d?['levelAt'] as List?) ?? const [100, 500, 1000]).cast<num>();
+    final levelAt = ((_d?['levelAt'] as List?) ?? const [100, 500, 1000]).cast<num>().map((e) => e.toInt()).toList();
     final qty = await showModalBottomSheet<int>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: const Color(0xFF1A1A2E),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Image.asset('assets/images/imgArtifact${a['itemID']}.png', height: 56,
-                  errorBuilder: (_, __, ___) => const Icon(Icons.diamond, size: 40)),
-              const SizedBox(width: 12),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(a['name'] as String, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                Text('Level $level · invested $invested · you have $owned',
-                    style: const TextStyle(color: Colors.white70, fontSize: 12)),
-              ])),
-            ]),
-            const SizedBox(height: 12),
-            for (var i = 0; i < effects.length; i++)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Row(children: [
-                  Icon(level > i ? Icons.check_circle : Icons.radio_button_unchecked, size: 18,
-                      color: level > i ? Colors.yellowAccent : Colors.white38),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text('Level ${i + 1} (${levelAt[i]} invested): ${effects[i]}',
-                      style: TextStyle(color: level > i ? Colors.white : Colors.white54))),
-                ]),
-              ),
-            const SizedBox(height: 12),
-            const Text('Invested artifacts are used up and raise the level permanently.',
-                style: TextStyle(color: Colors.white38, fontSize: 11)),
-            const SizedBox(height: 8),
-            Row(children: [
-              for (final n in const [100, 500, 1000])
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 3),
-                    child: FilledButton(
-                      onPressed: owned >= n ? () => Navigator.pop(ctx, n) : null,
-                      child: FittedBox(child: Text('Invest $n')),
-                    ),
-                  ),
-                ),
-            ]),
-          ]),
-        ),
-      ),
+      builder: (_) => _ArtifactInvestSheet(artifact: a, levelAt: levelAt),
     );
-    if (qty == null || !mounted) return;
+    if (qty == null || qty <= 0 || !mounted) return;
     final r = await GameApi.call('/api/v1/archaeology/invest', widget.sid(), {'itemID': a['itemID'], 'qty': qty});
     if (!mounted) return;
-    AppNotify.show(context, r.ok ? '${a['name']} is now level ${r.data['level']}' : (r.message ?? 'Failed'),
+    AppNotify.show(context, r.ok ? '${a['name']}: invested $qty · level ${r.data['level']}' : (r.message ?? 'Failed'),
         isError: !r.ok);
     _load();
   }
@@ -396,6 +350,140 @@ class _ArchaeologyScreenState extends State<ArchaeologyScreen> {
           ]),
         );
       },
+    );
+  }
+}
+
+
+const _kBronze = Color(0xFFCD7F32);
+
+class _ArtifactInvestSheet extends StatefulWidget {
+  final Map<String, dynamic> artifact;
+  final List<int> levelAt;
+  const _ArtifactInvestSheet({required this.artifact, required this.levelAt});
+  @override
+  State<_ArtifactInvestSheet> createState() => _ArtifactInvestSheetState();
+}
+
+class _ArtifactInvestSheetState extends State<_ArtifactInvestSheet> {
+  int _add = 0;
+
+  int get _owned => (widget.artifact['owned'] as num? ?? 0).toInt();
+  int get _invested => (widget.artifact['invested'] as num? ?? 0).toInt();
+  int get _maxUseful => max(0, min(_owned, widget.levelAt.last - _invested));
+
+  @override
+  void initState() {
+    super.initState();
+    // preselect what is needed for the next level (or all you have)
+    final next = widget.levelAt.firstWhere((t) => t > _invested, orElse: () => widget.levelAt.last);
+    _add = min(_maxUseful, max(0, next - _invested));
+  }
+
+  int _levelFor(int n) => widget.levelAt.where((t) => n >= t).length;
+
+  @override
+  Widget build(BuildContext context) {
+    final a = widget.artifact;
+    final effects = ((a['effects'] as List?) ?? const []).cast<String>();
+    final lvl = _levelFor(_invested), newLvl = _levelFor(_invested + _add);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Image.asset('assets/images/imgArtifact${a['itemID']}.png', height: 52,
+                errorBuilder: (_, __, ___) => const Icon(Icons.diamond, size: 40, color: _kBronze)),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(a['name'] as String, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              Text('Level $lvl · invested $_invested · you have $_owned',
+                  style: const TextStyle(color: Colors.white60, fontSize: 12)),
+            ])),
+          ]),
+          const SizedBox(height: 14),
+          for (var i = 0; i < widget.levelAt.length; i++) _levelRow(i, effects.length > i ? effects[i] : ''),
+          const SizedBox(height: 10),
+          if (_maxUseful > 0) ...[
+            Row(children: [
+              const Text('Invest', style: TextStyle(color: Colors.white70)),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(activeTrackColor: _kBronze, thumbColor: Colors.amberAccent,
+                      inactiveTrackColor: Colors.white12),
+                  child: Slider(value: _add.toDouble(), min: 0, max: _maxUseful.toDouble(),
+                      onChanged: (v) => setState(() => _add = v.round())),
+                ),
+              ),
+              SizedBox(width: 52, child: Text('$_add', textAlign: TextAlign.right,
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.amberAccent))),
+            ]),
+            Row(children: [
+              for (final n in const [100, 500, 1000])
+                Expanded(child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 3),
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(foregroundColor: _kBronze,
+                        side: BorderSide(color: _kBronze.withValues(alpha: 0.6))),
+                    onPressed: () => setState(() => _add = min(_maxUseful, n)),
+                    child: FittedBox(child: Text('$n')),
+                  ),
+                )),
+            ]),
+          ] else
+            Text(_invested >= widget.levelAt.last ? 'Maximum level reached.' : 'Recover more of these artifacts to invest.',
+                style: const TextStyle(color: Colors.white54)),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: _kBronze, foregroundColor: Colors.black),
+              onPressed: _add <= 0 ? null : () => Navigator.pop(context, _add),
+              child: Text(_add <= 0 ? 'Invest' : newLvl > lvl
+                  ? 'Invest $_add → level $newLvl' : 'Invest $_add'),
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text('Invested artifacts are used up and raise the level permanently.',
+              style: TextStyle(color: Colors.white38, fontSize: 11)),
+        ]),
+      ),
+    );
+  }
+
+  /// One level: progress bar (solid = invested, lighter = what this investment adds) and its effect.
+  Widget _levelRow(int i, String effect) {
+    final lo = i == 0 ? 0 : widget.levelAt[i - 1], hi = widget.levelAt[i];
+    double frac(int n) => ((n - lo) / (hi - lo)).clamp(0.0, 1.0);
+    final cur = frac(_invested), prev = frac(_invested + _add);
+    final reached = _invested >= hi, willReach = !reached && _invested + _add >= hi;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          SizedBox(width: 30, child: Text('L${i + 1}', style: TextStyle(
+              color: reached ? Colors.amberAccent : willReach ? _kBronze : Colors.white54,
+              fontWeight: reached || willReach ? FontWeight.bold : FontWeight.normal, fontSize: 12))),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: SizedBox(height: 8, child: Stack(children: [
+                Container(color: Colors.white12),
+                FractionallySizedBox(widthFactor: prev, child: Container(color: _kBronze.withValues(alpha: 0.4))),
+                FractionallySizedBox(widthFactor: cur, child: Container(color: Colors.amber.shade700)),
+              ])),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(width: 64, child: Text('${min(max(_invested + _add - lo, 0), hi - lo)}/${hi - lo}',
+              textAlign: TextAlign.right, style: const TextStyle(fontSize: 11, color: Colors.white54))),
+        ]),
+        Padding(
+          padding: const EdgeInsets.only(left: 30, top: 2),
+          child: Text(effect, style: TextStyle(fontSize: 12,
+              color: reached ? Colors.white : willReach ? _kBronze : Colors.white38)),
+        ),
+      ]),
     );
   }
 }

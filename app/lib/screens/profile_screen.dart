@@ -5,6 +5,7 @@ import '../models/player_provider.dart';
 import '../services/game_api.dart';
 import '../widgets/async_view.dart';
 import '../widgets/top_banner.dart';
+import 'dm_screen.dart';
 
 /// Public profile of a player ([pid]), or your own statistics when [pid] is null.
 class ProfileScreen extends StatefulWidget {
@@ -171,6 +172,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _itemSection('Special buildings', p['specialBuildings'], 'level', prefix: 'Lv '),
             _itemSection('Luxury items', p['luxuryItems'], 'qty', prefix: '×'),
             if (!isMe) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  icon: const Icon(Icons.mail_outline),
+                  label: const Text('Send private message'),
+                  onPressed: () => DmScreen.open(context, p['pid'] as String, p['name'] as String? ?? ''),
+                ),
+              ),
               const SizedBox(height: 12),
               const Text('Contacts', style: TextStyle(color: Colors.white54, fontSize: 12)),
               const SizedBox(height: 6),

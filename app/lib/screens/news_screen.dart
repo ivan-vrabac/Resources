@@ -31,7 +31,7 @@ class _NewsScreenState extends State<NewsScreen> {
 
   final _items = <Map<String, dynamic>>[];
   String _cat = '';
-  bool _loading = true, _more = false, _loadingMore = false, _anon = false;
+  bool _loading = true, _more = false, _loadingMore = false;
   int? _next;
   String? _error;
 
@@ -59,20 +59,8 @@ class _NewsScreenState extends State<NewsScreen> {
         _items.addAll((r.data['items'] as List).cast<Map<String, dynamic>>());
         _more = r.data['more'] == true;
         _next = (r.data['next'] as num?)?.toInt();
-        _anon = r.data['anonymous'] == true;
       }
     });
-  }
-
-  Future<void> _setAnon(bool v) async {
-    final r = await GameApi.call('/api/v1/news/privacy', _sid, {'anonymous': v ? 1 : 0});
-    if (!mounted) return;
-    if (r.ok) {
-      setState(() => _anon = v);
-      AppNotify.show(context, v ? 'Your company name is hidden in news' : 'Your company name is shown in news');
-    } else {
-      AppNotify.show(context, r.message ?? 'Failed', isError: true);
-    }
   }
 
   String _ago(String iso) {
@@ -107,12 +95,6 @@ class _NewsScreenState extends State<NewsScreen> {
           builder: () => RefreshIndicator(
             onRefresh: _load,
             child: ListView(padding: const EdgeInsets.all(8), children: [
-              SwitchListTile(
-                dense: true,
-                title: const Text('Hide my company name in news'),
-                value: _anon,
-                onChanged: _setAnon,
-              ),
               if (_items.isEmpty)
                 const Padding(padding: EdgeInsets.all(24),
                     child: Text('No news yet. Big wins, discoveries and earthquakes appear here.', textAlign: TextAlign.center)),
@@ -184,19 +166,25 @@ class _NewsScreenState extends State<NewsScreen> {
           SizedBox(
             height: 260,
             child: FlutterMap(
+              // a fixed picture of the area: no zooming or panning
               options: MapOptions(
                 initialCenter: c,
                 initialZoom: r > 30000 ? 7 : r > 10000 ? 8 : 10,
-                interactionOptions: const InteractionOptions(flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag),
+                interactionOptions: const InteractionOptions(flags: InteractiveFlag.none),
               ),
               children: [
-                TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName: Branding.appId, maxNativeZoom: 19),
-                CircleLayer(circles: [
-                  CircleMarker(point: c, radius: r, useRadiusInMeter: true,
-                      color: Colors.orange.withValues(alpha: 0.18), borderColor: Colors.deepOrange, borderStrokeWidth: 2),
-                  CircleMarker(point: c, radius: 5, color: Colors.red),
-                ]),
+                // dark greyscale OSM tiles, same as the Map tab
+                ColorFiltered(
+                  colorFilter: const ColorFilter.matrix([
+                    -0.2126, -0.7152, -0.0722, 0, 255,
+                    -0.2126, -0.7152, -0.0722, 0, 255,
+                    -0.2126, -0.7152, -0.0722, 0, 255,
+                          0,       0,       0, 1,   0,
+                  ]),
+                  child: TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: Branding.appId, maxNativeZoom: 19),
+                ),
+                _QuakeWaves(center: c, radius: r),
               ],
             ),
           ),
@@ -218,6 +206,50 @@ class _NewsScreenState extends State<NewsScreen> {
           ),
         ]),
       ),
+    );
+  }
+}
+
+/// Seismic waves: rings rippling out from the epicenter to the affected radius.
+class _QuakeWaves extends StatefulWidget {
+  final LatLng center;
+  final double radius;
+  const _QuakeWaves({required this.center, required this.radius});
+  @override
+  State<_QuakeWaves> createState() => _QuakeWavesState();
+}
+
+class _QuakeWavesState extends State<_QuakeWaves> with SingleTickerProviderStateMixin {
+  late final AnimationController _a = AnimationController(vsync: this, duration: const Duration(seconds: 3))..repeat();
+
+  @override
+  void dispose() {
+    _a.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _a,
+      builder: (_, __) {
+        const waves = 4;
+        return CircleLayer(circles: [
+          // the affected area
+          CircleMarker(point: widget.center, radius: widget.radius, useRadiusInMeter: true,
+              color: Colors.deepOrange.withValues(alpha: 0.10),
+              borderColor: Colors.deepOrange.withValues(alpha: 0.8), borderStrokeWidth: 1.5),
+          // rings moving outwards, fading as they travel
+          for (var i = 0; i < waves; i++)
+            (() {
+              final t = (_a.value + i / waves) % 1.0;
+              return CircleMarker(point: widget.center, radius: widget.radius * t, useRadiusInMeter: true,
+                  color: Colors.transparent,
+                  borderColor: Colors.orangeAccent.withValues(alpha: (1 - t) * 0.9), borderStrokeWidth: 2);
+            })(),
+          CircleMarker(point: widget.center, radius: 5, color: Colors.redAccent),
+        ]);
+      },
     );
   }
 }

@@ -60,7 +60,10 @@ class HQ {
   final double lat, lng;
   final int level;
   final Map<int, double> deposits; // deposited amounts toward next level
-  const HQ({required this.lat, required this.lng, required this.level, this.deposits = const {}});
+  final int subLevel;              // HQ 10 bonus level 1–6 (10 000 luxury points each)
+  final int luxuryPoints;
+  const HQ({required this.lat, required this.lng, required this.level, this.deposits = const {},
+      this.subLevel = 0, this.luxuryPoints = 0});
   factory HQ.fromJson(Map<String, dynamic> j) {
     final raw = j['deposits'] as Map<String, dynamic>? ?? {};
     return HQ(
@@ -68,6 +71,8 @@ class HQ {
       lng: (j['lng'] as num).toDouble(),
       level: (j['lvl'] as num? ?? 1).toInt(),
       deposits: {for (final e in raw.entries) int.tryParse(e.key) ?? 0: (e.value as num).toDouble()},
+      subLevel: (j['sub_lvl'] as num? ?? 0).toInt(),
+      luxuryPoints: (j['luxuryPoints'] as num? ?? 0).toInt(),
     );
   }
 }

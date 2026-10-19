@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../constants.dart' show itemName;
 import '../models/player_provider.dart';
 import '../services/game_api.dart';
 import '../widgets/async_view.dart';
@@ -47,11 +48,70 @@ class _QuestsScreenState extends State<QuestsScreen> {
       final ms = (r.data['milestones'] as List? ?? const []).cast<Map<String, dynamic>>();
       final extra = ms.isEmpty
           ? ''
-          : ' · Streak bonus: ${ms.map((m) => '${m['diamonds']} Giant Diamonds (${m['days']} days)').join(', ')}';
+          : ' · Streak: ${ms.map((m) => '${m['qty']} ${itemName((m['itemID'] as num).toInt())}').join(', ')}';
       AppNotify.show(context, 'Reward: ${fmtCredits(r.data['credits'] as num)} + ${r.data['crates']} Cargo Rain$extra');
       context.read<PlayerProvider>().refresh();
     }
     _load();
+  }
+
+  /// Everything quests pay: per quest, per streak day, and the streak milestones.
+  void _showRewards(Map<String, dynamic> plan, int streak) {
+    final perQuest = (plan['perQuest'] as List? ?? const []).cast<Map<String, dynamic>>();
+    final daily = (plan['daily'] as List? ?? const []).cast<Map<String, dynamic>>();
+    final ms = (plan['milestones'] as List? ?? const []).cast<Map<String, dynamic>>();
+    final bonus = (plan['aeonBonus'] as num? ?? 0);
+    Widget row(Widget icon, String title, String value, {bool active = false}) => ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          leading: icon,
+          title: Text(title, style: TextStyle(color: active ? Colors.amberAccent : null)),
+          trailing: Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+        );
+    Widget header(String t) => Padding(
+          padding: const EdgeInsets.only(top: 12, bottom: 2),
+          child: Text(t.toUpperCase(), style: const TextStyle(fontSize: 11, color: Colors.white54, letterSpacing: 1)),
+        );
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1A1A2E),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Quest rewards', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              header('Every quest'),
+              for (final r in perQuest)
+                r['cargo'] == true
+                    ? row(Image.asset('assets/mapmarkers/boxrainicon.png', width: 32, height: 32,
+                          errorBuilder: (_, __, ___) => const Icon(Icons.inventory_2_outlined)),
+                        'Cargo Rain crates', '${r['qty']}')
+                    : row(const Icon(Icons.monetization_on_outlined, color: Colors.amber), 'Credits',
+                        fmtCredits(r['qty'] as num)),
+              if (bonus > 0)
+                Text('includes your Aeon Mechanism bonus +${(bonus * 100).round()}%',
+                    style: const TextStyle(fontSize: 11, color: Colors.white38)),
+              header('Every streak day (all quests of the day done)'),
+              for (final r in daily)
+                row(ItemIcon((r['itemID'] as num).toInt(), size: 32),
+                    r['to'] == null ? 'Day ${r['from']} and every day after'
+                        : r['from'] == r['to'] ? 'Day ${r['from']}' : 'Days ${r['from']}–${r['to']}',
+                    '${r['qty']} × ${itemName((r['itemID'] as num).toInt())}',
+                    active: streak + 1 >= (r['from'] as num) && (r['to'] == null || streak + 1 <= (r['to'] as num))),
+              header('Streak milestones'),
+              for (final m in ms)
+                row(ItemIcon((m['itemID'] as num).toInt(), size: 32), 'Every ${m['every']} days',
+                    '${m['qty']} × ${itemName((m['itemID'] as num).toInt())}'),
+              const SizedBox(height: 8),
+              const Text('Missing a day ends the streak; a new streak starts again at day 1.',
+                  style: TextStyle(fontSize: 11, color: Colors.white38)),
+            ]),
+          ),
+        ),
+      ),
+    );
   }
 
   String _left(String iso) {
@@ -86,11 +146,12 @@ class _QuestsScreenState extends State<QuestsScreen> {
                     Text('$streak-day streak', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     Text('Finish all of a day\'s quests to extend it. Next bonus at day $next.',
                         style: const TextStyle(fontSize: 12, color: Colors.white54)),
-                    const SizedBox(height: 4),
-                    const Text('Every 7 days: 5 Giant Diamonds · every 30 days: 10 Giant Diamonds',
-                        style: TextStyle(fontSize: 11, color: Colors.amberAccent)),
                   ])),
-                  const ItemIcon(42, size: 32),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.card_giftcard, size: 16),
+                    label: const Text('Rewards'),
+                    onPressed: () => _showRewards(d['rewardPlan'] as Map<String, dynamic>? ?? const {}, streak),
+                  ),
                 ]),
               ),
             ),

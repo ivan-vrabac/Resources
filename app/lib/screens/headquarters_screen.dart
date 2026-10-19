@@ -167,8 +167,9 @@ class _HeadquartersScreenState extends State<HeadquartersScreen> {
             ),
             const SizedBox(height: 16),
             const _SectionHeader('Bonus Levels'),
-            ...kHqBonusTags.asMap().entries.map((e) =>
-                _BonusLevelCard(index: e.key + 1, tag: e.value)),
+            ...kHqBonusTags.asMap().entries.map((e) => _BonusLevelCard(
+                index: e.key + 1, tag: e.value,
+                unlocked: (hq.subLevel) > e.key, points: hq.luxuryPoints)),
           ],
         ],
       ]),
@@ -495,7 +496,9 @@ class _DepositDialogState extends State<_DepositDialog> {
 class _BonusLevelCard extends StatelessWidget {
   final int index;
   final String tag;
-  const _BonusLevelCard({required this.index, required this.tag});
+  final bool unlocked;
+  final int points;
+  const _BonusLevelCard({required this.index, required this.tag, this.unlocked = false, this.points = 0});
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -507,7 +510,7 @@ class _BonusLevelCard extends StatelessWidget {
           SizedBox(
             width: 48, height: 48,
             child: Opacity(
-              opacity: 0.45,
+              opacity: unlocked ? 1 : 0.45,
               child: Image.asset(
                 'assets/images/hq_thumb_$tag.png',
                 fit: BoxFit.contain,
@@ -519,13 +522,16 @@ class _BonusLevelCard extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('HQ Bonus Level $index',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13,
-                    color: Colors.white54)),
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13,
+                    color: unlocked ? Colors.amberAccent : Colors.white54)),
             const SizedBox(height: 2),
-            const Text('Unlock with Luxury Points — coming soon',
-                style: TextStyle(color: Colors.white24, fontSize: 11)),
+            Text(unlocked
+                    ? 'Unlocked with luxury points'
+                    : 'Needs ${index * 10000} luxury points (you have $points)',
+                style: TextStyle(color: unlocked ? Colors.white54 : Colors.white24, fontSize: 11)),
           ])),
-          const Icon(Icons.lock_outline, color: Colors.white24, size: 20),
+          Icon(unlocked ? Icons.lock_open : Icons.lock_outline,
+              color: unlocked ? Colors.amberAccent : Colors.white24, size: 20),
         ]),
       ),
     ),
