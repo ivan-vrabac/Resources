@@ -201,3 +201,38 @@ def test_teleporting_is_refused():
             assert e.code == "teleport"
         with econ.tx(conn):
             main.check_travel(conn, hid, 45.01, 15.0)           # 1 km: fine
+
+
+def test_rename_costs_and_rules():
+    hid, sid, name = new_player("rvn")
+    assert call("/api/v1/account/rename", sid, name="F.u.c.k Ltd")["code"] == "invalid_name"
+    r = call("/api/v1/account/rename", sid, name="Clean Mining")
+    assert r["err"] == 0 and r["costGD"] == 0 and r["nextCostGD"] == 10              # first change free
+    assert call("/api/v1/account/rename", sid, name="Clean Mining Two")["code"] == "insufficient_items"
+    give(hid, 42, 10)
+    r = call("/api/v1/account/rename", sid, name="Clean Mining Two")
+    assert r["costGD"] == 10 and r["nextCostGD"] == 20 and qty(hid, 42) == 0
+    r = client.post("/api/v1/auth/session", data={"name": "Clean Mining Two", "password": "password1", "mode": "login"})
+    assert r.json()["hID"] == hid                                                   # signs in with the new name
+
+
+def test_gdpr_delete_young_now_old_after_30_days_login_cancels():
+    hid, sid, name = new_player("rvg")
+    give(hid, 2, 100)
+    r = call("/api/v1/account/delete", sid, confirm="DELETE")
+    assert r["deleted"] is True
+    with main.get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM players WHERE hID=?", (hid,)).fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM warehouse WHERE hid=?", (hid,)).fetchone()[0] == 0
+    r = client.post("/api/v1/auth/session", data={"name": name, "password": "password1", "mode": "register"})
+    assert r.json().get("created") is True                                          # the name is free again
+    old, old_sid, old_name = new_player("rvo")
+    with main.get_db() as conn:
+        conn.execute("UPDATE players SET created_at='2026-01-01T00:00:00' WHERE hID=?", (old,))
+        conn.commit()
+    r = call("/api/v1/account/delete", old_sid, confirm="DELETE")
+    assert r["deleted"] is False and r["deleteAt"]
+    r = client.post("/api/v1/auth/session", data={"name": old_name, "password": "password1", "mode": "login"})
+    assert r.json()["deletionCancelled"] is True
+    assert call("/api/v1/account/info", old_sid)["deleteAt"] is None
+

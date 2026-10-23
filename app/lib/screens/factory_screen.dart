@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/player_provider.dart';
 import '../services/api_service.dart';
+import '../services/game_api.dart';
+import '../widgets/top_banner.dart';
 import '../constants.dart';
 
 import '../app_colors.dart';
@@ -87,6 +89,19 @@ class _FactoryScreenState extends State<FactoryScreen> {
     if (result != null && result['err'] == 0) {
       context.read<PlayerProvider>().refresh();
       _load(silent: true);
+    }
+  }
+
+  /// Settle a strike: how = pay (credits, working atmosphere up) or force (security staff, WA down).
+  Future<void> _settle(String fid, String how) async {
+    final r = await GameApi.call('/api/v1/strike/settle', context.read<PlayerProvider>().sid, {'fID': fid, 'how': how});
+    if (!mounted) return;
+    if (r.ok) {
+      AppNotify.show(context, how == 'pay' ? 'Strike ended: the workers were paid.' : 'Strike broken up by security.');
+      context.read<PlayerProvider>().refresh();
+      _load(silent: true);
+    } else {
+      AppNotify.show(context, r.message ?? 'Could not settle the strike', isError: true);
     }
   }
 
@@ -462,6 +477,7 @@ class _FactoryScreenState extends State<FactoryScreen> {
               onStop: () => _stop(f['fID'] as String),
               onUpgrade: () => _upgrade(f['fID'] as String),
               onBoost: () => _showBoostSheet(f['fID'] as String, f),
+              onSettle: (how) => _settle(f['fID'] as String, how),
             )),
             const SizedBox(height: 16),
           ],
@@ -511,11 +527,12 @@ class _FactoryTile extends StatefulWidget {
   final VoidCallback onStop;
   final VoidCallback onUpgrade;
   final VoidCallback onBoost;
+  final void Function(String how) onSettle;
   const _FactoryTile({
     super.key,
     required this.factory, required this.player,
     required this.onCollect, required this.onStart,
-    required this.onStop, required this.onUpgrade, required this.onBoost,
+    required this.onStop, required this.onUpgrade, required this.onBoost, required this.onSettle,
   });
   @override
   State<_FactoryTile> createState() => _FactoryTileState();
@@ -666,6 +683,42 @@ class _FactoryTileState extends State<_FactoryTile> {
                 const SizedBox(width: 6),
                 Expanded(child: Text('Factory on fire! Cannot produce for $_boostCountdown',
                     style: const TextStyle(color: Colors.redAccent, fontSize: 11))),
+              ]),
+            ),
+          ],
+
+          if (f['strikeAt'] != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.6)),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Row(children: [
+                  Icon(Icons.campaign, color: Colors.orangeAccent, size: 18),
+                  SizedBox(width: 6),
+                  Expanded(child: Text('Workers are on strike. The factory is frozen until you settle it.',
+                      style: TextStyle(color: Colors.orangeAccent, fontSize: 12))),
+                ]),
+                const SizedBox(height: 8),
+                Row(children: [
+                  Expanded(child: FilledButton(
+                    onPressed: () => widget.onSettle('pay'),
+                    child: Text('Pay ꞓ${fmtNum((f['strikeCost'] as num? ?? 0).toInt())}'),
+                  )),
+                  const SizedBox(width: 8),
+                  Expanded(child: OutlinedButton(
+                    onPressed: () => widget.onSettle('force'),
+                    child: Text('Security (${2 * level} staff)'),
+                  )),
+                ]),
+                const SizedBox(height: 4),
+                Text('Paying raises the working atmosphere; security lowers it.',
+                    style: TextStyle(color: AppColors.t54, fontSize: 11)),
               ]),
             ),
           ],
@@ -930,7 +983,14 @@ class _StartProdSheetState extends State<_StartProdSheet> {
   Map<String, dynamic> get _needs =>
       widget.catalogEntry['needs'] as Map<String, dynamic>? ?? {};
   int get _outRaw => widget.catalogEntry['out'] as int? ?? 1;
-  int get _hrs => widget.catalogEntry['hrs'] as int? ?? 1;
+  int get _hrs => (widget.catalogEntry['hrs'] as num? ?? 1).toInt();
+  /// srx.txt recipes also cost credits per batch (taken when production starts)
+  int get _creditsPerBatch => (widget.catalogEntry['credits'] as num? ?? 0).toInt();
+  int get _maxFromCredits {
+    final have = widget.player?.credits ?? 0;
+    if (_creditsPerBatch <= 0) return 999999;
+    return have <= 0 ? 0 : have ~/ _creditsPerBatch;
+  }
   int get _producesId => widget.catalogEntry['produces'] as int? ?? 0;
   int get _level => (widget.factory['lvl'] as num? ?? 1).toInt();
   double get _levelMult => _level.toDouble();
@@ -955,7 +1015,7 @@ class _StartProdSheetState extends State<_StartProdSheet> {
     return (remaining / _outPerBatch).floor();
   }
 
-  int get _maxBatches => min(_maxFromRes, _maxFromWh).clamp(0, 999999);
+  int get _maxBatches => min(min(_maxFromRes, _maxFromWh), _maxFromCredits).clamp(0, 999999);
 
   String _fmtHrs(double h) {
     if (h < 1) return '${(h * 60).round()}m';
@@ -1031,6 +1091,18 @@ class _StartProdSheetState extends State<_StartProdSheet> {
               ]),
             );
           }),
+          if (_creditsPerBatch > 0)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(children: [
+                const SizedBox(width: 32, height: 32, child: Icon(Icons.monetization_on_outlined, color: Colors.amber)),
+                const SizedBox(width: 8),
+                const Expanded(child: Text('Credits', style: TextStyle(fontSize: 12))),
+                Text('ꞓ${fmtNum(_creditsPerBatch * _batches)} / ꞓ${fmtNum(widget.player?.credits ?? 0)}',
+                    style: TextStyle(fontSize: 12,
+                        color: (widget.player?.credits ?? 0) >= _creditsPerBatch * _batches ? AppColors.t54 : Colors.red)),
+              ]),
+            ),
           const Divider(height: 16),
         ],
 

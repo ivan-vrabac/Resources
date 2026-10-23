@@ -8,6 +8,7 @@ import '../models/player_provider.dart';
 import 'game_screen.dart';
 
 import '../app_colors.dart';
+import '../widgets/top_banner.dart';
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -90,6 +91,9 @@ class _LoginScreenState extends State<LoginScreen> {
       if (player != null) {
         context.read<PlayerProvider>().setPlayer(player, sid: res.sid);
         FcmService.init(context.read<PlayerProvider>().sid);
+      }
+      if (res.deletionCancelled) {
+        AppNotify.show(context, 'Welcome back! The deletion of your company was cancelled.');
       }
       Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const GameScreen()));

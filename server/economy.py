@@ -26,7 +26,7 @@ MINE_COST_GROWTH = 50        # build cost × (1 + mines owned / 50)
 MINE_PAYBACK_H = 24          # a new 100 % mine pays back its base cost in this many hours
 DEMOLISH_REFUND = 0.10       # share of the paid build cost returned on demolition
 FACTORY_PAYBACK_H = 48       # a level-1 factory pays back its build cost in about this many hours
-FACTORY_BATCH_H = 1.0        # one batch = one hour of level-1 production
+FACTORY_BATCH_H = 1          # one batch = one hour of level-1 production (whole hours: the app expects an int)
 SYSTEM_SELL_MARKUP = 1.5     # the system sells at 150 % of its buying price
 
 # mine item → (resource item, unlock level, srs max/h at 100 %, costs.txt base cost, map share)

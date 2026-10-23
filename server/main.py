@@ -104,6 +104,7 @@ FACTORY_BUILD_RESOURCES = {
 # (srs.txt mine rates at 100 % quality, costs.txt mine costs, srx.txt factories, derived prices).
 # The tables above are the pre-revamp values, kept for reference only.
 import economy
+import names
 MINE_TYPES = {mid: {"res": m[0], "rate": m[2], "cost": economy.mine_base_cost(mid), "lvl": m[1]}
               for mid, m in economy.MINES.items()}
 FACTORY_TYPES = {fid: {"name": f[0], "produces": f[1], "lvl": f[2], **economy.batch(fid),
@@ -1910,6 +1911,9 @@ async def auth_session(request: Request):
             return json_resp({"error": "not_found",
                               "message": "No company with that name. Check the name or register."})
         if not row:
+            bad_name = names.name_problem(name)        # owner 2026-10-23: no rude or misleading names
+            if bad_name:
+                return json_resp({"error": "invalid_name", "message": bad_name})
             if problem:
                 return json_resp({"error": "weak_password", "message": problem})
             hid = new_hid()
@@ -1931,11 +1935,18 @@ async def auth_session(request: Request):
                 return Response(content=json.dumps({"error": "wrong_password",
                                                     "message": "Wrong company name or password."}).encode(),
                                 status_code=401, media_type="application/json")
+        # signing in cancels a scheduled account deletion (GDPR delay, systems/account.py)
+        deletion_cancelled = conn.execute("UPDATE players SET delete_at=NULL WHERE hID=? AND delete_at IS NOT NULL",
+                                          (hid,)).rowcount == 1
         conn.commit()
+        sweep = getattr(SYSTEM_HELPERS, "ACCOUNT_SWEEP", None)
+        if sweep:
+            with econ.tx(conn):
+                sweep(conn)
     auth.limiter.reset(name_key)
     if created:
         log_entry({"ts": utcnow_iso(), "endpoint": "authSession", "created": True, "hID": hid})
-    return json_resp({"hID": hid, "sid": make_sid(hid), "created": created})
+    return json_resp({"hID": hid, "sid": make_sid(hid), "created": created, "deletionCancelled": deletion_cancelled})
 
 @app.post("/api/v1/auth/password")
 async def auth_change_password(request: Request):
@@ -4339,7 +4350,7 @@ _economy_revamp_once()
 SYSTEM_HELPERS = _types.SimpleNamespace(
     get_db=get_db, hid_from_sid=hid_from_sid, read_form=read_form, zlib_resp=zlib_resp,
     get_player=get_player, wh_capacity=wh_capacity, building_level=building_level,
-    award_sink=award_sink, change_wa=change_wa, check_travel=check_travel, economy=economy,
+    award_sink=award_sink, change_wa=change_wa, check_travel=check_travel, economy=economy, norm_name=norm_name,
     EVENT_HOOKS=EVENT_HOOKS, FIRE_DURATION_DAYS=FIRE_DURATION_DAYS, DISEASE_DURATION_DAYS=DISEASE_DURATION_DAYS,
     mine_rate_hr=mine_rate_hr, collect_mine=collect_mine, current_condition=current_condition, compute_repair_cost=compute_repair_cost, collect_mines_bulk=collect_mines_bulk,
     award_xp=award_xp, add_proto=add_proto, level_from_xp=level_from_xp, push=_push_to_player,

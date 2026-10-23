@@ -4,6 +4,7 @@ import '../models/player_provider.dart';
 import '../services/api_service.dart';
 
 import '../app_colors.dart';
+import '../constants.dart' show fmtNum;
 const _kCategories = [
   ('All', ''),
   ('Mines', 'newmine'),
@@ -67,7 +68,7 @@ class _LogScreenState extends State<LogScreen> {
   bool _isKnownType(String t) => const {
     'scan','newmine','demolish','repair','repairkit','lagerupgrade','hq',
     'buyfactory','factcollect','marketsell','marketbuy','marketsold',
-    'mineupgrade','techupgrade',
+    'mineupgrade','techupgrade','accident','strikesettled',
   }.contains(t);
 
   List<dynamic> get _filtered {
@@ -198,6 +199,8 @@ class _LogScreenState extends State<LogScreen> {
       case 'marketsold': return Icons.payments;
       case 'mineupgrade': return Icons.upgrade;
       case 'techupgrade': return Icons.settings_suggest;
+      case 'accident': return Icons.warning_amber;
+      case 'strikesettled': return Icons.handshake_outlined;
       default: return Icons.info_outline;
     }
   }
@@ -210,6 +213,8 @@ class _LogScreenState extends State<LogScreen> {
       case 'repair': case 'repairkit': return Colors.orange;
       case 'marketsell': case 'marketbuy': case 'marketsold': return Colors.amber;
       case 'mineupgrade': case 'techupgrade': return Colors.lightBlueAccent;
+      case 'accident': return Colors.redAccent;
+      case 'strikesettled': return Colors.orangeAccent;
       default: return AppColors.accent;
     }
   }
@@ -230,6 +235,14 @@ class _LogScreenState extends State<LogScreen> {
       case 'marketsold': return 'Sold to buyer. Earned ꞓ${data['earned']}';
       case 'mineupgrade': return 'Upgraded mine to Lv ${data['newLvl'] ?? '?'}. Cost: ꞓ${data['cost'] ?? 0}';
       case 'techupgrade': return 'Tech upgraded mine (Tech Lv ${data['newTech'] ?? '?'})';
+      case 'accident':
+        final what = const {'fire': 'Factory fire', 'strike': 'Strike', 'disease': 'Disease outbreak at a mine',
+            'earthquake': 'Earthquake damage'}[data['kind']] ?? 'Accident';
+        final p = (data['penalty'] as num? ?? 0).toInt();
+        return p > 0 ? '$what. Penalty: ꞓ${fmtNum(p)}' : what;
+      case 'strikesettled': return data['how'] == 'pay'
+          ? 'Strike ended: workers paid ꞓ${fmtNum((data['paid'] as num? ?? 0).toInt())}'
+          : 'Strike broken up by ${data['units'] ?? ''} security staff';
       default: return t;
     }
   }

@@ -9,6 +9,7 @@ import '../../widgets/top_banner.dart';
 
 import '../../app_colors.dart';
 import '../../widgets/popups.dart';
+import '../../widgets/hold_button.dart';
 // ── Sort / view helpers ─────────────────────────────────────────────────────
 
 enum _SortMode { output, quality, condition }
@@ -261,7 +262,7 @@ class _MinesTabState extends State<MinesTab> {
             )),
             const SizedBox(width: 8),
             Expanded(child: selected.length > 1
-              ? _HoldFilledButton(
+              ? HoldFilledButton(
                   label: 'Hold to Confirm',
                   onTriggered: () => popIfCurrent(context, true),
                 )
@@ -1388,81 +1389,6 @@ class _ActionBtn extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       ),
       onPressed: enabled ? onTap : null,
-    );
-  }
-}
-
-// ── _HoldFilledButton (dialog confirm button with hold-to-fill) ──────────────
-
-class _HoldFilledButton extends StatefulWidget {
-  final String label;
-  final VoidCallback onTriggered;
-  const _HoldFilledButton({required this.label, required this.onTriggered});
-  @override
-  State<_HoldFilledButton> createState() => _HoldFilledButtonState();
-}
-
-class _HoldFilledButtonState extends State<_HoldFilledButton>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: 5));
-    _ctrl.addStatusListener((s) {
-      if (s == AnimationStatus.completed && mounted) {
-        _ctrl.reset();
-        widget.onTriggered();
-      }
-    });
-  }
-
-  @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
-
-  void _start() => _ctrl.forward();
-  void _cancel() => _ctrl.reset();
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (_) => _start(),
-      onTapUp: (_) => _cancel(),
-      onTapCancel: () => _cancel(),
-      child: AnimatedBuilder(
-        animation: _ctrl,
-        builder: (_, __) {
-          final holding = _ctrl.value > 0;
-          final secs = (5 - (_ctrl.value * 5).floor()).clamp(1, 5);
-          return ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                LinearProgressIndicator(
-                  value: _ctrl.value,
-                  backgroundColor: Colors.red,
-                  valueColor: AlwaysStoppedAnimation(Colors.brown.shade800),
-                  minHeight: 40,
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Text(
-                    holding ? '${secs}s' : widget.label,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
     );
   }
 }

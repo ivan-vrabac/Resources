@@ -10,8 +10,9 @@ class SignInResult {
   final String? hid;
   final String? sid;
   final bool created;
+  final bool deletionCancelled;   // signing in cancelled a scheduled account deletion
   final String? error;
-  const SignInResult({this.hid, this.sid, this.created = false, this.error});
+  const SignInResult({this.hid, this.sid, this.created = false, this.deletionCancelled = false, this.error});
 }
 
 class ApiService {
@@ -29,7 +30,8 @@ class ApiService {
       final sid = m['sid'] as String?;
       final hid = m['hID'] as String?;
       if (sid != null && hid != null) {
-        return SignInResult(hid: hid, sid: sid, created: m['created'] == true);
+        return SignInResult(hid: hid, sid: sid, created: m['created'] == true,
+          deletionCancelled: m['deletionCancelled'] == true);
       }
       return SignInResult(error: m['message'] as String? ?? 'Sign-in failed');
     } catch (_) {

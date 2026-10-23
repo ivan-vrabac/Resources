@@ -14,8 +14,12 @@ _PW = "password1"  # test accounts only
 
 def new_player(prefix="p", credits=None, level=None, wh_level=None, password=_PW):
     """Register a fresh player; returns (hid, sid, name)."""
-    _n[0] += 1
-    name = f"{prefix}{_n[0]:04d}"[:20]
+    import names
+    while True:                       # skip numbers the name filter reads as words (b0080 → "boob")
+        _n[0] += 1
+        name = f"{prefix}{_n[0]:04d}"[:20]
+        if names.name_problem(name) is None:
+            break
     r = client.post("/api/v1/auth/session", data={"name": name, "password": password, "mode": "register"})
     assert r.status_code == 200, r.text
     hid, sid = r.json()["hID"], r.json()["sid"]

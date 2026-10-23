@@ -3,6 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../app_colors.dart';
+import '../widgets/top_banner.dart';
+import '../services/storage_service.dart';
+import 'login_screen.dart';
+import '../widgets/hold_button.dart';
+import '../services/game_api.dart';
 import '../branding.dart';
 import '../models/player_provider.dart';
 import '../models/tab_config.dart';
@@ -167,6 +172,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _categoryTile(context, Icons.lock_outline, 'Change password',
             'Update the password for this company', () => showAppDialog(
               context: context, builder: (_) => const _ChangePasswordDialog())),
+        _categoryTile(context, Icons.badge_outlined, 'Change company name',
+            'First change free, then Giant Diamonds', () => showAppDialog(
+              context: context, builder: (_) => const _RenameDialog())),
+        _categoryTile(context, Icons.delete_forever_outlined, 'Delete account',
+            'Remove this company and all its data', () => showAppDialog(
+              context: context, builder: (_) => const _DeleteAccountDialog())),
         _sectionHeader('System'),
         _categoryTile(context, Icons.speed, 'Performance',
             'GPS update interval', () => Navigator.push(context, MaterialPageRoute(
@@ -1347,3 +1358,135 @@ class _BottomBarSettingsState extends State<_BottomBarSettings> {
         style: TextStyle(fontSize: 10, color: AppColors.t38, letterSpacing: 1.1)),
   );
 }
+
+
+// ── Account: name change and deletion (server: systems/account.py) ───────────────
+
+class _RenameDialog extends StatefulWidget {
+  const _RenameDialog();
+  @override
+  State<_RenameDialog> createState() => _RenameDialogState();
+}
+
+class _RenameDialogState extends State<_RenameDialog> {
+  final _ctl = TextEditingController();
+  Map<String, dynamic>? _info;
+  String? _error;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    GameApi.call('/api/v1/account/info', context.read<PlayerProvider>().sid).then((r) {
+      if (mounted) setState(() => r.ok ? _info = r.data : _error = r.message);
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _go() async {
+    setState(() { _busy = true; _error = null; });
+    final r = await GameApi.call('/api/v1/account/rename', context.read<PlayerProvider>().sid, {'name': _ctl.text.trim()});
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (!r.ok) {
+      setState(() => _error = r.message);
+      return;
+    }
+    context.read<PlayerProvider>().refresh();
+    popIfCurrent(context);
+    AppNotify.show(context, 'Your company is now called ${r.data['name']}');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cost = (_info?['renameCostGD'] as num? ?? 0).toInt();
+    final have = (_info?['giantDiamonds'] as num? ?? 0).toInt();
+    return AlertDialog(
+      title: const Text('Change company name'),
+      content: _info == null && _error == null
+          ? const SizedBox(height: 60, child: Center(child: CircularProgressIndicator()))
+          : Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(cost == 0 ? 'Your first name change is free.'
+                  : 'This change costs $cost Giant Diamonds (you have $have). Every further change costs 10 more.'),
+              const SizedBox(height: 8),
+              Text(_info?['rules'] as String? ?? '', style: TextStyle(fontSize: 12, color: AppColors.t60)),
+              const SizedBox(height: 12),
+              TextField(controller: _ctl, maxLength: 20,
+                  decoration: const InputDecoration(labelText: 'New company name', border: OutlineInputBorder())),
+              if (_error != null) Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+            ]),
+      actions: [
+        TextButton(onPressed: () => popIfCurrent(context), child: const Text('Cancel')),
+        FilledButton(onPressed: _busy || _info == null ? null : _go, child: const Text('Change name')),
+      ],
+    );
+  }
+}
+
+class _DeleteAccountDialog extends StatefulWidget {
+  const _DeleteAccountDialog();
+  @override
+  State<_DeleteAccountDialog> createState() => _DeleteAccountDialogState();
+}
+
+class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
+  Map<String, dynamic>? _info;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    GameApi.call('/api/v1/account/info', context.read<PlayerProvider>().sid).then((r) {
+      if (mounted) setState(() => r.ok ? _info = r.data : _error = r.message);
+    });
+  }
+
+  Future<void> _delete() async {
+    final r = await GameApi.call('/api/v1/account/delete', context.read<PlayerProvider>().sid, {'confirm': 'DELETE'});
+    if (!mounted) return;
+    if (!r.ok) {
+      setState(() => _error = r.message);
+      return;
+    }
+    if (r.data['deleted'] == true) {
+      await StorageService.clearHid();
+      if (!mounted) return;
+      context.read<PlayerProvider>().clear();
+      Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const LoginScreen()), (_) => false);
+    } else {
+      popIfCurrent(context);
+      AppNotify.show(context, 'Your company will be deleted on ${(r.data['deleteAt'] as String).substring(0, 10)}. '
+          'Sign in before then to cancel.');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final delayed = _info?['deletionDelayed'] == true;
+    final at = _info?['deleteAt'] as String?;
+    return AlertDialog(
+      title: const Text('Delete account'),
+      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (at != null)
+          Text('Your company is already scheduled for deletion on ${at.substring(0, 10)}. Signing in again cancels it.')
+        else
+          Text(delayed
+              ? 'Your company and all its data (mines, buildings, warehouse, messages) will be deleted in '
+                '${_info?['delayDays'] ?? 30} days. Signing in during that time cancels the deletion. '
+                'The company name becomes free again.'
+              : 'Your company and all its data (mines, buildings, warehouse, messages) will be deleted now. '
+                'This cannot be undone. The company name becomes free again.'),
+        if (_error != null) Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+        const SizedBox(height: 16),
+        if (_info != null && at == null) HoldFilledButton(label: 'Hold 5 s to delete', onTriggered: _delete),
+      ]),
+      actions: [TextButton(onPressed: () => popIfCurrent(context), child: const Text('Cancel'))],
+    );
+  }
+}
+
