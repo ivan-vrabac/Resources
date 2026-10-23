@@ -14,6 +14,7 @@ import '../services/api_service.dart';
 import '../services/game_api.dart';
 
 import '../app_colors.dart';
+import '../widgets/popups.dart';
 const Map<int, Map<int, int>> kHqUpgradeReqs = {
   2:  {2: 750000,  3: 750000,  8: 750000,  20: 750000},
   3:  {7: 1500000, 13: 1500000, 22: 1500000, 24: 1500000},
@@ -326,7 +327,7 @@ class _UpgradeCard extends StatelessWidget {
   }
 
   void _openDepositDialog(BuildContext context, Map<int, int> reqs) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (_) => _DepositDialog(hq: hq, lager: lager, reqs: reqs),
     );
@@ -384,7 +385,7 @@ class _DepositDialogState extends State<_DepositDialog> {
       AppNotify.show(context, result?['msg'] ?? 'Deposit failed', isError: true);
     } else {
       context.read<PlayerProvider>().refresh();
-      Navigator.of(context).pop();
+      popIfCurrent(context);
       if (result['upgraded'] == true) {
         AppNotify.show(context, 'HQ upgraded!');
       }
@@ -475,7 +476,7 @@ class _DepositDialogState extends State<_DepositDialog> {
       actions: [
         Row(children: [
           Expanded(child: OutlinedButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => popIfCurrent(context),
             child: const Text('Cancel'),
           )),
           const SizedBox(width: 12),
@@ -930,7 +931,7 @@ class _HQPlaceScreenState extends State<_HQPlaceScreen> {
                 ),
               Row(children: [
                 Expanded(child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context, null),
+                  onPressed: () => popIfCurrent(context, null),
                   child: const Text('Cancel'),
                 )),
                 const SizedBox(width: 8),
@@ -947,7 +948,7 @@ class _HQPlaceScreenState extends State<_HQPlaceScreen> {
                 })(),
                 const SizedBox(width: 8),
                 Expanded(child: FilledButton(
-                  onPressed: _withinRange ? () => Navigator.pop(context, _selected) : null,
+                  onPressed: _withinRange ? () => popIfCurrent(context, _selected) : null,
                   child: const Text('Place here'),
                 )),
               ]),
@@ -1180,7 +1181,7 @@ Future<void> showHqInfo(BuildContext context) async {
   if (!context.mounted || !r.ok) return;
   final levels = (r.data['levels'] as List).cast<Map<String, dynamic>>();
   final cur = (r.data['level'] as num? ?? 0).toInt();
-  await showModalBottomSheet(
+  await showAppSheet(
     context: context,
     isScrollControlled: true,
     builder: (ctx) => DraggableScrollableSheet(

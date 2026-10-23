@@ -81,6 +81,12 @@ BOX_EXTRA = {
 }
 BOX_LOOT = {**LOOT, **BOX_EXTRA}
 BOX_SHARE = 0.2              # one crate in five is a cargo box, the rest are containers
+
+
+def by_rarity(got: dict) -> list:
+    """[{itemID, qty}] from common to rare (owner 2026-10-23: Tech Upgrades go 1, 2, 3, 4)."""
+    return [{"itemID": k, "qty": v} for k, v in
+            sorted(got.items(), key=lambda kv: (-BOX_LOOT.get(kv[0], ("", 0, 0))[1], kv[0]))]
 # Assumed quantity per crate (min, max) — not in the sources.
 QTY = {57: (1, 20), 41: (1, 20), 55: (1, 10), 40: (1, 10), 70: (5, 50), 74: (5, 50), 43: (1, 1),
        115: (5, 50), 78: (5, 30), 77: (5, 50), 120: (1, 3), 42: (1, 1), 44: (1, 3), 45: (1, 2),
@@ -458,7 +464,7 @@ def install(api) -> None:
                 econ.require_within(lat, lng, c["lat"], c["lng"], collect_range(lv["museum"]), "crate")
             got = take_crate(conn, hid, c, lv["museum"])
         if isinstance(got, dict):
-            return {"err": 0, "items": [{"itemID": k, "qty": v} for k, v in sorted(got.items(), key=lambda x: -x[1])],
+            return {"err": 0, "items": by_rarity(got),
                     "distance": round(d)}
         return {"err": 0, "itemID": c["item_id"], "qty": got, "distance": round(d)}
 
@@ -509,7 +515,7 @@ def install(api) -> None:
             collected = sum(int(c["crates"] or 1) for c in chosen)
         return {"err": 0, "trucksUsed": used, "trucks": trucks, "collected": collected,
                 "left": len(normal) + stack_crates - collected,
-                "items": [{"itemID": k, "qty": v} for k, v in sorted(got.items(), key=lambda x: -x[1])]}
+                "items": by_rarity(got)}
 
     @api.endpoint("/api/v1/cargo/recycle", feature="RECYCLING")
     def recycle(conn, hid, form):

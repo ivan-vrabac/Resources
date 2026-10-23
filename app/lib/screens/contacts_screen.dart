@@ -8,6 +8,7 @@ import 'dm_screen.dart';
 import 'profile_screen.dart';
 
 import '../app_colors.dart';
+import '../widgets/popups.dart';
 /// Friends, enemies, blacklist and watchlist, plus player search.
 class ContactsScreen extends StatefulWidget {
   const ContactsScreen({super.key});
@@ -110,12 +111,12 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
   /// Tap on a player: view their stats or send a private message.
   Future<void> _playerActions(Map<String, dynamic> p) async {
     final pid = p['pid'] as String, name = p['name'] as String? ?? '';
-    final pick = await showModalBottomSheet<String>(
+    final pick = await showAppSheet<String>(
       context: context,
       builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
         ListTile(title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold))),
         ListTile(leading: const Icon(Icons.query_stats), title: const Text('View stats'),
-            onTap: () => Navigator.pop(ctx, 'stats')),
+            onTap: () => popIfCurrent(ctx, 'stats')),
         ListTile(
             leading: const Icon(Icons.mail_outline),
             title: const Text('Private messages'),
@@ -126,7 +127,7 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
                     child: Text('${p['unread']} new', style: const TextStyle(color: Colors.white, fontSize: 12)),
                   )
                 : null,
-            onTap: () => Navigator.pop(ctx, 'dm')),
+            onTap: () => popIfCurrent(ctx, 'dm')),
       ])),
     );
     if (!mounted || pick == null) return;

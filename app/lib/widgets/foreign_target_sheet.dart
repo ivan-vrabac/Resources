@@ -4,6 +4,7 @@ import '../constants.dart';
 import '../screens/profile_screen.dart';
 
 import '../app_colors.dart';
+import 'popups.dart';
 /// Sheet for another player's mine or HQ tapped on the map: owner, basic state, profile link.
 /// Later phases add actions here (external repair, attack) through [extraActions].
 class ForeignTargetSheet extends StatelessWidget {
@@ -46,7 +47,7 @@ class ForeignTargetSheet extends StatelessWidget {
               icon: const Icon(Icons.person_outline, size: 16),
               label: Text('View $owner'),
               onPressed: pid.isEmpty ? null : () {
-                Navigator.pop(context);
+                popIfCurrent(context);
                 ProfileScreen.open(context, pid);
               },
             ),

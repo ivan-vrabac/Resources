@@ -8,6 +8,7 @@ import '../services/api_service.dart';
 import '../widgets/top_banner.dart';
 
 import '../app_colors.dart';
+import '../widgets/popups.dart';
 // ── Symbol definitions ─────────────────────────────────────────────────────────
 // Indices 0-29 → res128-res157, index 30 → res163, index 31 → jackpot
 
@@ -290,7 +291,7 @@ class _CasinoScreenState extends State<CasinoScreen> {
   }
 
   void _showJackpotDialog(int amount) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A00),
@@ -313,7 +314,7 @@ class _CasinoScreenState extends State<CasinoScreen> {
         ]),
         actions: [
           FilledButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => popIfCurrent(context),
             style: FilledButton.styleFrom(backgroundColor: Colors.amber.shade700),
             child: const Text('Collect'),
           ),
@@ -323,7 +324,7 @@ class _CasinoScreenState extends State<CasinoScreen> {
   }
 
   void _showBatchResult(Map<String, dynamic> counts, int bet, int win, int net, bool jpWon) {
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Instant Spin Results'),
@@ -353,7 +354,7 @@ class _CasinoScreenState extends State<CasinoScreen> {
         ),
         actions: [
           FilledButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => popIfCurrent(context),
             child: const Text('Close'),
           ),
         ],

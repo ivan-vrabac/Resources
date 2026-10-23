@@ -9,6 +9,7 @@ import '../services/api_service.dart';
 import '../constants.dart';
 
 import '../app_colors.dart';
+import '../widgets/popups.dart';
 DateTime _srvUtc(String s) =>
     DateTime.parse(s.endsWith('Z') || s.contains('+') ? s : '${s}Z');
 
@@ -110,7 +111,7 @@ class _FactoryScreenState extends State<FactoryScreen> {
     if (catalogEntry == null) return;
     final player = context.read<PlayerProvider>().player;
 
-    final batches = await showModalBottomSheet<int>(
+    final batches = await showAppSheet<int>(
       context: context,
       isScrollControlled: true,
       builder: (_) => _StartProdSheet(
@@ -145,7 +146,7 @@ class _FactoryScreenState extends State<FactoryScreen> {
     final canAffordUpgrade = (player?.credits ?? 0) >= upgCredits &&
         upgRes.entries.every((e) => (lager[e.key] ?? 0) >= (e.value as num).toDouble());
 
-    final confirm = await showDialog<bool>(
+    final confirm = await showAppDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: Column(
@@ -221,12 +222,12 @@ class _FactoryScreenState extends State<FactoryScreen> {
           const SizedBox(height: 16),
           Row(children: [
             Expanded(child: OutlinedButton(
-              onPressed: () => Navigator.pop(_, false),
+              onPressed: () => popIfCurrent(_, false),
               child: const Text('Cancel'),
             )),
             const SizedBox(width: 12),
             Expanded(child: FilledButton(
-              onPressed: canAffordUpgrade ? () => Navigator.pop(_, true) : null,
+              onPressed: canAffordUpgrade ? () => popIfCurrent(_, true) : null,
               child: const Text('Upgrade'),
             )),
           ]),
@@ -273,7 +274,7 @@ class _FactoryScreenState extends State<FactoryScreen> {
     final overflow = (currentInWh + instantOutput - whCap).clamp(0.0, double.infinity);
     final isUnderWeek = remainingHrs < 7 * 24 - 0.1;
 
-    final confirm = await showDialog<bool>(
+    final confirm = await showAppDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Use Giant Diamond?'),
@@ -326,8 +327,8 @@ class _FactoryScreenState extends State<FactoryScreen> {
               style: TextStyle(color: AppColors.t38, fontSize: 11)),
         ]),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(_, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(_, true), child: const Text('Use Diamond')),
+          TextButton(onPressed: () => popIfCurrent(_, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => popIfCurrent(_, true), child: const Text('Use Diamond')),
         ],
       ),
     );
@@ -363,16 +364,16 @@ class _FactoryScreenState extends State<FactoryScreen> {
     final hasActiveBooster = boosterItem != null && boosterUntil != null &&
         _srvUtcOpt(boosterUntil)?.isAfter(DateTime.now()) == true;
 
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       builder: (_) => _BoostSheet(
         factory: factory,
         player: player,
         isProducing: isProducing,
         hasActiveBooster: hasActiveBooster,
-        onDiamondBoost: (isProducing && !onCooldown) ? () { Navigator.pop(_); _confirmAndBoost(fid, factory); } : null,
+        onDiamondBoost: (isProducing && !onCooldown) ? () { popIfCurrent(_); _confirmAndBoost(fid, factory); } : null,
         onBooster: (isProducing && !hasActiveBooster)
-            ? (itemId) { Navigator.pop(_); _useBooster(fid, itemId); }
+            ? (itemId) { popIfCurrent(_); _useBooster(fid, itemId); }
             : null,
       ),
     );
@@ -1015,7 +1016,7 @@ class _StartProdSheetState extends State<_StartProdSheet> {
                       ? Image.asset(imgPath, fit: BoxFit.contain)
                       : CircleAvatar(
                           radius: 16,
-                          backgroundColor: Colors.teal.shade900,
+                          backgroundColor: AppColors.accentDeep,
                           child: Text('$id', style: const TextStyle(fontSize: 9))),
                 ),
                 const SizedBox(width: 8),
@@ -1119,11 +1120,11 @@ class _StartProdSheetState extends State<_StartProdSheet> {
 
         Row(children: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => popIfCurrent(context),
               child: const Text('Cancel')),
           const Spacer(),
           FilledButton(
-            onPressed: canStart ? () => Navigator.pop(context, _batches) : null,
+            onPressed: canStart ? () => popIfCurrent(context, _batches) : null,
             child: const Text('Start'),
           ),
         ]),
@@ -1284,7 +1285,7 @@ class _BoostSheet extends StatelessWidget {
                     child: const Text('Active', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)))
                 : FilledButton.tonal(
                     onPressed: canUse ? () async {
-                      final confirm = await showDialog<bool>(
+                      final confirm = await showAppDialog<bool>(
                         context: context,
                         builder: (_) => AlertDialog(
                           title: Text(b['name'] as String),
@@ -1307,12 +1308,12 @@ class _BoostSheet extends StatelessWidget {
                             const SizedBox(height: 16),
                             Row(children: [
                               Expanded(child: OutlinedButton(
-                                onPressed: () => Navigator.pop(_, false),
+                                onPressed: () => popIfCurrent(_, false),
                                 child: const Text('Cancel'),
                               )),
                               const SizedBox(width: 12),
                               Expanded(child: FilledButton(
-                                onPressed: () => Navigator.pop(_, true),
+                                onPressed: () => popIfCurrent(_, true),
                                 child: const Text('Confirm'),
                               )),
                             ]),

@@ -6,6 +6,7 @@ import '../widgets/async_view.dart';
 import '../widgets/top_banner.dart';
 
 import '../app_colors.dart';
+import '../widgets/popups.dart';
 /// Loans: your credit rating and limit, open loan requests from other players (lend), and your
 /// borrowing/lending history with repayment.
 class LoansScreen extends StatefulWidget {
@@ -126,7 +127,7 @@ class _LoansScreenState extends State<LoansScreen> {
     final s = _status!;
     final ctl = TextEditingController();
     var term = (s['minTerm'] as num? ?? 10).toInt();
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(builder: (ctx, set) {
         final p = int.tryParse(ctl.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
@@ -155,8 +156,8 @@ class _LoansScreenState extends State<LoansScreen> {
             Text('Interest ${fmtCredits(interest)} · repay ${fmtCredits(p + interest)}'),
           ]),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            FilledButton(onPressed: p <= 0 ? null : () => Navigator.pop(ctx, true), child: const Text('Request')),
+            TextButton(onPressed: () => popIfCurrent(ctx, false), child: const Text('Cancel')),
+            FilledButton(onPressed: p <= 0 ? null : () => popIfCurrent(ctx, true), child: const Text('Request')),
           ],
         );
       }),
@@ -195,7 +196,7 @@ class _LoansScreenState extends State<LoansScreen> {
   }
 
   Future<void> _confirmFund(Map<String, dynamic> l) async {
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Lend ${fmtCredits(l['principal'] as num)}?'),
@@ -204,8 +205,8 @@ class _LoansScreenState extends State<LoansScreen> {
             'If it is late, 50% of the borrower\'s output and sales go to you for 30 days; whatever is still '
             'unpaid after that is forgiven.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Lend')),
+          TextButton(onPressed: () => popIfCurrent(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => popIfCurrent(ctx, true), child: const Text('Lend')),
         ],
       ),
     );

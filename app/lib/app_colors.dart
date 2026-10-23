@@ -16,6 +16,8 @@ class AppColors {
   static Color get t60 => fg.withValues(alpha: 0.66);
   static Color get t70 => fg.withValues(alpha: 0.76);
   static Color get accent => icon ?? defaultIcon;
+  static Color get accentDark => Color.lerp(accent, Colors.black, 0.45)!;
+  static Color get accentDeep => Color.lerp(accent, Colors.black, 0.65)!;
   static Color get bg => background ?? defaultBackground;
   static bool get isBlack => bg.toARGB32() == 0xFF000000;
 }

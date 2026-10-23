@@ -7,6 +7,7 @@ import '../widgets/async_view.dart';
 import '../widgets/top_banner.dart';
 
 import '../app_colors.dart';
+import '../widgets/popups.dart';
 /// Daily quests (48 h each), rewards and the streak with its Giant Diamond milestones.
 class QuestsScreen extends StatefulWidget {
   const QuestsScreen({super.key});
@@ -73,7 +74,7 @@ class _QuestsScreenState extends State<QuestsScreen> {
           padding: const EdgeInsets.only(top: 12, bottom: 2),
           child: Text(t.toUpperCase(), style: TextStyle(fontSize: 11, color: AppColors.t54, letterSpacing: 1)),
         );
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       isScrollControlled: true,
       builder: (_) => SafeArea(

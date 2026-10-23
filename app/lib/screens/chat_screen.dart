@@ -12,6 +12,7 @@ import 'dm_screen.dart';
 import 'profile_screen.dart';
 
 import '../app_colors.dart';
+import '../widgets/popups.dart';
 class ChatScreen extends StatefulWidget {
   /// Inside the Social tab (no app bar of its own).
   final bool embedded;
@@ -202,7 +203,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _openPlayerSheet(String hid, String name, bool isMuted, int unread) {
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       builder: (_) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -215,7 +216,7 @@ class _ChatScreenState extends State<ChatScreen> {
             leading: Icon(Icons.query_stats, color: AppColors.accent),
             title: const Text('View stats', style: TextStyle(color: Colors.white)),
             onTap: () {
-              Navigator.pop(context);
+              popIfCurrent(context);
               ProfileScreen.open(context, hid);
             },
           ),
@@ -230,7 +231,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   )
                 : null,
             onTap: () {
-              Navigator.pop(context);
+              popIfCurrent(context);
               DmScreen.open(context, hid, name);
             },
           ),
@@ -248,7 +249,7 @@ class _ChatScreenState extends State<ChatScreen> {
               isMuted ? newSet.remove(hid) : newSet.add(hid);
               await StorageService.saveMutedHids(newSet);
               if (mounted) setState(() => _mutedHids = newSet);
-              if (mounted) Navigator.pop(context);
+              if (mounted) popIfCurrent(context);
             },
           ),
           ListTile(
@@ -257,7 +258,7 @@ class _ChatScreenState extends State<ChatScreen> {
             subtitle: Text('Hide all messages from this player (undo in Contacts)',
                 style: TextStyle(color: AppColors.t54, fontSize: 11)),
             onTap: () async {
-              Navigator.pop(context);
+              popIfCurrent(context);
               final r = await GameApi.call('/api/v1/social/contact',
                   context.read<PlayerProvider>().sid, {'pid': hid, 'kind': 'blacklist'});
               if (!mounted) return;
@@ -290,7 +291,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }),
     };
 
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       builder: (_) => StatefulBuilder(
         builder: (ctx, setSheet) => SafeArea(
@@ -553,7 +554,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ..onTap = () {
               if (lat != null && lng != null) {
                 ctx.read<PlayerProvider>().setChatNavigateTo(LatLng(lat, lng));
-                if (Navigator.of(ctx).canPop()) Navigator.of(ctx).pop();
+                if (Navigator.of(ctx).canPop()) popIfCurrent(ctx);
               }
             },
         ));

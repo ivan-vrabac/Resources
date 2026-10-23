@@ -7,6 +7,7 @@ import '../../constants.dart';
 import '../../widgets/top_banner.dart';
 
 import '../../app_colors.dart';
+import '../../widgets/popups.dart';
 class WarehouseTab extends StatefulWidget {
   const WarehouseTab({super.key});
   @override
@@ -79,7 +80,7 @@ class _WarehouseTabState extends State<WarehouseTab> {
     }
 
     int selectedLevels = 1;
-    await showModalBottomSheet(
+    await showAppSheet(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) {
@@ -121,7 +122,7 @@ class _WarehouseTabState extends State<WarehouseTab> {
               ],
               FilledButton(
                 onPressed: () async {
-                  Navigator.pop(ctx);
+                  popIfCurrent(ctx);
                   final sid = context.read<PlayerProvider>().sid;
                   final result = selectedLevels == 1
                       ? await ApiService.upgradeWarehouse(sid)
@@ -155,7 +156,7 @@ class _WarehouseTabState extends State<WarehouseTab> {
       return;
     }
     var qty = owned;
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(builder: (ctx, set) => AlertDialog(
         title: Text('Recycle ${itemName(itemId)}'),
@@ -177,8 +178,8 @@ class _WarehouseTabState extends State<WarehouseTab> {
             ),
         ]),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Recycle')),
+          TextButton(onPressed: () => popIfCurrent(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => popIfCurrent(ctx, true), child: const Text('Recycle')),
         ],
       )),
     );

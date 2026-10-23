@@ -11,6 +11,7 @@ import 'foreign_target_sheet.dart';
 import 'top_banner.dart';
 
 import '../app_colors.dart';
+import 'popups.dart';
 /// Phase 6 actions on another player's mine: free external maintenance (Service Center) and
 /// mafia attacks. Registered once into [ForeignTargetSheet.extraActions].
 class CombatActions {
@@ -31,7 +32,7 @@ class CombatActions {
       AppNotify.show(context, info.message ?? 'Unavailable', isError: true);
       return;
     }
-    final res = await showDialog<Map<String, dynamic>>(context: context, builder: (_) => _DefenceDialog(info: info.data));
+    final res = await showAppDialog<Map<String, dynamic>>(context: context, builder: (_) => _DefenceDialog(info: info.data));
     if (res == null || !context.mounted) return;
     final r = await GameApi.call('/api/v1/combat/station', sid, {'mineID': mineId, ...res});
     if (!context.mounted) return;
@@ -68,7 +69,7 @@ class CombatActions {
       final crates = (r.data['crates'] as num? ?? 0).toInt();
       AppNotify.show(context, 'Mine maintained.'
           '${q > 0 ? ' Reward: ${fmtQty(q)}' : ''}${crates > 0 ? ' + $crates crates' : ''}');
-      Navigator.pop(context);
+      popIfCurrent(context);
       onChanged();
     } else {
       AppNotify.show(context, r.message ?? 'Maintenance failed', isError: true);
@@ -83,7 +84,7 @@ class CombatActions {
       AppNotify.show(context, info.message ?? 'Unavailable', isError: true);
       return;
     }
-    final res = await showDialog<Map<String, dynamic>>(
+    final res = await showAppDialog<Map<String, dynamic>>(
       context: context,
       builder: (_) => _AttackDialog(info: info.data),
     );
@@ -98,9 +99,9 @@ class CombatActions {
       AppNotify.show(context, r.message ?? 'Attack failed', isError: true);
       return;
     }
-    Navigator.pop(context);
+    popIfCurrent(context);
     onChanged();
-    await showDialog(context: context, builder: (_) => _ResultDialog(r: r.data));
+    await showAppDialog(context: context, builder: (_) => _ResultDialog(r: r.data));
   }
 }
 
@@ -215,9 +216,9 @@ class _AttackDialogState extends State<_AttackDialog> {
         ]),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(onPressed: () => popIfCurrent(context), child: const Text('Cancel')),
         FilledButton(
-          onPressed: mafia < 1 || _n.values.every((v) => v == 0) ? null : () => Navigator.pop(context, _n),
+          onPressed: mafia < 1 || _n.values.every((v) => v == 0) ? null : () => popIfCurrent(context, _n),
           child: const Text('Attack'),
         ),
       ],
@@ -261,7 +262,7 @@ class _ResultDialog extends StatelessWidget {
             ),
         if (!ok && deserters > 0) Text('Deserters joined the defender: $deserters'),
       ]),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+      actions: [TextButton(onPressed: () => popIfCurrent(context), child: const Text('OK'))],
     );
   }
 }
@@ -318,8 +319,8 @@ class _DefenceDialogState extends State<_DefenceDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        FilledButton(onPressed: _n.values.every((v) => v == 0) ? null : () => Navigator.pop(context, _n),
+        TextButton(onPressed: () => popIfCurrent(context), child: const Text('Cancel')),
+        FilledButton(onPressed: _n.values.every((v) => v == 0) ? null : () => popIfCurrent(context, _n),
             child: const Text('Station')),
       ],
     );

@@ -11,6 +11,7 @@ import 'top_banner.dart';
 import '../screens/settings_screen.dart' show kShowMuseumRing;
 
 import '../app_colors.dart';
+import 'popups.dart';
 /// Holiday crate art: the week (Mon–Sun) containing Christmas, Easter Sunday or Halloween uses
 /// its own crate set; otherwise the regular cargo box / container art.
 String? _holiday(DateTime d) {
@@ -105,28 +106,44 @@ class CargoController extends ChangeNotifier {
     }
   }
 
+  bool _uiBusy = false;
+
+  /// Runs one cargo UI flow at a time; taps while one is open are ignored.
+  Future<void> _once(Future<void> Function() f) async {
+    if (_uiBusy) return;
+    _uiBusy = true;
+    try {
+      await f();
+    } finally {
+      _uiBusy = false;
+    }
+  }
+
   void toggleRing() {
     showRing = !showRing;
     notifyListeners();
   }
 
-  Future<void> collect(BuildContext context, String sid, Map<String, dynamic> crate, LatLng? pos) async {
+  Future<void> collect(BuildContext context, String sid, Map<String, dynamic> crate, LatLng? pos) =>
+      _once(() => _collect(context, sid, crate, pos));
+
+  Future<void> _collect(BuildContext context, String sid, Map<String, dynamic> crate, LatLng? pos) async {
     if (pos == null) {
       AppNotify.show(context, 'Waiting for GPS…', isError: true);
       return;
     }
     String method = 'hand';
     if (crate['stacked'] == true) {
-      final pick = await showModalBottomSheet<String>(
+      final pick = await showAppSheet<String>(
         context: context,
-        builder: (_) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        builder: (sheet) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
           ListTile(title: Text('Stacked cargo (${fmtNum((crate['count'] as num? ?? 100).toInt())} crates)'),
               subtitle: const Text('Needs one truck per crate (in range, not used up) or one drone per crate (remote, used up).')),
           ListTile(
             leading: const ItemIcon(124),
             title: Text('Truck (you have ${fmtQty(info['trucks'] as num? ?? 0)})'),
             subtitle: Text('Within ${collectRange.round()} m · truck is not used up'),
-            onTap: () => Navigator.pop(context, 'truck'),
+            onTap: () => popIfCurrent(sheet, 'truck'),
           ),
           ListTile(
             leading: const ItemIcon(117),
@@ -134,7 +151,7 @@ class CargoController extends ChangeNotifier {
             subtitle: Text((info['droneRange'] as num? ?? 0) > 0
                 ? 'Within ${((info['droneRange'] as num) / 1000).toStringAsFixed(1)} km · uses 1 drone'
                 : 'Needs Drone Research level 5'),
-            onTap: () => Navigator.pop(context, 'drone'),
+            onTap: () => popIfCurrent(sheet, 'drone'),
           ),
         ])),
       );
@@ -146,10 +163,12 @@ class CargoController extends ChangeNotifier {
     if (!context.mounted) return;
     if (r.ok) {
       final items = (r.data['items'] as List?)?.cast<Map<String, dynamic>>();
-      AppNotify.show(context, items != null
-          ? (items.isEmpty ? 'Nothing your Museum can find in this stack'
-              : 'Found ${items.map((i) => '${fmtNum((i['qty'] as num).toInt())} ${itemName((i['itemID'] as num).toInt())}').join(', ')}')
-          : 'Found ${(r.data['qty'] as num).toInt()} × ${itemName(r.data['itemID'] as int)}');
+      if (items != null) {
+        showFound(context, 'Stack collected (${fmtNum((crate['count'] as num? ?? 100).toInt())} crates)', items,
+            empty: 'Nothing your Museum can find in this stack.');
+      } else {
+        AppNotify.show(context, 'Found ${(r.data['qty'] as num).toInt()} × ${itemName(r.data['itemID'] as int)}');
+      }
       crates.removeWhere((c) => c['id'] == crate['id']);
       notifyListeners();
       refreshInfo(sid);
@@ -163,7 +182,10 @@ class CargoController extends ChangeNotifier {
   }
 
   /// Haulage Firm ≥ 5: collect every crate in truck range in one go.
-  Future<void> truckCollect(BuildContext context, String sid, LatLng? pos) async {
+  Future<void> truckCollect(BuildContext context, String sid, LatLng? pos) =>
+      _once(() => _truckCollect(context, sid, pos));
+
+  Future<void> _truckCollect(BuildContext context, String sid, LatLng? pos) async {
     if (pos == null) {
       AppNotify.show(context, 'Waiting for GPS…', isError: true);
       return;
@@ -181,7 +203,7 @@ class CargoController extends ChangeNotifier {
       AppNotify.show(context, 'No cargo within ${(p.data['range'] as num).round()} m');
       return;
     }
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Collect cargo by truck'),
@@ -191,8 +213,8 @@ class CargoController extends ChangeNotifier {
             '${(p.data['range'] as num).round()} m · one truck per crate'
             '${need > have ? '\nYou need ${fmtNum(need)} trucks to take everything at once.' : ''}'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: have < 1 ? null : () => Navigator.pop(ctx, true), child: const Text('Collect')),
+          TextButton(onPressed: () => popIfCurrent(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: have < 1 ? null : () => popIfCurrent(ctx, true), child: const Text('Collect')),
         ],
       ),
     );
@@ -206,38 +228,19 @@ class CargoController extends ChangeNotifier {
     final items = (r.data['items'] as List).cast<Map<String, dynamic>>();
     crates = [];                       // the map reloads what is still there
     notifyListeners();
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Collected ${fmtNum((r.data['collected'] as num).toInt())} crate${r.data['collected'] == 1 ? '' : 's'}'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            if (items.isEmpty) const Text('Nothing fit into your warehouse.'),
-            for (final it in items)
-              ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: ItemIcon((it['itemID'] as num).toInt(), size: 32),
-                title: Text(itemName((it['itemID'] as num).toInt())),
-                trailing: Text('× ${fmtNum((it['qty'] as num).toInt())}',
-                    style: const TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            if ((r.data['left'] as num) > 0)
-              Text('${r.data['left']} crates are still waiting. You need more trucks.',
-                  style: TextStyle(color: AppColors.t54, fontSize: 12)),
-          ]),
-        ),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
-      ),
-    );
+    await showFound(context, 'Collected ${fmtNum((r.data['collected'] as num).toInt())} crate${r.data['collected'] == 1 ? '' : 's'}',
+        items, empty: 'Nothing fit into your warehouse.',
+        footer: (r.data['left'] as num) > 0 ? '${fmtNum((r.data['left'] as num).toInt())} crates are still waiting. You need more trucks.' : null);
     refreshInfo(sid);
   }
 
-  Future<void> openPanel(BuildContext context, String sid, LatLng? pos, VoidCallback onDropped) async {
+  Future<void> openPanel(BuildContext context, String sid, LatLng? pos, VoidCallback onDropped) =>
+      _once(() => _openPanel(context, sid, pos, onDropped));
+
+  Future<void> _openPanel(BuildContext context, String sid, LatLng? pos, VoidCallback onDropped) async {
     await refreshInfo(sid);
     if (!context.mounted) return;
-    await showModalBottomSheet(
+    await showAppSheet(
       context: context,
       isScrollControlled: true,
       builder: (_) => _CargoPanel(controller: this, sid: sid, pos: pos, onDropped: onDropped),
@@ -445,6 +448,7 @@ class _CargoPanelState extends State<_CargoPanel> {
   bool _busy = false;
 
   Future<void> _drop() async {
+    if (_busy) return;
     final pos = widget.pos;
     if (pos == null) {
       AppNotify.show(context, 'Waiting for GPS…', isError: true);
@@ -457,15 +461,16 @@ class _CargoPanelState extends State<_CargoPanel> {
       'lat': pos.latitude, 'lng': pos.longitude, 'rid': rid,
     });
     if (!mounted) return;
-    setState(() => _busy = false);
+    if (!r.ok) setState(() => _busy = false);
     if (r.ok) {
       final n = (r.data['dropped'] as num? ?? 1).toInt();
       AppNotify.show(context, _stacked
           ? 'Dropped ${fmtNum(_count.round())} crates in $n stack${n == 1 ? '' : 's'}'
           : 'Cargo Rain! ${_count.round()} crates dropped');
+      final route = ModalRoute.of(context);
+      if (route != null && route.isCurrent) Navigator.of(context).removeRoute(route);
       await widget.controller.refreshInfo(widget.sid);
       widget.onDropped();
-      if (mounted) Navigator.pop(context);
     } else {
       AppNotify.show(context, r.message ?? 'Failed', isError: true);
     }
@@ -547,3 +552,53 @@ class _CargoPanelState extends State<_CargoPanel> {
     );
   }
 }
+
+/// What a truck run or a stack gave: a compact list (common to rare, as the server sorts it) that
+/// scrolls inside a window of at most half the screen, however many kinds of objects there are.
+Future<void> showFound(BuildContext context, String title, List<Map<String, dynamic>> items,
+    {required String empty, String? footer}) {
+  final total = items.fold<int>(0, (a, i) => a + (i['qty'] as num).toInt());
+  return showAppDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(title, style: const TextStyle(fontSize: 16)),
+      contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (items.isEmpty)
+            Text(empty)
+          else ...[
+            Text('${items.length} kind${items.length == 1 ? '' : 's'}, ${fmtNum(total)} in total',
+                style: TextStyle(fontSize: 12, color: AppColors.t54)),
+            const SizedBox(height: 6),
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.5),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: items.length,
+                itemExtent: 34,
+                itemBuilder: (_, i) {
+                  final id = (items[i]['itemID'] as num).toInt();
+                  return Row(children: [
+                    ItemIcon(id, size: 24),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(itemName(id), overflow: TextOverflow.ellipsis)),
+                    Text('× ${fmtNum((items[i]['qty'] as num).toInt())}',
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                  ]);
+                },
+              ),
+            ),
+          ],
+          if (footer != null) ...[
+            const SizedBox(height: 6),
+            Text(footer, style: TextStyle(color: AppColors.t54, fontSize: 12)),
+          ],
+        ]),
+      ),
+      actions: [TextButton(onPressed: () => popIfCurrent(ctx), child: const Text('OK'))],
+    ),
+  );
+}
+

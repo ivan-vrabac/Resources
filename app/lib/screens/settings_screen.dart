@@ -13,6 +13,7 @@ import '../widgets/update_dialog.dart';
 import '../constants.dart' show kNumDecimals, kInvertAskBid;
 import 'game_screen.dart' show tabMeta;
 
+import '../widgets/popups.dart';
 // ── Notification settings ──────────────────────────────────────────────────────
 bool kNotifEnabled       = true;
 bool kNotifMineWarning   = true;
@@ -92,13 +93,13 @@ class SettingsScreen extends StatefulWidget {
 
 double kCloudOpacity = 0.55;
 
-final List<Color> kRingPresets = [
-  AppColors.accent, Colors.blueAccent, Colors.deepPurple,
+const List<Color> kRingPresets = [
+  Colors.teal, Colors.blueAccent, Colors.deepPurple,
   Colors.greenAccent, Colors.orange, Colors.redAccent,
 ];
 Color  kDroneRingColor   = Colors.orange;
 double kDroneRingOpacity = 0.50;
-Color  kScanRingColor    = AppColors.accent;
+Color  kScanRingColor    = Colors.teal;
 double kScanRingOpacity  = 0.50;
 Color  kLocalRingColor   = Colors.blueAccent;
 double kLocalRingOpacity = 0.70;
@@ -164,7 +165,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               builder: (_) => const _NotificationsPage()))),
         _sectionHeader('Account'),
         _categoryTile(context, Icons.lock_outline, 'Change password',
-            'Update the password for this company', () => showDialog(
+            'Update the password for this company', () => showAppDialog(
               context: context, builder: (_) => const _ChangePasswordDialog())),
         _sectionHeader('System'),
         _categoryTile(context, Icons.speed, 'Performance',
@@ -749,14 +750,14 @@ class _NumbersDisplayPageState extends State<_NumbersDisplayPage> {
 
 
 // backgrounds: black (OLED) first, default grey (blueGrey) among them
-final _kBgPresetColors = <Color>[
+const _kBgPresetColors = <Color>[
   Colors.black, Color(0xFF424242), Colors.blueGrey, Colors.brown, Colors.indigo, Colors.blue, Colors.lightBlue,
-  Colors.cyan, AppColors.accent, Colors.green, Color(0xFF1B5E20), Colors.lime, Colors.amber, Colors.orange,
+  Colors.cyan, Colors.teal, Colors.green, Color(0xFF1B5E20), Colors.lime, Colors.amber, Colors.orange,
   Colors.deepOrange, Colors.red, Color(0xFFB71C1C), Colors.pink, Colors.purple, Colors.deepPurple,
 ];
 
-final _kIconPresetColors = <Color>[
-  AppColors.accent, Colors.cyanAccent, Colors.lightBlueAccent, Colors.blueAccent, Colors.indigoAccent,
+const _kIconPresetColors = <Color>[
+  Colors.tealAccent, Colors.cyanAccent, Colors.lightBlueAccent, Colors.blueAccent, Colors.indigoAccent,
   Colors.deepPurpleAccent, Colors.purpleAccent, Colors.pinkAccent, Colors.redAccent, Colors.deepOrangeAccent,
   Colors.orangeAccent, Colors.amberAccent, Colors.yellowAccent, Colors.limeAccent, Colors.lightGreenAccent,
   Colors.greenAccent, Colors.white, Color(0xFFBDBDBD),
@@ -916,7 +917,7 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
       setState(() { _busy = false; _error = err; });
       return;
     }
-    Navigator.of(context).pop();
+    popIfCurrent(context);
     ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Password changed')));
   }
@@ -939,7 +940,7 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
           Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
       ]),
       actions: [
-        TextButton(onPressed: _busy ? null : () => Navigator.of(context).pop(),
+        TextButton(onPressed: _busy ? null : () => popIfCurrent(context),
             child: const Text('Cancel')),
         FilledButton(onPressed: _busy ? null : _save, child: const Text('Save')),
       ],
@@ -1258,7 +1259,7 @@ class _BottomBarSettingsState extends State<_BottomBarSettings> {
     final cfg = widget.config.withBottomTabs(_bottom);
     cfg.save();
     widget.onSave(cfg);
-    Navigator.pop(context);
+    popIfCurrent(context);
   }
 
   @override

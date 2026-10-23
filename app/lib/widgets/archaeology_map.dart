@@ -11,6 +11,7 @@ import 'top_banner.dart';
 import '../screens/settings_screen.dart' show kShowRevealRing;
 
 import '../app_colors.dart';
+import 'popups.dart';
 /// Artifact detector on the map. Every scan uses up one Artifact Detector (server rule): the
 /// result (a yellow triangle towards the nearest artifact, or the artifact itself once within the
 /// reveal range) stays on the map for [resultTtl] or until the next scan.
@@ -175,15 +176,15 @@ class ArchaeologyLayers extends StatelessWidget {
 
   Future<void> _confirmRecover(BuildContext context) async {
     final site = controller.revealed!;
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dlg) => AlertDialog(
         title: Text('Recover ${site['name']}?'),
         content: Text('${site['distance']} m away. Recovering uses archaeologists; '
             'you must be within your Museum pick-up range.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Recover')),
+          TextButton(onPressed: () => popIfCurrent(dlg, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => popIfCurrent(dlg, true), child: const Text('Recover')),
         ],
       ),
     );
@@ -288,7 +289,7 @@ class _ArchaeologyScreenState extends State<ArchaeologyScreen> {
   /// invest (with a preview on the bars) and the effect of every level.
   Future<void> _openArtifact(Map<String, dynamic> a) async {
     final levelAt = ((_d?['levelAt'] as List?) ?? const [100, 500, 1000]).cast<num>().map((e) => e.toInt()).toList();
-    final qty = await showModalBottomSheet<int>(
+    final qty = await showAppSheet<int>(
       context: context,
       isScrollControlled: true,
       builder: (_) => _ArtifactInvestSheet(artifact: a, levelAt: levelAt),
@@ -444,7 +445,7 @@ class _ArtifactInvestSheetState extends State<_ArtifactInvestSheet> {
             width: double.infinity,
             child: FilledButton(
               style: FilledButton.styleFrom(backgroundColor: _kBronze, foregroundColor: Colors.black),
-              onPressed: _add <= 0 ? null : () => Navigator.pop(context, _add),
+              onPressed: _add <= 0 ? null : () => popIfCurrent(context, _add),
               child: Text(_add <= 0 ? 'Invest' : newLvl > lvl
                   ? 'Invest $_add → level $newLvl' : 'Invest $_add'),
             ),

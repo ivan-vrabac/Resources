@@ -34,7 +34,7 @@ class PlayerHud extends StatelessWidget {
             ),
             _stat(Icons.monetization_on_outlined, 'ꞓ${fmtNum(prov.credits)}', Colors.amber),
             const SizedBox(width: 12),
-            _stat(Icons.military_tech_outlined, 'Lv ${player.level}', Colors.lightBlueAccent),
+            _stat(Icons.military_tech_outlined, 'Lv ${player.level}', AppColors.accent),
           ]),
           const SizedBox(height: 4),
           Row(children: [
@@ -43,8 +43,8 @@ class PlayerHud extends StatelessWidget {
                 borderRadius: BorderRadius.circular(2),
                 child: LinearProgressIndicator(
                   value: player.xpProgress,
-                  backgroundColor: Colors.white12,
-                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.greenAccent),
+                  backgroundColor: AppColors.fg.withValues(alpha: 0.12),
+                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.accent),
                   minHeight: 3,
                 ),
               ),

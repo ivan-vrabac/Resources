@@ -8,6 +8,7 @@ import '../../constants.dart';
 import '../../widgets/top_banner.dart';
 
 import '../../app_colors.dart';
+import '../../widgets/popups.dart';
 // ── Sort / view helpers ─────────────────────────────────────────────────────
 
 enum _SortMode { output, quality, condition }
@@ -160,15 +161,15 @@ class _MinesTabState extends State<MinesTab> {
 
   Future<void> _bulkRepairPay(List<Mine> toRepair) async {
     final cost = toRepair.fold(0, (s, m) => s + _mineRepairCost(m));
-    final ok   = await showDialog<bool>(
+    final ok   = await showAppDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: Text('Repair ${toRepair.length} mines?'),
         content: Text('Total cost: ꞓ$cost',
             style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Repair All')),
+          TextButton(onPressed: () => popIfCurrent(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => popIfCurrent(context, true), child: const Text('Repair All')),
         ],
       ),
     );
@@ -192,7 +193,7 @@ class _MinesTabState extends State<MinesTab> {
     final needed = toRepair.where((m) => m.condition <= 99).length;
     if (needed == 0) return;
     final actual = min(needed, kitsAvailable);
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: Text('Use $actual kit${actual == 1 ? '' : 's'}?'),
@@ -203,8 +204,8 @@ class _MinesTabState extends State<MinesTab> {
           style: TextStyle(color: AppColors.t70),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Use Kits')),
+          TextButton(onPressed: () => popIfCurrent(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => popIfCurrent(context, true), child: const Text('Use Kits')),
         ],
       ),
     );
@@ -223,7 +224,7 @@ class _MinesTabState extends State<MinesTab> {
   Future<void> _bulkDemolish(List<Mine> selected) async {
     final totalRefund  = selected.fold(0, (s, m) => s + _mineRefund(m));
     final hasHighValue = selected.any((m) => m.quality >= 80 || m.hasTech);
-    final confirm = await showDialog<bool>(
+    final confirm = await showAppDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: Text('Demolish ${selected.length} mines?'),
@@ -255,18 +256,18 @@ class _MinesTabState extends State<MinesTab> {
         actions: [
           Row(children: [
             Expanded(child: OutlinedButton(
-              onPressed: () => Navigator.pop(context, false),
+              onPressed: () => popIfCurrent(context, false),
               child: const Text('Cancel'),
             )),
             const SizedBox(width: 8),
             Expanded(child: selected.length > 1
               ? _HoldFilledButton(
                   label: 'Hold to Confirm',
-                  onTriggered: () => Navigator.pop(context, true),
+                  onTriggered: () => popIfCurrent(context, true),
                 )
               : FilledButton(
                   style: FilledButton.styleFrom(backgroundColor: Colors.red),
-                  onPressed: () => Navigator.pop(context, true),
+                  onPressed: () => popIfCurrent(context, true),
                   child: const Text('Demolish'),
                 ),
             ),
@@ -531,7 +532,7 @@ class _MinesTabState extends State<MinesTab> {
                 child: imgPath != null
                     ? Image.asset(imgPath, fit: BoxFit.contain)
                     : CircleAvatar(
-                        backgroundColor: Colors.teal.shade900,
+                        backgroundColor: AppColors.accentDeep,
                         child: Text((kMineNames[itemId] ?? '?')[0],
                             style: const TextStyle(fontSize: 12)))),
               const SizedBox(width: 10),
@@ -831,7 +832,7 @@ class _MineTileState extends State<_MineTile> {
 
   void _openTechSheet() {
     widget.onPopupOpened?.call();
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       isScrollControlled: true,
       builder: (_) => TechUpgradeSheet(
@@ -846,7 +847,7 @@ class _MineTileState extends State<_MineTile> {
   Future<void> _demolish() => _run(() async {
     final refund     = _mineRefund(mine);
     final isHighValue = mine.quality >= 80 || mine.hasTech;
-    final confirm = await showDialog<bool>(
+    final confirm = await showAppDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Demolish mine?'),
@@ -879,13 +880,13 @@ class _MineTileState extends State<_MineTile> {
         actions: [
           Row(children: [
             Expanded(child: OutlinedButton(
-              onPressed: () => Navigator.pop(context, false),
+              onPressed: () => popIfCurrent(context, false),
               child: const Text('Cancel'),
             )),
             const SizedBox(width: 8),
             Expanded(child: FilledButton(
               style: FilledButton.styleFrom(backgroundColor: Colors.red),
-              onPressed: () => Navigator.pop(context, true),
+              onPressed: () => popIfCurrent(context, true),
               child: const Text('Demolish'),
             )),
           ]),
@@ -959,7 +960,7 @@ class _MineTileState extends State<_MineTile> {
         leading: resImagePath(mine.resId) != null
             ? SizedBox(width: 40, height: 40,
                 child: Image.asset(resImagePath(mine.resId)!, fit: BoxFit.contain))
-            : CircleAvatar(backgroundColor: Colors.teal.shade900,
+            : CircleAvatar(backgroundColor: AppColors.accentDeep,
                 child: Text(_resName[0],
                     style: const TextStyle(color: Colors.white))),
         title: Text(_mineName),

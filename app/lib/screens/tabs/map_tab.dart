@@ -35,6 +35,7 @@ import '../../widgets/combat_actions.dart';
 import 'mines_tab.dart' show TechUpgradeSheet;
 
 import '../../app_colors.dart';
+import '../../widgets/popups.dart';
 // ── Heatmap data from server ───────────────────────────────────────────────────
 
 class _HeatmapData {
@@ -1252,7 +1253,7 @@ class _MapTabState extends State<MapTab> {
       }
     }
     if (best == null) return;
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       builder: (_) => ForeignTargetSheet(target: best!, onChanged: _loadMarkers, playerPos: _pos),
     );
@@ -1302,7 +1303,7 @@ class _MapTabState extends State<MapTab> {
     final gpsPos = _pos;
     final inBossRange = gpsPos != null &&
         _distM(gpsPos, LatLng(mine.lat, mine.lng)) <= player.bossRangeM;
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       isScrollControlled: true,
       builder: (_) => _MapMineSheet(
@@ -1770,7 +1771,7 @@ class _MapTabState extends State<MapTab> {
               _mapBtnW(
                 CustomPaint(
                   painter: _RadarIconPainter(
-                    color: _showClouds ? Colors.white : AppColors.t70),
+                    color: _showClouds ? Colors.white : AppColors.accent),
                 ),
                 () {
                   if (!_showClouds && _heatmapScans.isEmpty) return;
@@ -1789,7 +1790,7 @@ class _MapTabState extends State<MapTab> {
               _mapBtnW(
                 CustomPaint(
                   painter: _HexIconPainter(
-                    color: _showMines ? Colors.white : AppColors.t70),
+                    color: _showMines ? Colors.white : AppColors.accent),
                 ),
                 () async {
                   setState(() => _showMines = !_showMines);
@@ -1801,10 +1802,11 @@ class _MapTabState extends State<MapTab> {
               const SizedBox(width: 4),
               // Cargo / artifacts visibility toggle
               _mapBtnW(
-                Image.asset(_showLoot ? 'assets/mapmarkers/showboxes_on.png' : 'assets/mapmarkers/showboxes_off.png',
+                // one picture, dimmed when hidden (the "off" picture had an X)
+                Opacity(opacity: _showLoot ? 1 : 0.45, child: Image.asset('assets/mapmarkers/showboxes_on.png',
                     width: 24, height: 24,
                     errorBuilder: (_, __, ___) => Icon(Icons.inventory_2_outlined,
-                        color: _showLoot ? Colors.white : AppColors.t70)),
+                        color: _showLoot ? Colors.white : AppColors.t70))),
                 () async {
                   setState(() => _showLoot = !_showLoot);
                   final p = await SharedPreferences.getInstance();
@@ -2108,9 +2110,9 @@ class _MapTabState extends State<MapTab> {
                   final disabled = _scanning || _pos == null ||
                       (!inLocalRange && !inDroneRange);
                   final bgColor = inLocalRange
-                      ? Colors.teal.shade700
+                      ? AppColors.accentDark
                       : inDroneRange
-                          ? Colors.teal.shade900
+                          ? AppColors.accentDeep
                           : Colors.grey.shade800;
                   final droneCount = (player?.lager['117'] ?? 0.0).toInt();
                   final costLine = (!inLocalRange && !inDroneRange)
@@ -2302,7 +2304,7 @@ class _MapTabState extends State<MapTab> {
     final canLocalBuild  = hasToken && meetsLevel && inLocalRange;
     final canRemoteBuild = hasToken && meetsLevel && inDroneRange && drLevel >= 10 && hasDrone && hasDiamond;
 
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(name),
@@ -2387,14 +2389,14 @@ class _MapTabState extends State<MapTab> {
           ],
         ]),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(onPressed: () => popIfCurrent(ctx), child: const Text('Cancel')),
           FilledButton(
             style: (!inLocalRange && inDroneRange && canRemoteBuild)
                 ? FilledButton.styleFrom(backgroundColor: Colors.cyan.shade700)
                 : null,
             onPressed: (canLocalBuild || canRemoteBuild)
                 ? () {
-                    Navigator.pop(ctx);
+                    popIfCurrent(ctx);
                     // Re-read GPS at the moment Build is pressed (not when dialog opened).
                     final freshPos = _pos;
                     if (freshPos == null) {
@@ -2432,7 +2434,7 @@ class _MapTabState extends State<MapTab> {
     final name = kMineNames[r['mine_item_id'] as int] ?? 'Mine';
     final droneImg   = resImagePath(117);
     final diamondImg = resImagePath(42);
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Confirm Remote Build'),
@@ -2493,12 +2495,12 @@ class _MapTabState extends State<MapTab> {
               style: TextStyle(color: AppColors.t38, fontSize: 11)),
         ]),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(onPressed: () => popIfCurrent(ctx), child: const Text('Cancel')),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.cyan.shade700),
             onPressed: (hasDrone && hasDiamond)
                 ? () {
-                    Navigator.pop(ctx);
+                    popIfCurrent(ctx);
                     // Re-read GPS at Confirm press; server validates range server-side.
                     final freshPos = _pos;
                     if (freshPos == null) {
@@ -2607,7 +2609,7 @@ class _MapTabState extends State<MapTab> {
 
   Widget _mapBtn(IconData icon, VoidCallback onTap, {bool active = false, String? tip}) {
     final w = Material(
-      color: active ? Colors.teal.shade700 : Colors.white.withValues(alpha: 0.08),
+      color: active ? AppColors.accentDark : Colors.white.withValues(alpha: 0.08),
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         onTap: () {
@@ -2618,7 +2620,7 @@ class _MapTabState extends State<MapTab> {
         child: Padding(
           padding: const EdgeInsets.all(8),
           child: Icon(icon, size: 20,
-              color: active ? Colors.white : AppColors.t70),
+              color: active ? Colors.white : AppColors.accent),
         ),
       ),
     );
@@ -2627,7 +2629,7 @@ class _MapTabState extends State<MapTab> {
 
   Widget _mapBtnW(Widget iconWidget, VoidCallback onTap, {bool active = false, String? tip}) {
     final w = Material(
-      color: active ? Colors.teal.shade700 : Colors.white.withValues(alpha: 0.08),
+      color: active ? AppColors.accentDark : Colors.white.withValues(alpha: 0.08),
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         onTap: () {
@@ -2696,7 +2698,7 @@ class _MapMineSheetState extends State<_MapMineSheet> {
     if (!mounted) return;
     AppNotify.show(context, msg, isError: error);
     if (!error) {
-      Navigator.pop(context);
+      popIfCurrent(context);
       widget.onDone();
     }
   }
@@ -2736,16 +2738,16 @@ class _MapMineSheetState extends State<_MapMineSheet> {
 
   Future<void> _demolish() async {
     final refund = ((kMineBuildCost[mine.itemId] ?? 0) * 0.1).round();
-    final confirm = await showDialog<bool>(
+    final confirm = await showAppDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Demolish mine?'),
         content: Text('Refund: ꞓ$refund'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => popIfCurrent(context, false), child: const Text('Cancel')),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => popIfCurrent(context, true),
             child: const Text('Demolish'),
           ),
         ],
@@ -2766,10 +2768,10 @@ class _MapMineSheetState extends State<_MapMineSheet> {
 
   void _openTechSheet() {
     final ctx = context;
-    Navigator.pop(ctx);
+    popIfCurrent(ctx);
     Future.microtask(() {
       if (!ctx.mounted) return;
-      showModalBottomSheet(
+      showAppSheet(
         context: ctx,
         isScrollControlled: true,
         builder: (_) => TechUpgradeSheet(mine: mine, player: player, onDone: widget.onDone),
@@ -2815,7 +2817,7 @@ class _MapMineSheetState extends State<_MapMineSheet> {
                 const SizedBox(width: 8),
                 IconButton(
                   icon: Icon(Icons.close, color: AppColors.t54),
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () => popIfCurrent(context),
                 ),
               ]),
               const SizedBox(height: 4),

@@ -11,6 +11,7 @@ import '../widgets/top_banner.dart';
 import 'profile_screen.dart';
 
 import '../app_colors.dart';
+import '../widgets/popups.dart';
 /// Server-generated news (real game events), with category filter, paging, earthquake
 /// reports with an epicenter map, and the player's anonymity setting.
 class NewsScreen extends StatefulWidget {
@@ -158,7 +159,7 @@ class _NewsScreenState extends State<NewsScreen> {
     final d = (n['data'] as Map).cast<String, dynamic>();
     final c = LatLng((n['lat'] as num).toDouble(), (n['lng'] as num).toDouble());
     final r = (d['radius_km'] as num).toDouble() * 1000;
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       isScrollControlled: true,
       builder: (_) => SafeArea(

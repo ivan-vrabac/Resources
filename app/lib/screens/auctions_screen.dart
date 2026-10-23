@@ -10,6 +10,7 @@ import '../widgets/top_banner.dart';
 import 'profile_screen.dart';
 
 import '../app_colors.dart';
+import '../widgets/popups.dart';
 /// The luxury auction: one item at a time, bid with that item's resource (HQ level 10, max 10 of
 /// each item). Bids give luxury points, wins give many more. Tap an item for its bid history.
 class AuctionsScreen extends StatefulWidget {
@@ -57,7 +58,7 @@ class _AuctionsScreenState extends State<AuctionsScreen> {
     final min = (a['minBid'] as num).toInt();
     final res = (a['resID'] as num).toInt();
     final ctl = TextEditingController(text: '$min');
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Bid on ${itemName((a['itemID'] as num).toInt())}'),
@@ -76,8 +77,8 @@ class _AuctionsScreenState extends State<AuctionsScreen> {
               style: TextStyle(fontSize: 12, color: AppColors.t54)),
         ]),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Bid')),
+          TextButton(onPressed: () => popIfCurrent(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => popIfCurrent(ctx, true), child: const Text('Bid')),
         ],
       ),
     );
@@ -93,7 +94,7 @@ class _AuctionsScreenState extends State<AuctionsScreen> {
   }
 
   void _history(int itemId) {
-    showModalBottomSheet(
+    showAppSheet(
       context: context,
       isScrollControlled: true,
       builder: (_) => _ItemHistorySheet(itemId: itemId, sid: _sid),

@@ -10,6 +10,7 @@ import '../widgets/async_view.dart';
 import '../widgets/top_banner.dart';
 
 import '../app_colors.dart';
+import '../widgets/popups.dart';
 /// Market: system trade (sell 100% / buy 150%) and player BUY orders (sell by filling one),
 /// Haulage Firm transport tax included in every price shown.
 class MarketScreen extends StatefulWidget {
@@ -240,7 +241,7 @@ class _MarketItemScreenState extends State<MarketItemScreen> {
   /// Quantity-only trades: buy from / sell to the system, sell into a player's buy order.
   Future<void> _qtyTrade({required String title, required num price, required int maxQty,
       required bool selling, required Future<ApiResult> Function(int qty) run, double taxRate = 0}) async {
-    final q = await showDialog<int>(
+    final q = await showAppDialog<int>(
       context: context,
       builder: (_) => _QtyDialog(title: title, itemId: widget.itemId, price: price, maxQty: maxQty,
           selling: selling, taxRate: taxRate),
@@ -255,7 +256,7 @@ class _MarketItemScreenState extends State<MarketItemScreen> {
     final bids = (b['bids'] as List).cast<Map<String, dynamic>>();
     final topOther = bids.where((o) => o['isMe'] != true).map((o) => o['price'] as num).fold<num?>(null,
         (a, p) => a == null || p > a ? p : a);
-    final res = await showDialog<(int, double)>(
+    final res = await showAppDialog<(int, double)>(
       context: context,
       builder: (_) => _OrderDialog(
         itemId: widget.itemId,
@@ -495,8 +496,8 @@ class _QtyDialogState extends State<_QtyDialog> {
         ],
       ]),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        FilledButton(onPressed: _q <= 0 ? null : () => Navigator.pop(context, _q), child: const Text('Confirm')),
+        TextButton(onPressed: () => popIfCurrent(context), child: const Text('Cancel')),
+        FilledButton(onPressed: _q <= 0 ? null : () => popIfCurrent(context, _q), child: const Text('Confirm')),
       ],
     );
   }
@@ -596,9 +597,9 @@ class _OrderDialogState extends State<_OrderDialog> {
         ]),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(onPressed: () => popIfCurrent(context), child: const Text('Cancel')),
         FilledButton(
-          onPressed: _q <= 0 || _price <= 0 || tooHigh || tooLow ? null : () => Navigator.pop(context, (_q, _price)),
+          onPressed: _q <= 0 || _price <= 0 || tooHigh || tooLow ? null : () => popIfCurrent(context, (_q, _price)),
           child: Text(widget.editing ? 'Update' : 'Place order'),
         ),
       ],

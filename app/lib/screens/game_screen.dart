@@ -366,7 +366,7 @@ class _MoreTab extends StatefulWidget {
 }
 
 class _MoreTabState extends State<_MoreTab> {
-  String? _countryCode;
+  String? _countryCode = ApiService.countryNow;   // cached: the flag shows at once
   int? _rank;
 
   @override
@@ -377,8 +377,9 @@ class _MoreTabState extends State<_MoreTab> {
   }
 
   Future<void> _loadCountry() async {
+    final had = _countryCode;
     final code = await ApiService.getCountryCode();
-    if (mounted && code != null) {
+    if (mounted && code != null && code != had) {
       setState(() => _countryCode = code);
       final sid = context.read<PlayerProvider>().sid;
       ApiService.setCountryCode(sid, code);
@@ -396,7 +397,7 @@ class _MoreTabState extends State<_MoreTab> {
   }
 
   Color _waColor(int wa) {
-    if (wa >= 70) return Colors.greenAccent;
+    if (wa >= 70) return AppColors.accent;   // good WA in the appearance colour
     if (wa >= 40) return Colors.amber;
     return Colors.redAccent;
   }

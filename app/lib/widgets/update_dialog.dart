@@ -4,6 +4,7 @@ import '../branding.dart';
 import '../services/update_service.dart';
 
 import '../app_colors.dart';
+import 'popups.dart';
 /// Shows the installed and the newest published build, and downloads + installs the update.
 class UpdateDialog extends StatefulWidget {
   final BuildInfo? info;
@@ -91,7 +92,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: _progress != null ? null : () => Navigator.pop(context, true),
+          onPressed: _progress != null ? null : () => popIfCurrent(context, true),
           child: Text(newer ? 'Later' : 'Close'),
         ),
         if (newer)

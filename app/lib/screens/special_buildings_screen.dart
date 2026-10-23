@@ -10,6 +10,7 @@ import 'casino_screen.dart';
 import 'headquarters_screen.dart';
 
 import '../app_colors.dart';
+import '../widgets/popups.dart';
 // Helper: resolve res map keys/values to int entries
 List<MapEntry<int, int>> _resEntries(dynamic resMap) {
   if (resMap == null) return [];
@@ -403,7 +404,7 @@ class _SpecialBuildingCardState extends State<_SpecialBuildingCard> {
                     ? null
                     : (_owned ? _upgrade : _buy),
                 style: FilledButton.styleFrom(
-                  backgroundColor: canAfford ? Colors.teal.shade700 : Colors.grey.shade800,
+                  backgroundColor: canAfford ? AppColors.accentDark : Colors.grey.shade800,
                 ),
               ),
             ),
@@ -494,7 +495,7 @@ Future<void> showBuildingInfo(BuildContext context, int itemId) async {
   final labels = levels.isEmpty ? <String>[]
       : (levels.first['effects'] as List).cast<Map<String, dynamic>>().map((e) => e['label'] as String).toList();
   final cur = (b['level'] as num? ?? 0).toInt();
-  await showModalBottomSheet(
+  await showAppSheet(
     context: context,
     isScrollControlled: true,
     builder: (ctx) => DraggableScrollableSheet(
@@ -505,36 +506,60 @@ Future<void> showBuildingInfo(BuildContext context, int itemId) async {
         const SizedBox(height: 4),
         Text(b['desc'] as String? ?? '', style: TextStyle(color: AppColors.t60, fontSize: 12)),
         const SizedBox(height: 12),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            headingRowHeight: 36,
-            dataRowMinHeight: 32,
-            dataRowMaxHeight: 52,
-            columnSpacing: 18,
-            columns: [
-              const DataColumn(label: Text('Level')),
-              for (final l in labels) DataColumn(label: Text(l, style: const TextStyle(fontSize: 12))),
-              const DataColumn(label: Text('Cost')),
-            ],
-            rows: [
-              for (final l in levels)
-                DataRow(
-                  color: WidgetStatePropertyAll((l['level'] as num).toInt() == cur
-                      ? AppColors.accent.withValues(alpha: 0.25) : null),
-                  cells: [
-                    DataCell(Text('${l['level']}', style: TextStyle(
-                        fontWeight: (l['level'] as num).toInt() == cur ? FontWeight.bold : FontWeight.normal))),
-                    for (final e in (l['effects'] as List).cast<Map<String, dynamic>>())
-                      DataCell(Text(e['value'] as String, style: const TextStyle(fontSize: 12))),
-                    DataCell(Text(['ꞓ${fmtNum(l['credits'] as num)}',
-                      for (final res in (l['res'] as Map).entries) '${fmtNum(res.value as num)} ${itemName(int.parse(res.key as String))}',
-                    ].join('\n'), style: TextStyle(fontSize: 11, color: AppColors.t70))),
-                  ],
+        // one card per level, like the HQ information (owner 2026-10-23)
+        for (final l in levels) Builder(builder: (_) {
+          final lvl = (l['level'] as num).toInt();
+          final eff = (l['effects'] as List).cast<Map<String, dynamic>>();
+          final res = (l['res'] as Map).entries.toList();
+          final credits = (l['credits'] as num? ?? 0).toInt();
+          final cs = Theme.of(context).colorScheme;
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: lvl == cur ? cs.primary.withValues(alpha: 0.15) : cs.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: lvl == cur ? cs.primary : cs.outline.withValues(alpha: 0.5)),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Text('Level $lvl', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                if (lvl == cur) ...[
+                  const SizedBox(width: 8),
+                  Text('current', style: TextStyle(color: cs.primary, fontSize: 12)),
+                ],
+              ]),
+              const SizedBox(height: 6),
+              for (final e in eff)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Text('${e['label']}: ${e['value']}', style: const TextStyle(fontSize: 13)),
                 ),
-            ],
-          ),
-        ),
+              if (credits > 0 || res.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(lvl == 1 ? 'Costs to build:' : 'Costs to reach this level:',
+                    style: TextStyle(fontSize: 12, color: AppColors.t60)),
+                const SizedBox(height: 4),
+                Wrap(spacing: 10, runSpacing: 6, children: [
+                  if (credits > 0)
+                    Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.monetization_on_outlined, size: 18, color: Colors.amber),
+                      const SizedBox(width: 4),
+                      Text('ꞓ${fmtNum(credits)}', style: const TextStyle(fontSize: 12)),
+                    ]),
+                  for (final e in res)
+                    Row(mainAxisSize: MainAxisSize.min, children: [
+                      Image.asset('assets/images_res/res${e.key}.png', width: 18, height: 18,
+                          errorBuilder: (_, __, ___) => const SizedBox(width: 18)),
+                      const SizedBox(width: 4),
+                      Text('${fmtNum(e.value as num)} ${itemName(int.parse(e.key as String))}',
+                          style: const TextStyle(fontSize: 12)),
+                    ]),
+                ]),
+              ],
+            ]),
+          );
+        }),
       ]),
     ),
   );
