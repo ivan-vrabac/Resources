@@ -175,11 +175,12 @@ def test_idle_factories_lower_wa_and_empty_companies_stay_at_100():
         inc.P_AT_100, inc.P_AT_0 = old_p
     assert r["wa"] == 78.0                                                         # one idle factory, one day
     e_hid, e_sid, _ = new_player("rve")
+    assert call("/api/v1/incidents", e_sid)["wa"] == 100.0                        # new companies start at 100 %
     with main.get_db() as conn:
-        conn.execute("UPDATE players SET wa=40 WHERE hID=?", (e_hid,))
+        conn.execute("UPDATE players SET wa=99.9 WHERE hID=?", (e_hid,))         # e.g. after a won attack
         conn.execute("INSERT OR REPLACE INTO incident_clock(hid, last_day) VALUES(?,?)", (e_hid, yesterday))
         conn.commit()
-    assert call("/api/v1/incidents", e_sid)["wa"] == 100.0
+    assert call("/api/v1/incidents", e_sid)["wa"] == 99.9                         # no reset over attack losses
 
 
 def test_accident_chance_scales_with_wa():
@@ -235,4 +236,33 @@ def test_gdpr_delete_young_now_old_after_30_days_login_cancels():
     r = client.post("/api/v1/auth/session", data={"name": old_name, "password": "password1", "mode": "login"})
     assert r.json()["deletionCancelled"] is True
     assert call("/api/v1/account/info", old_sid)["deleteAt"] is None
+
+
+def test_accidents_need_level_50_and_buildings_cut_their_impact():
+    import systems.incidents as inc
+    hid, sid, _ = new_player("rva", credits=1_000_000, level=10)
+    set_building(hid, 25, 1)
+    yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    with main.get_db() as conn:
+        conn.execute("UPDATE factories SET last_active=? WHERE hid=?", (main.utcnow_iso(), hid))
+        conn.execute("INSERT OR REPLACE INTO incident_clock(hid, last_day) VALUES(?,?)", (hid, yesterday))
+        conn.commit()
+    old = (inc.P_AT_100, inc.P_AT_0)
+    inc.P_AT_100 = inc.P_AT_0 = 1.0                     # an accident would be certain
+    try:
+        assert call("/api/v1/incidents", sid)["incidents"] == []                   # level 10: none
+    finally:
+        inc.P_AT_100, inc.P_AT_0 = old
+    with main.get_db() as conn:
+        conn.execute("UPDATE players SET wa=100, credits=1000000 WHERE hID=?", (hid,))
+        conn.commit()
+        with econ.tx(conn):
+            plain = main.SYSTEM_HELPERS.PENALTY(conn, hid, "disease", "m", {})
+    set_building(hid, 71, 10)                                                     # Hospital 10
+    with main.get_db() as conn:
+        conn.execute("UPDATE players SET wa=100, credits=1000000 WHERE hID=?", (hid,))
+        conn.commit()
+        with econ.tx(conn):
+            protected = main.SYSTEM_HELPERS.PENALTY(conn, hid, "disease", "m", {})
+    assert protected < plain * 0.4
 

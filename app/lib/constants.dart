@@ -360,7 +360,7 @@ const Map<int, Map<String, dynamic>> kSpecialBuildings = {
   },
   122: {
     'name': 'HR Department',
-    'desc': 'Keeps your workforce content. Strikes and claims are not in the game yet.',
+    'desc': 'Keeps your workforce content, so strikes break out less often and cost you less.',
     'maxLevel': 10,
     'costs': [
       {'credits': 1000000,    'res': {'36': 50,     '98': 1,    '66': 50}},

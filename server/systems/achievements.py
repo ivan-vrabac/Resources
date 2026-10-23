@@ -15,27 +15,27 @@ DEFS = {
     "hq_level":     ("Headquarters", "Reach headquarters level", (3, 7, 10), ""),
     "hq_influence": ("HQ influence", "Mines inside your HQ boost area", (50, 100, 200), "mines"),
     "age":          ("Veteran", "Account age", (100, 180, 365), "days"),
-    "balance":      ("Tycoon", "Account balance", (1_000_000_000, 100_000_000_000, 1_000_000_000_000), "credits"),
-    "points":       ("High score", "Leaderboard points", (1_000_000, 10_000_000, 100_000_000), "points"),
+    "balance":      ("Tycoon", "Account balance", (100_000_000, 10_000_000_000, 500_000_000_000), "credits"),
+    "points":       ("High score", "Leaderboard points", (100_000, 1_000_000, 10_000_000), "points"),
     "luxury_points": ("Connoisseur", "Luxury points", (1_000, 10_000, 100_000), "points"),
-    "gambler":      ("Gambler", "Casino five of a kind", (1, 5, 10), "times"),
+    "gambler":      ("Gambler", "Casino four of a kind or better", (1, 10, 50), "times"),
     "decadence":    ("Boundless decadence", "Luxury items owned", (1, 10, 100), "items"),
-    "factories":    ("Industrialist", "Total factory levels", (10, 100, 1000), "levels"),
+    "factories":    ("Industrialist", "Total factory levels", (10, 100, 500), "levels"),
     "hoarder":      ("Hoarder", "Mines owned", (100, 1000, 10000), "mines"),
     "attacker":     ("Attacker", "Attacks won", (10, 100, 1000), "wins"),
     "friend":       ("Friend in need", "Other players' mines repaired", (10, 100, 1000), "mines"),
     "special":      ("Master builder", "Special building upgrades", (10, 50, 100), "levels"),
-    "artifacts":    ("Archaeologist", "Artifacts recovered", (50, 500, 1000), "artifacts"),
+    "artifacts":    ("Archaeologist", "Artifacts recovered", (10, 100, 500), "artifacts"),
     "repairs":      ("Mechanic", "Mines repaired", (1000, 50000, 100000), "repairs"),
     "streak":       ("Quest solver", "Daily quest streak", (7, 30, 90), "days"),
-    "warehouse":    ("Storekeeper", "Warehouse level", (10, 100, 500), ""),
-    "level":        ("Experience", "Player level", (10, 100, 500), ""),
+    "warehouse":    ("Storekeeper", "Warehouse level", (10, 50, 100), ""),
+    "level":        ("Experience", "Player level", (20, 60, 100), ""),
 }
 TIER_NAMES = ("First star", "Second star", "Third star")
 # short score label shown as "<label>: value / target"
 LABELS = {
     "hq_level": "HQ level", "hq_influence": "Mines in HQ area", "age": "Days", "balance": "Credits",
-    "points": "Points", "luxury_points": "Luxury points", "gambler": "Five of a kind", "decadence": "Luxury items",
+    "points": "Points", "luxury_points": "Luxury points", "gambler": "Four of a kind+", "decadence": "Luxury items",
     "factories": "Factory levels", "hoarder": "Mines", "attacker": "Attacks won", "friend": "Repairs for others",
     "special": "Upgrades", "artifacts": "Artifacts", "repairs": "Repairs", "streak": "Streak days",
     "warehouse": "Warehouse level", "level": "Level",
@@ -68,7 +68,7 @@ def metrics(conn, h, hid) -> dict:
     # leaderboard points (same formula as the overall board)
     days = _one(conn, "SELECT COUNT(*) FROM player_activity WHERE hid=? AND day>=?",
                 (hid, (now - datetime.timedelta(days=min(max(age, 1), 100))).strftime("%Y-%m-%d")))
-    points = round((p["xp"] or 0) * 2 * min(1.0, days / min(max(age, 1), 100)))
+    points = round((p["xp"] or 0) * min(1.0, days / min(max(age, 1), 100)))      # same as the board
     special = set(h.SPECIAL_BUILDINGS)
     fac = conn.execute("SELECT item_id, level FROM factories WHERE hid=?", (hid,)).fetchall()
     return {
@@ -78,7 +78,7 @@ def metrics(conn, h, hid) -> dict:
         "balance": int(p["credits"] or 0),
         "points": points,
         "luxury_points": _one(conn, "SELECT points FROM luxury_points WHERE hid=?", (hid,)),
-        "gambler": _one(conn, "SELECT COUNT(*) FROM casino_dividends WHERE spinner=?", (hid,)),
+        "gambler": _one(conn, "SELECT value FROM news_counters WHERE hid=? AND key='casino_four_plus'", (hid,)),
         "decadence": _one(conn, "SELECT SUM(qty) FROM luxury_items WHERE hid=?", (hid,)),
         "factories": sum(r[1] or 0 for r in fac if r[0] not in special),
         "hoarder": _one(conn, "SELECT COUNT(*) FROM mines WHERE owner_hid=?", (hid,)),

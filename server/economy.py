@@ -76,8 +76,8 @@ FACTORIES = {
     118: ("Drone Shipyard", 117, 60, 1, {66: 25, 51: 50, 93: 250}, 25_000_000, 1, 2_000_000_000, {7: 80000, 57: 120000, 59: 40000}),
     165: ("Detector Factory", 166, 60, 5, {93: 50, 66: 30, 171: 50}, 50_000_000, 1, 2_000_000_000, {7: 40000, 93: 1000, 59: 40000}),
 }
-# owner 2026-10-23: drones and detectors keep their market prices
-FIXED_PRICES = {117: 1333, 166: 3_200_000}
+# owner 2026-10-23: drones, detectors and trucks are priced like every product (and stay on the market)
+FIXED_PRICES: dict = {}
 
 
 def margin(unlock: int) -> float:
@@ -249,8 +249,9 @@ OTHER_PRICES = {
     # units: watch dogs, security staff, elite force / attack dogs, gangsters, private army
     95: 1_500, 97: 15_000, 98: 40_000, 102: 2_000, 103: 20_000, 104: 50_000,
     # archaeologists, artifacts (rarer = dearer)
-    167: 10_000, 172: 10_000_000, 173: 30_000_000, 174: 15_000_000, 175: 20_000_000, 176: 50_000_000,
-    177: 15_000_000,
+    # artifacts: dearer than the detector used to find them (≈ 88 M), rarer = dearer
+    167: 10_000, 172: 200_000_000, 173: 600_000_000, 174: 300_000_000, 175: 400_000_000, 176: 1_200_000_000,
+    177: 300_000_000,
 }
 
 

@@ -148,7 +148,7 @@ class _HeadquartersScreenState extends State<HeadquartersScreen> {
                   child: _placing
                       ? const SizedBox(width: 14, height: 14,
                           child: CircularProgressIndicator(strokeWidth: 2))
-                      : Text('Move HQ (ꞓ${fmtNum(25000 * hq.level * hq.level)})', style: const TextStyle(fontSize: 12)),
+                      : const Text('Move HQ (free, once a day)', style: TextStyle(fontSize: 12)),
                 ),
               ]),
             ),

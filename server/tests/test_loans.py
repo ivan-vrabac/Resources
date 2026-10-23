@@ -1,3 +1,5 @@
+import zlib
+import json
 """Phase 7: loan eligibility, rating, 10–30 day terms, funding once, repayment, 30-day overdue
 garnishment of sales / mining / factory output, forgiveness and rating reset to D."""
 import datetime
@@ -5,7 +7,7 @@ import threading
 
 import econ
 import main
-from helpers import call, credits, new_player
+from helpers import client, call, credits, new_player
 from systems import loans as L
 
 R = "/api/v1/loans/"
@@ -99,7 +101,9 @@ def test_fund_once_repay_and_history():
     assert r["closed"] and r["loan"]["status"] == "repaid"
     assert credits(lender) == before + loan["total"] and credits(b_hid) == 0
     hist = call(R + "mine", lender_sid)
-    assert hist["lent"][0]["id"] == loan["id"] and b_hid not in str(hist)
+    assert hist["lent"] == [] and b_hid not in str(hist)                # finished: only in the log now
+    log = json.loads(zlib.decompress(client.post("/flut23/protokollGetData.php", data={"sid": lender_sid}).content))
+    assert any(e["type"] == "loanrepaid" for e in log["entries"])
 
 
 def test_overdue_garnishes_half_of_sales_and_output_then_forgives():
@@ -124,8 +128,10 @@ def test_overdue_garnishes_half_of_sales_and_output_then_forgives():
     assert abs(kept - (1000 - paid / main.SYSTEM_PRICES[2])) < 0.01 and credits(lender) == lc + 5_000 + paid
     assert call(R + "mine", b_sid)["borrowed"][0]["repaid"] == 5_000 + paid
     _shift_due(loan["id"], L.GRACE_DAYS + 1)
-    st = call(R + "mine", b_sid)["borrowed"][0]
-    assert st["status"] == "forgiven" and st["outstanding"] == 0
+    call(R + "status", b_sid)                                     # runs the sweep
+    assert call(R + "mine", b_sid)["borrowed"] == []                  # forgiven: gone from "My loans"
+    with main.get_db() as conn:
+        assert conn.execute("SELECT status FROM loans WHERE id=?", (loan["id"],)).fetchone()[0] == "forgiven"
     with main.get_db() as conn:                                  # no more garnishment after forgiveness
         with econ.tx(conn):
             econ.credit(conn, b_hid, 10_000, "system_sell")

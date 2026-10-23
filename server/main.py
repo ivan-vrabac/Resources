@@ -320,7 +320,7 @@ SPECIAL_BUILDINGS = {
     122: {
         "name": "HR Department",
         "max_level": 10,
-        "desc": "Keeps your workforce content. Strikes and claims are not in the game yet.",
+        "desc": "Keeps your workforce content, so strikes break out less often and cost you less.",
         "costs": [
             {"credits": 1000000,   "res": {36: 50,    98: 1,   66: 50}},
             {"credits": 4000000,   "res": {36: 200,   98: 2,   66: 200}},
@@ -1917,7 +1917,7 @@ async def auth_session(request: Request):
             if problem:
                 return json_resp({"error": "weak_password", "message": problem})
             hid = new_hid()
-            conn.execute("INSERT INTO players(hID,company_name,credits) VALUES(?,?,?)", (hid, canon, STARTING_CREDITS))
+            conn.execute("INSERT INTO players(hID,company_name,credits,wa) VALUES(?,?,?,100)", (hid, canon, STARTING_CREDITS))
             auth.set_password(conn, hid, password)
             created = True
         else:
@@ -2899,7 +2899,7 @@ async def hq_get_markers(request: Request):
 @app.post("/flut23/HQNewPosition.php")
 async def hq_new_position(request: Request):
     """Place or move the HQ. Owner 2026-10-23: checked against the player's GPS (within
-    HQ_PLACE_RANGE_M), placing costs HQ_COST, moving costs HQ_MOVE_COST × level² once a day."""
+    HQ_PLACE_RANGE_M, travel-speed check), placing costs HQ_COST, moving is free once a day."""
     _, form = await read_form(request)
     hid = hid_from_sid(form.get("sid", ""))
     try:
@@ -2923,8 +2923,7 @@ async def hq_new_position(request: Request):
                     moved = conn.execute("SELECT hq_moved_at FROM players WHERE hID=?", (hid,)).fetchone()[0]
                     if moved and now - datetime.datetime.fromisoformat(moved) < datetime.timedelta(hours=HQ_MOVE_HOURS):
                         raise econ.GameError("cooldown", f"The HQ can be moved once every {HQ_MOVE_HOURS} hours")
-                    cost = HQ_MOVE_COST * existing["level"] ** 2
-                    econ.debit(conn, hid, cost, "hq_move")
+                    cost = 0                  # owner 2026-10-23: moving is free (once a day, GPS-checked)
                     conn.execute("UPDATE hq SET lat=?,lng=? WHERE hid=?", (lat, lng, hid))
                 else:
                     cost = HQ_COST
@@ -2938,7 +2937,7 @@ async def hq_new_position(request: Request):
     return zlib_resp({"err": 0, "cost": cost})
 
 HQ_COST = 5000
-HQ_MOVE_COST = 25_000
+HQ_MOVE_COST = 0
 HQ_MOVE_HOURS = 24
 HQ_PLACE_RANGE_M = 500
 
@@ -3699,7 +3698,7 @@ async def leaderboard(request: Request):
                     (r["hID"], cutoff_100, today)).fetchone()[0]
                 activity = active_days / 100.0
             activity = min(1.0, activity)
-            score = round(xp * 2 * activity)
+            score = round(xp * activity)        # points = XP × activity (owner 2026-10-23)
             scored.append({
                 "hID": public_refs(conn, {r["hID"]}, hid)[r["hID"]],
                 "name": r["company_name"],
@@ -4183,6 +4182,11 @@ async def casino_new_roll(request: Request):
                     last_hand    = hand
                     last_win     = win
 
+                big = hand_counts.get("four_of_a_kind", 0) + hand_counts.get("five_of_a_kind", 0) \
+                    + hand_counts.get("jackpot", 0)
+                if big:                                  # achievement "Gambler" (four of a kind or better)
+                    conn.execute("INSERT INTO news_counters(hid, key, value) VALUES(?, 'casino_four_plus', ?) "
+                                 "ON CONFLICT(hid, key) DO UPDATE SET value = value + excluded.value", (hid, big))
                 # Increment jackpot by 1M per spin (unless won this batch)
                 if jackpot_won:
                     conn.execute("UPDATE jackpot SET amount=? WHERE id=1", (jackpot_amt,))

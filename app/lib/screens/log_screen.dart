@@ -69,6 +69,7 @@ class _LogScreenState extends State<LogScreen> {
     'scan','newmine','demolish','repair','repairkit','lagerupgrade','hq',
     'buyfactory','factcollect','marketsell','marketbuy','marketsold',
     'mineupgrade','techupgrade','accident','strikesettled',
+    'loanrequested','loancancelled','loanfunded','loanlent','loanrepaid','loanforgiven',
   }.contains(t);
 
   List<dynamic> get _filtered {
@@ -201,6 +202,8 @@ class _LogScreenState extends State<LogScreen> {
       case 'techupgrade': return Icons.settings_suggest;
       case 'accident': return Icons.warning_amber;
       case 'strikesettled': return Icons.handshake_outlined;
+      case 'loanrequested': case 'loancancelled': case 'loanfunded': case 'loanlent': case 'loanrepaid':
+      case 'loanforgiven': return Icons.account_balance_wallet_outlined;
       default: return Icons.info_outline;
     }
   }
@@ -240,6 +243,14 @@ class _LogScreenState extends State<LogScreen> {
             'earthquake': 'Earthquake damage'}[data['kind']] ?? 'Accident';
         final p = (data['penalty'] as num? ?? 0).toInt();
         return p > 0 ? '$what. Penalty: ꞓ${fmtNum(p)}' : what;
+      case 'loanrequested': return 'Requested a loan of ꞓ${fmtNum((data['principal'] as num? ?? 0).toInt())} for ${data['termDays']} days';
+      case 'loancancelled': return 'Cancelled a loan request';
+      case 'loanfunded': return 'Your loan of ꞓ${fmtNum((data['principal'] as num? ?? 0).toInt())} was funded';
+      case 'loanlent': return 'Lent ꞓ${fmtNum((data['principal'] as num? ?? 0).toInt())} (you get back ꞓ${fmtNum((data['total'] as num? ?? 0).toInt())})';
+      case 'loanrepaid': return data['borrowed'] == true
+          ? 'Repaid your loan in full (ꞓ${fmtNum((data['total'] as num? ?? 0).toInt())})'
+          : 'A loan you gave was repaid in full (ꞓ${fmtNum((data['total'] as num? ?? 0).toInt())})';
+      case 'loanforgiven': return 'Loan forgiven after the grace period';
       case 'strikesettled': return data['how'] == 'pay'
           ? 'Strike ended: workers paid ꞓ${fmtNum((data['paid'] as num? ?? 0).toInt())}'
           : 'Strike broken up by ${data['units'] ?? ''} security staff';

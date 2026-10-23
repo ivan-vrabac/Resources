@@ -143,6 +143,12 @@ def rating_of(conn, hid, now):
                            "resetUntil": reset_until}
 
 
+def max_for_term(available: int, term: int) -> int:
+    """Longer terms allow bigger loans: the full available amount at MAX_TERM days, a third at 10."""
+    term = max(MIN_TERM, min(MAX_TERM, int(term)))
+    return int(available * term / MAX_TERM)
+
+
 def ladder_row(rating):
     return next((r for r in LADDER if r[0] == rating), None)
 
@@ -340,8 +346,9 @@ def install(api) -> None:
         now = econ.utcnow()
         with econ.tx(conn):
             maybe_sweep(conn, now)
-        b = conn.execute("SELECT * FROM loans WHERE borrower=? ORDER BY created_at DESC LIMIT 100", (hid,)).fetchall()
-        l = conn.execute("SELECT * FROM loans WHERE lender=? ORDER BY funded_at DESC LIMIT 100", (hid,)).fetchall()
+        live = "status IN ('open','active','overdue')"
+        b = conn.execute(f"SELECT * FROM loans WHERE borrower=? AND {live} ORDER BY created_at DESC LIMIT 100", (hid,)).fetchall()
+        l = conn.execute(f"SELECT * FROM loans WHERE lender=? AND {live} ORDER BY funded_at DESC LIMIT 100", (hid,)).fetchall()
         return {"err": 0, "borrowed": [view(conn, r, hid) for r in b], "lent": [view(conn, r, hid) for r in l]}
 
     @api.endpoint("/api/v1/loans/request", feature="LOANS")
@@ -358,8 +365,9 @@ def install(api) -> None:
             lim = limits(conn, hid, now)
             if not lim["eligible"]:
                 raise econ.GameError("not_eligible", lim["reason"])
-            if principal > lim["available"]:
-                raise econ.GameError("over_limit", f"You can borrow at most {lim['available']:,} credits")
+            cap = max_for_term(lim["available"], term)
+            if principal > cap:
+                raise econ.GameError("over_limit", f"For {term} days you can borrow at most {cap:,} credits")
             interest = int(round(principal * lim["weeklyRate"] * term / 7))
             lid = uuid.uuid4().hex
             conn.execute("INSERT INTO loans(id, borrower, principal, interest, term_days, rating, status, created_at, expires_at) "
@@ -367,6 +375,7 @@ def install(api) -> None:
                          (lid, hid, principal, interest, term, lim["rating"], now.isoformat(),
                           (now + datetime.timedelta(hours=REQUEST_HOURS)).isoformat()))
             loan = conn.execute("SELECT * FROM loans WHERE id=?", (lid,)).fetchone()
+            h.add_proto(conn, hid, "loanrequested", {"loan": lid, "principal": principal, "termDays": term})
             return {"err": 0, "loan": view(conn, loan, hid)}
 
     @api.endpoint("/api/v1/loans/cancel", feature="LOANS")
@@ -377,6 +386,7 @@ def install(api) -> None:
                                (econ.utcnow_iso(), lid, hid))
             if cur.rowcount != 1:
                 raise econ.GameError("gone", "This request can no longer be cancelled")
+            h.add_proto(conn, hid, "loancancelled", {"loan": lid})
         return {"err": 0}
 
     @api.endpoint("/api/v1/loans/fund", feature="LOANS")
@@ -399,6 +409,7 @@ def install(api) -> None:
             econ.credit(conn, loan["borrower"], loan["principal"], "loan_received", lid)
             econ.emit(conn, "loan_funded", hid, {"loan": lid, "principal": loan["principal"]}, public=False)
             h.add_proto(conn, loan["borrower"], "loanfunded", {"loan": lid, "principal": loan["principal"]})
+            h.add_proto(conn, hid, "loanlent", {"loan": lid, "principal": loan["principal"], "total": total_due(loan)})
             loan = conn.execute("SELECT * FROM loans WHERE id=?", (lid,)).fetchone()
             out = {"err": 0, "loan": view(conn, loan, hid)}
         try:
@@ -425,4 +436,8 @@ def install(api) -> None:
             amount = min(amount, outstanding)
             res = _pay(conn, loan, amount, now)
             loan = conn.execute("SELECT * FROM loans WHERE id=?", (lid,)).fetchone()
+            if res["closed"]:                 # finished loans leave "My loans" and stay in the log
+                for who in (loan["borrower"], loan["lender"]):
+                    h.add_proto(conn, who, "loanrepaid", {"loan": lid, "total": total_due(loan),
+                                                          "borrowed": who == loan["borrower"]})
             return {"err": 0, **res, "loan": view(conn, loan, hid)}

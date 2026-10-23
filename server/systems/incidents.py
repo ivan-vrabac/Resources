@@ -4,7 +4,12 @@ Working atmosphere 0–100 % per company:
 - every factory that has been idle for more than 24 h costs 2 points per idle day;
 - every claimed daily quest gives +WA_QUEST;
 - every accident costs points (WA_HIT); a won attack −0.1, a lost attack −10 (systems/combat.py);
-- a company without mines and factories always has 100 %.
+- a company without mines and factories has nothing to go wrong: it keeps its WA (100 % for new
+  companies) and only attacks change it.
+- accidents only happen from player level ACCIDENT_MIN_LEVEL (50); beginners are never affected.
+- protective buildings cut the chance AND the impact: Hospital (disease), Fire Station (fire),
+  HR Department (strikes, also the strike cost), Seismology Centre (earthquakes); the Law Firm cuts
+  every penalty.
 
 Accidents happen per day (checked when the player is online, catching up at most CATCH_UP_DAYS):
 the chance per factory (fire, strike) and per company (mine disease outbreak) is
@@ -30,6 +35,7 @@ import protection
 from . import int_arg
 
 HR_DEPARTMENT = 122
+ACCIDENT_MIN_LEVEL = 50             # owner 2026-10-23: accidents start at player level 50
 SECURITY_STAFF = 97
 P_AT_100, P_AT_0 = 0.01, 0.10
 CATCH_UP_DAYS = 7
@@ -86,12 +92,25 @@ def install(api) -> None:
         return sum(h.SYSTEM_PRICES.get(r[0], 0) * float(r[1] or 0)
                    for r in conn.execute("SELECT item_id, qty FROM warehouse WHERE hid=? AND qty>0", (hid,)))
 
+    def impact_factor(conn, hid, kind) -> float:
+        if kind == "disease":
+            return protection.disease_factor(h.building_level(conn, hid, protection.HOSPITAL))
+        if kind == "fire":
+            return protection.fire_factor(h.building_level(conn, hid, protection.FIRE_STATION))
+        if kind == "strike":
+            return hr_factor(h.building_level(conn, hid, HR_DEPARTMENT))
+        if kind == "earthquake":
+            return protection.quake_factor(h.building_level(conn, hid, protection.SEISMOLOGY))
+        return 1.0
+
     def penalty(conn, hid, kind, target=None, data=None) -> int:
         """Charge an accident penalty (may make the balance negative) and log it. Inside a tx."""
         wa = wa_of(conn, hid)
         cr = max(0.0, econ.credits_of(conn, hid))
         share = PENALTY_MIN + (PENALTY_MAX - PENALTY_MIN) * (1 - wa / 100)
         amount = (share * cr + PENALTY_WAREHOUSE * warehouse_value(conn, hid))
+        # the matching protective building cuts the impact (as well as the chance), the Law Firm every penalty
+        amount *= impact_factor(conn, hid, kind)
         amount *= protection.law_firm_factor(h.building_level(conn, hid, protection.LAW_FIRM))
         amount = int(round(amount))
         if amount > 0:   # unconditional: the balance may go below zero (owner's rule)
@@ -108,8 +127,7 @@ def install(api) -> None:
         mines = conn.execute("SELECT COUNT(*) FROM mines WHERE owner_hid=?", (hid,)).fetchone()[0]
         plain = [f for f in facs if f["item_id"] not in h.SPECIAL_BUILDINGS]
         if not plain and mines == 0:
-            conn.execute("UPDATE players SET wa=100 WHERE hID=?", (hid,))
-            return
+            return                      # nothing to go wrong: WA only changes by attacks (owner 2026-10-23)
         end_of_day = datetime.datetime.combine(day, datetime.time(23, 59, 59))
         # idle factories: −2 per factory idle for more than 24 h
         idle = 0
@@ -124,6 +142,9 @@ def install(api) -> None:
                 idle += 1
         if idle:
             h.change_wa(conn, hid, -IDLE_WA_PER_DAY * idle, "idle")
+        level = conn.execute("SELECT level FROM players WHERE hID=?", (hid,)).fetchone()[0] or 1
+        if level < ACCIDENT_MIN_LEVEL:  # beginners are not affected by accidents
+            return
         p = accident_chance(wa_of(conn, hid))
         fire_f = protection.fire_factor(h.building_level(conn, hid, protection.FIRE_STATION))
         strike_f = hr_factor(h.building_level(conn, hid, HR_DEPARTMENT))
@@ -134,7 +155,7 @@ def install(api) -> None:
                 continue
             if rng.random() < p * strike_f:
                 up = h.economy.factory_upgrade(f["item_id"], max(1, f["level"]))["credits"]
-                cost = max(10_000, int(up * STRIKE_COST_SHARE * law))
+                cost = max(10_000, int(up * STRIKE_COST_SHARE * law * strike_f))     # HR cuts the cost too
                 conn.execute("UPDATE factories SET strike_at=?, strike_cost=? WHERE factory_id=?",
                              (econ.utcnow_iso(), cost, f["factory_id"]))
                 penalty(conn, hid, "strike", f["factory_id"], {"itemID": f["item_id"]})

@@ -48,7 +48,8 @@ def _overall(conn):
         except (TypeError, ValueError):
             age = 1
         activity = min(1.0, act_all.get(r["hID"], 0) / age if age < 100 else act_100.get(r["hID"], 0) / 100.0)
-        rows.append((round((r["xp"] or 0) * 2 * activity), round(activity * 100), r["hID"], r["level"], r["country_code"]))
+        # points = XP × activity (share of days active, last 100 days) — owner 2026-10-23
+        rows.append((round((r["xp"] or 0) * activity), round(activity * 100), r["hID"], r["level"], r["country_code"]))
     rows.sort(key=lambda x: -x[0])
     return rows
 

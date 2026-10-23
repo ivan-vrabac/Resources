@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/player_provider.dart';
@@ -7,7 +8,6 @@ import '../widgets/top_banner.dart';
 
 import '../app_colors.dart';
 import '../widgets/popups.dart';
-import '../constants.dart' show fmtNum;
 /// Loans: your credit rating and limit, open loan requests from other players (lend), and your
 /// borrowing/lending history with repayment.
 class LoansScreen extends StatefulWidget {
@@ -126,104 +126,122 @@ class _LoansScreenState extends State<LoansScreen> {
     );
   }
 
+  /// Longer terms allow bigger loans (server: loans.max_for_term): all of it at 30 days, a third at 10.
+  int _maxForTerm(int available, int term, int maxTerm) => (available * term / maxTerm).floor();
+
   Future<void> _requestDialog() async {
     final s = _status!;
-    final ctl = TextEditingController();
-    var term = (s['minTerm'] as num? ?? 10).toInt();
+    final minTerm = (s['minTerm'] as num? ?? 10).toInt(), maxTerm = (s['maxTerm'] as num? ?? 30).toInt();
+    final minP = (s['minPrincipal'] as num? ?? 10000).toInt();
+    final available = (s['available'] as num? ?? 0).toInt();
+    final rate = (s['weeklyRate'] as num? ?? 0).toDouble();
+    var term = maxTerm;
+    var amount = max(minP, _maxForTerm(available, term, maxTerm));
     final ok = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(builder: (ctx, set) {
-        final p = int.tryParse(ctl.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
-        final interest = (p * (s['weeklyRate'] as num) * term / 7).round();
+        final cap = _maxForTerm(available, term, maxTerm);
+        final possible = cap >= minP;
+        if (possible) amount = amount.clamp(minP, cap);
+        final interest = (amount * rate * term / 7).round();
+        // 100 steps between the minimum and the maximum for this term, whole thousands
+        final steps = possible ? max(1, min(100, (cap - minP) ~/ 1000)) : 1;
         return AlertDialog(
           title: const Text('Request a loan'),
-          content: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextField(
-              controller: ctl,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(labelText: 'Amount',
-                  helperText: 'max ${fmtCredits(s['available'] as num)}, min ${fmtCredits(s['minPrincipal'] as num)}'),
-              onChanged: (_) => set(() {}),
-            ),
-            const SizedBox(height: 8),
-            Text('Term: $term days'),
+          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Pay back within $term days', style: const TextStyle(fontWeight: FontWeight.bold)),
             Slider(
-              value: term.toDouble(),
-              min: (s['minTerm'] as num? ?? 10).toDouble(),
-              max: (s['maxTerm'] as num? ?? 30).toDouble(),
-              divisions: ((s['maxTerm'] as num? ?? 30) - (s['minTerm'] as num? ?? 10)).toInt(),
-              label: '$term days',
+              value: term.toDouble(), min: minTerm.toDouble(), max: maxTerm.toDouble(),
+              divisions: maxTerm - minTerm, label: '$term days',
               onChanged: (v) => set(() => term = v.round()),
             ),
-            const SizedBox(height: 8),
-            Text('Interest ${fmtCredits(interest)} · repay ${fmtCredits(p + interest)}'),
+            Text('A longer term allows a bigger loan.', style: TextStyle(fontSize: 11, color: AppColors.t54)),
+            const SizedBox(height: 12),
+            if (!possible)
+              Text('For $term days you can borrow at most ${fmtCredits(cap)}, below the minimum of ${fmtCredits(minP)}. '
+                  'Choose a longer term.', style: const TextStyle(color: Colors.orangeAccent))
+            else ...[
+              Text('Amount: ${fmtCredits(amount)}', style: const TextStyle(fontWeight: FontWeight.bold)),
+              Slider(
+                value: amount.toDouble(), min: minP.toDouble(), max: max(minP + 1, cap).toDouble(),
+                divisions: steps, label: fmtCredits(amount),
+                onChanged: (v) => set(() => amount = ((v / 1000).round() * 1000).clamp(minP, cap)),
+              ),
+              Text('${fmtCredits(minP)} … ${fmtCredits(cap)}', style: TextStyle(fontSize: 11, color: AppColors.t54)),
+              const SizedBox(height: 12),
+              Text('Interest ${fmtCredits(interest)} (${(rate * 100).toStringAsFixed(1)}% per week)'),
+              Text('You repay ${fmtCredits(amount + interest)}', style: const TextStyle(fontWeight: FontWeight.bold)),
+            ],
           ]),
           actions: [
             TextButton(onPressed: () => popIfCurrent(ctx, false), child: const Text('Cancel')),
-            FilledButton(onPressed: p <= 0 ? null : () => popIfCurrent(ctx, true), child: const Text('Request')),
+            FilledButton(onPressed: possible ? () => popIfCurrent(ctx, true) : null, child: const Text('Request')),
           ],
         );
       }),
     );
     if (ok != true) return;
-    final p = int.tryParse(ctl.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
-    await _act('/api/v1/loans/request', {'principal': p, 'termDays': term}, 'Loan request published');
+    await _act('/api/v1/loans/request', {'principal': amount, 'termDays': term}, 'Loan request published');
   }
 
-  /// Global, anonymous loan market figures (server: /api/v1/loans/stats).
-  Widget _marketCard() {
+  /// Global loan market figures (server: /api/v1/loans/stats), one per row.
+  Future<void> _marketInfo() async {
     final st = _stats;
-    if (st == null) return const SizedBox.shrink();
-    Widget cell(String label, String value) => Expanded(child: Column(children: [
-          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
-          Text(label, style: const TextStyle(fontSize: 10), textAlign: TextAlign.center),
-        ]));
-    String c(Object? v) => 'ꞓ${fmtNum((v as num? ?? 0).toInt())}';
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Loan market', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Row(children: [
-            cell('active loans', '${st['activeLoans']}'),
-            cell('outstanding', c(st['outstanding'])),
-            cell('overdue', '${st['overdue']}'),
-          ]),
-          const SizedBox(height: 8),
-          Row(children: [
-            cell('lent in total', c(st['totalLent'])),
-            cell('defaults', '${st['defaults']} (${c(st['defaultedAmount'])})'),
-            cell('repaid', '${st['repaidLoans']}'),
-          ]),
-          const SizedBox(height: 8),
-          Row(children: [
-            cell('average loan', c(st['averageLoan'])),
-            cell('median loan', c(st['medianLoan'])),
-            cell('average rating', '${st['averageRating'] ?? '—'}'),
-          ]),
-        ]),
-      ),
+    if (st == null) return;
+    String c(Object? v) => fmtCredits((v as num? ?? 0).toInt());
+    final rows = <(String, String)>[
+      ('Active loans', '${st['activeLoans']}'),
+      ('Outstanding (still to repay)', c(st['outstanding'])),
+      ('Overdue loans', '${st['overdue']}'),
+      ('Open requests', '${st['openRequests']} (${c(st['requested'])})'),
+      ('Lent in total', c(st['totalLent'])),
+      ('Loans funded', '${st['loansFunded']}'),
+      ('Repaid loans', '${st['repaidLoans']}'),
+      ('Defaults', '${st['defaults']}'),
+      ('Defaulted amount', c(st['defaultedAmount'])),
+      ('Average loan', c(st['averageLoan'])),
+      ('Median loan', c(st['medianLoan'])),
+      ('Average rating (active loans)', '${st['averageRating'] ?? '—'}'),
+    ];
+    await showAppSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(child: ListView(shrinkWrap: true, padding: const EdgeInsets.all(16), children: [
+        const Text('Loan market', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        for (final (k, v) in rows)
+          ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text(k),
+              trailing: Text(v, style: const TextStyle(fontWeight: FontWeight.bold))),
+      ])),
     );
   }
+
+  Widget _marketButton() => Align(
+        alignment: Alignment.centerLeft,
+        child: OutlinedButton.icon(
+          icon: const Icon(Icons.info_outline, size: 18),
+          label: const Text('Loan market info'),
+          onPressed: _stats == null ? null : _marketInfo,
+        ),
+      );
 
   Widget _lendTab() {
     final reqs = (_market!['requests'] as List).cast<Map<String, dynamic>>();
     if (reqs.isEmpty) {
       return RefreshIndicator(onRefresh: _load,
-          child: ListView(padding: const EdgeInsets.all(8), children: [_marketCard(), const Padding(padding: EdgeInsets.all(24),
+          child: ListView(padding: const EdgeInsets.all(8), children: [_marketButton(), const Padding(padding: EdgeInsets.all(24),
               child: Text('No open loan requests right now.', textAlign: TextAlign.center))]));
     }
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(padding: const EdgeInsets.all(8), children: [
-        _marketCard(),
+        _marketButton(),
         for (final l in reqs)
           Card(
             child: ListTile(
               leading: CircleAvatar(child: Text(l['rating'] as String, style: const TextStyle(fontSize: 11))),
               title: Text('${fmtCredits(l['principal'] as num)} for ${l['term_days']} days'),
-              subtitle: Text('Anonymous company · risk ${l['risk']}\n'
+              subtitle: Text('Risk ${l['risk']}\n'
                   'You get back ${fmtCredits(l['total'] as num)} (+${fmtCredits(l['interest'] as num)})'),
               isThreeLine: true,
               trailing: FilledButton(
@@ -241,7 +259,7 @@ class _LoansScreenState extends State<LoansScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Lend ${fmtCredits(l['principal'] as num)}?'),
-        content: Text('Anonymous borrower · rating ${l['rating']}, risk ${l['risk']}.\n'
+        content: Text('Rating ${l['rating']}, risk ${l['risk']}.\n'
             'Repayment of ${fmtCredits(l['total'] as num)} is due ${l['term_days']} days after funding. '
             'If it is late, 50% of the borrower\'s output and sales go to you for 30 days; whatever is still '
             'unpaid after that is forgiven.'),
@@ -267,20 +285,38 @@ class _LoansScreenState extends State<LoansScreen> {
     Widget tile(Map<String, dynamic> x, bool borrowed) {
       final open = x['status'] == 'open';
       final owes = ['active', 'overdue'].contains(x['status']) && (x['outstanding'] as num) > 0;
+      final status = x['status'] as String;
       return Card(
-        child: ListTile(
-          title: Text('${fmtCredits(x['principal'] as num)} · ${x['term_days']} days · ${x['rating']}'),
-          subtitle: Text('${borrowed ? 'Borrowed' : 'Lent'} · anonymous\n'
-              'Repaid ${fmtCredits(x['repaid'] as num)} of ${fmtCredits(x['total'] as num)}'
-              '${x['due_at'] != null ? ' · due ${(x['due_at'] as String).substring(0, 16).replaceFirst('T', ' ')} UTC' : ''}'),
-          isThreeLine: true,
-          trailing: borrowed && owes
-              ? FilledButton(onPressed: _busy ? null : () => _act('/api/v1/loans/repay', {'loanID': x['id']}, 'Repayment sent'),
-                  child: const Text('Repay'))
-              : borrowed && open
-                  ? TextButton(onPressed: _busy ? null : () => _act('/api/v1/loans/cancel', {'loanID': x['id']}, 'Request cancelled'),
-                      child: const Text('Cancel'))
-                  : Text(x['status'] as String, style: TextStyle(color: col(x['status'] as String))),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Expanded(child: Text('${fmtCredits(x['principal'] as num)} · ${x['term_days']} days',
+                  style: const TextStyle(fontWeight: FontWeight.bold))),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(color: col(status).withValues(alpha: 0.15), borderRadius: BorderRadius.circular(6)),
+                child: Text(open ? 'waiting for a lender' : status, style: TextStyle(color: col(status), fontSize: 11)),
+              ),
+            ]),
+            const SizedBox(height: 4),
+            Text('Rating ${x['rating']} · repaid ${fmtCredits(x['repaid'] as num)} of ${fmtCredits(x['total'] as num)}',
+                style: TextStyle(fontSize: 12, color: AppColors.t70)),
+            if (x['due_at'] != null)
+              Text('Due ${(x['due_at'] as String).substring(0, 16).replaceFirst('T', ' ')} UTC',
+                  style: TextStyle(fontSize: 12, color: AppColors.t54)),
+            if (borrowed && (owes || open)) ...[
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerRight,
+                child: owes
+                    ? FilledButton(onPressed: _busy ? null : () => _act('/api/v1/loans/repay', {'loanID': x['id']}, 'Repayment sent'),
+                        child: Text('Repay ${fmtCredits(x['outstanding'] as num)}'))
+                    : OutlinedButton(onPressed: _busy ? null : () => _act('/api/v1/loans/cancel', {'loanID': x['id']}, 'Request cancelled'),
+                        child: const Text('Cancel request')),
+              ),
+            ],
+          ]),
         ),
       );
     }
@@ -289,10 +325,10 @@ class _LoansScreenState extends State<LoansScreen> {
       onRefresh: _load,
       child: ListView(padding: const EdgeInsets.all(8), children: [
         Padding(padding: EdgeInsets.all(8), child: Text('Borrowed', style: TextStyle(color: AppColors.t54))),
-        if (b.isEmpty) const Padding(padding: EdgeInsets.all(8), child: Text('No loans yet.')),
+        if (b.isEmpty) const Padding(padding: EdgeInsets.all(8), child: Text('No running loans. Finished loans are in the log.')),
         for (final x in b) tile(x, true),
         Padding(padding: EdgeInsets.all(8), child: Text('Lent', style: TextStyle(color: AppColors.t54))),
-        if (l.isEmpty) const Padding(padding: EdgeInsets.all(8), child: Text('Nothing lent yet.')),
+        if (l.isEmpty) const Padding(padding: EdgeInsets.all(8), child: Text('No money lent right now.')),
         for (final x in l) tile(x, false),
       ]),
     );

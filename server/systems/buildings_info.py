@@ -24,14 +24,17 @@ def effects(h, item_id: int, lvl: int) -> list:
                 ("Objects that can be found",
                  ", ".join(n for _, (n, _, m) in sorted(cargo.BOX_LOOT.items(), key=lambda x: x[1][2]) if m <= lvl))]
     if item_id == 71:                                               # Hospital
-        return [("Disease chance", f"−{round((1 - protection.disease_factor(lvl)) * 100)}%"),
+        cut = f"−{round((1 - protection.disease_factor(lvl)) * 100)}%"
+        return [("Disease chance", cut), ("Disease penalty", cut),
                 ("Disease spread", f"−{round((1 - protection.spread_factor(lvl)) * 100)}%")]
     if item_id == 58:                                               # Recycling Plant
         return [("Recycling yield", f"{round((0.5 + 0.05 * lvl) * 100)}%")]
     if item_id == protection.SEISMOLOGY:
-        return [("Earthquake damage", f"−{round((1 - protection.quake_factor(lvl)) * 100)}%")]
+        cut = f"−{round((1 - protection.quake_factor(lvl)) * 100)}%"
+        return [("Earthquake damage", cut), ("Earthquake penalty", cut)]
     if item_id == protection.FIRE_STATION:
-        return [("Factory fire chance", f"−{round((1 - protection.fire_factor(lvl)) * 100)}%"),
+        cut = f"−{round((1 - protection.fire_factor(lvl)) * 100)}%"
+        return [("Factory fire chance", cut), ("Fire penalty", cut),
                 ("Fire duration", f"−{round((1 - protection.fire_duration_factor(lvl)) * 100)}%")]
     if item_id == HAULAGE:
         return [("Transport tax", f"{round(market.tax_rate(lvl) * 100)}%"),
@@ -44,12 +47,15 @@ def effects(h, item_id: int, lvl: int) -> list:
                 ("Loot", f"{lvl * combat.LOOT_HOURS_PER_LEVEL} h of output" if lvl else "—")]
     if item_id == 72:                                               # Law Firm
         cut = f"−{round((1 - protection.law_firm_factor(lvl)) * 100)}%"
-        return [("Mine disease duration", cut), ("Earthquake damage", cut), ("Factory fire duration", cut)]
+        return [("All accident penalties", cut), ("Mine disease duration", cut), ("Earthquake damage", cut),
+                ("Factory fire duration", cut)]
     if item_id == SERVICE_CENTER:
         return [("Reward per repair of others' mines", f"{lvl} h of the mine's output"),
                 ("Bonus crates", f"0 to {min(4, (lvl + 2) // 3)}")]
     if item_id == 122:                                              # HR Department
-        return [("Strikes and claims", "no strike mechanic in the game yet")]
+        from . import incidents
+        cut = f"−{round((1 - incidents.hr_factor(lvl)) * 100)}%"
+        return [("Strike chance", cut), ("Strike cost and penalty", cut)]
     if item_id == ARCH_CENTER:
         return [("Detection range", f"{archaeology.detect_range(lvl):.0f} m"),
                 ("Reveal range", f"{archaeology.reveal_range(lvl):.0f} m"),

@@ -325,7 +325,9 @@ def run_quake(conn, h, now, day=None) -> dict | None:
         # an earthquake is an accident for every company it damaged (penalty + WA, Law Firm softens it)
         if getattr(h, "PENALTY", None):
             for owner in damaged_owners:
-                h.PENALTY(conn, owner, "earthquake", day, {"day": day})
+                lvl = conn.execute("SELECT level FROM players WHERE hID=?", (owner,)).fetchone()
+                if lvl and (lvl[0] or 1) >= 50:           # beginners are not affected by accidents
+                    h.PENALTY(conn, owner, "earthquake", day, {"day": day})
         stats = {"affected_mines": len(hits), "damaged_mines": len(updates), "companies": len(damaged_owners),
                  "total_damage": round(total, 1), "max_damage": round(mx, 1), "below_20": below}
         conn.execute("UPDATE earthquakes SET status='done', affected_mines=?, damaged_mines=?, companies=?, "

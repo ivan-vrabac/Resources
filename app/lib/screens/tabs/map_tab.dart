@@ -2533,6 +2533,7 @@ class _MapTabState extends State<MapTab> {
   };
   // Future 10_N sub-level variants: progressively more global visibility.
   static const Map<int, double> _kHqSubLvlMinZoom = {
+    1: 8.0,   // own step between HQ 10 (9.0) and bonus level 2
     2: 7.0,
     3: 6.0,
     4: 5.0,

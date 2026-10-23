@@ -95,7 +95,7 @@ def test_resources_reserved_refunded_points_and_settlement():
     nxt = r1["auction"]["minBid"]
     assert call(R + "/bid", b_sid, auctionID=lot["id"], amount=nxt)["err"] == 0
     assert qty(a, res) == lot["minBid"] * 10                      # resources back
-    assert _points(a) == bid_pts                                  # bid points stay
+    assert _points(a) == 0                                        # outbid: bid points taken back
     _end(lot["id"])
     data = call(R, b_sid)
     assert len(data["active"]) == 1 and data["active"][0]["itemID"] != lot["itemID"]   # next item

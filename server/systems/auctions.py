@@ -26,6 +26,7 @@ inside the spin's transaction, recorded in casino_dividends and the ledger.
 from __future__ import annotations
 
 import datetime
+import math
 import random
 import uuid
 
@@ -74,13 +75,14 @@ HQ_LEVEL_REQUIRED = 10
 MAX_OWN = 10
 LOT_HOURS = 24                 # (old fixed length, kept for reference)
 LOT_HOURS_MIN, LOT_HOURS_MAX = 10, 16   # owner 2026-10-23: each lot runs a random 10-16 h
-START_VALUE = 1_000_000
+START_VALUE = 1_000_000_000    # HQ 10 companies are rich (HQ 10 alone needs ~15 T of resources)
 MIN_RAISE = 0.05
 EXTEND_S = 300
 SWEEP_S = 30
 BID_POINTS_PER = 100_000
 WIN_POINTS_BASE = 1_000
-WIN_POINTS_PER = 1_000
+WIN_POINTS_PER = 1_000         # (old linear rule, unused)
+WIN_POINTS_LOG = 1_000         # win: 1 000 + 1 000 × log10(1 + value / start value)
 DIVIDEND_PER_ITEM = 0.01
 
 _prices = {}
@@ -98,13 +100,19 @@ def start_qty(item) -> int:
     return max(1, int(round(START_VALUE / unit_value(BID_RESOURCE[item]))))
 
 
+def _value_steps(item, qty) -> float:
+    """log10 of the bid value in units of the start value: 1 at 9× the start, 2 at 99×."""
+    return math.log10(1 + qty * unit_value(BID_RESOURCE[item]) / START_VALUE)
+
+
 def points_for(item, qty) -> int:
     """Luxury points for placing a bid of `qty`."""
-    return int(qty * unit_value(BID_RESOURCE[item]) // BID_POINTS_PER)
+    # owner 2026-10-23: luxury points grow with the value, but only logarithmically (no endless inflation)
+    return 1 + int(10 * _value_steps(item, qty))
 
 
 def win_points(item, qty) -> int:
-    return WIN_POINTS_BASE + int(qty * unit_value(BID_RESOURCE[item]) // WIN_POINTS_PER)
+    return WIN_POINTS_BASE + int(WIN_POINTS_LOG * _value_steps(item, qty))
 
 
 def init_schema(conn) -> None:
@@ -353,6 +361,8 @@ def install(api) -> None:
             add_points(conn, hid, points_for(a["item_id"], amount))
             if a["top_hid"]:
                 econ.give(conn, a["top_hid"], res, a["top_bid"], "auction_refund", aid, ignore_capacity=True)
+                # bid points last only while you lead: outbid → they are taken back (no ping-pong farming)
+                add_points(conn, a["top_hid"], -points_for(a["item_id"], a["top_bid"]))
                 outbid = a["top_hid"]
                 h.add_proto(conn, outbid, "auctionoutbid", {"itemID": a["item_id"], "bid": amount, "resID": res})
             ends = datetime.datetime.fromisoformat(a["ends_at"])
