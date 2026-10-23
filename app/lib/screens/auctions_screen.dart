@@ -127,21 +127,26 @@ class _AuctionsScreenState extends State<AuctionsScreen> {
               Card(child: Padding(padding: const EdgeInsets.all(12),
                   child: Text('Bidding needs headquarters level ${d['hqRequired']} (yours: ${d['hqLevel']}).'))),
             for (final a in active) _lotCard(a, d),
-            if (recent.isNotEmpty)
-              Padding(padding: EdgeInsets.fromLTRB(8, 12, 8, 4),
-                  child: Text('Recently sold', style: TextStyle(color: AppColors.t54))),
-            for (final a in recent.take(10))
-              ListTile(
-                dense: true,
-                leading: ItemIcon((a['itemID'] as num).toInt(), size: 28),
-                title: Text(itemName((a['itemID'] as num).toInt())),
-                subtitle: Text('${(a['leader'] as Map?)?['name'] ?? '?'} · ${fmtQty(a['topBid'] as num)} '
-                    '${itemName((a['resID'] as num).toInt())}'),
-                onTap: () => _history((a['itemID'] as num).toInt()),
-              ),
+            // owner 2026-10-23: only the last sale here (each item's sales are in its sheet)
+            if (recent.isNotEmpty) ...[
+              Padding(padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
+                  child: Text('Last sold', style: TextStyle(color: AppColors.t54))),
+              Builder(builder: (_) {
+                final a = recent.first;
+                final ts = (a['settledAt'] as String? ?? '').replaceFirst('T', ' ');
+                return ListTile(
+                  dense: true,
+                  leading: ItemIcon((a['itemID'] as num).toInt(), size: 28),
+                  title: Text(itemName((a['itemID'] as num).toInt())),
+                  subtitle: Text('${(a['leader'] as Map?)?['name'] ?? '?'} · ${fmtQty(a['topBid'] as num)} '
+                      '${itemName((a['resID'] as num).toInt())} · ${ts.substring(0, min(16, ts.length))} UTC'),
+                  onTap: () => _history((a['itemID'] as num).toInt()),
+                );
+              }),
+            ],
             const Divider(),
             Padding(padding: EdgeInsets.all(8),
-                child: Text('Your luxury collection — when someone spins five of a kind of an item you hold in the '
+                child: Text('Your luxury collection: when someone spins five of a kind of an item you hold in the '
                     'casino, you get 1% of the jackpot per item you hold (up to 10 items = 10%).',
                     style: TextStyle(color: AppColors.t54, fontSize: 12))),
             GridView.count(
@@ -301,9 +306,6 @@ class _ItemHistorySheetState extends State<_ItemHistorySheet> {
                       style: TextStyle(color: AppColors.t54, fontSize: 12)),
                   SalesDotsChart(sales: (d['sales'] as List).cast<Map<String, dynamic>>()),
                   const SizedBox(height: 8),
-                  Text('Last sold', style: TextStyle(color: AppColors.t54, fontSize: 12)),
-                  _playerTile((d['sales'] as List).last as Map<String, dynamic>, d),
-                  const SizedBox(height: 4),
                   Text('Recently sold (past 365 days)', style: TextStyle(color: AppColors.t54, fontSize: 12)),
                   // five rows on screen, scroll for the rest
                   SizedBox(
