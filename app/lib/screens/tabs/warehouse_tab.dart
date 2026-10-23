@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/player_provider.dart';
@@ -54,7 +55,8 @@ class _WarehouseTabState extends State<WarehouseTab> {
     }
   }
 
-  static int _upgradeCost(int level) => 12500 * level * level;
+  /// Same as the server (economy.wh_upgrade_cost): 12 500 × L² × 1.03^L, rounded to 100.
+  static int _upgradeCost(int level) => ((12500 * level * level * pow(1.03, level)) / 100).round() * 100;
   static int _capAtLevel(int level) => 5000 * level * level;
 
   int _maxAffordableLevels(int credits) {
@@ -65,7 +67,7 @@ class _WarehouseTabState extends State<WarehouseTab> {
       if (total + cost > credits) break;
       total += cost;
       n++;
-      if (n >= 100) break;
+      if (n >= 1000) break;                     // the server's limit per request
     }
     return n;
   }
@@ -74,8 +76,7 @@ class _WarehouseTabState extends State<WarehouseTab> {
     final credits = context.read<PlayerProvider>().player?.credits ?? 0;
     final maxLevels = _maxAffordableLevels(credits);
     if (maxLevels == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Need ꞓ${fmtNum(_upgradeCost(_whLevel))} for next level')));
+      AppNotify.show(context, 'You need ꞓ${fmtNum(_upgradeCost(_whLevel))} for the next level', isError: true);
       return;
     }
 
@@ -129,11 +130,9 @@ class _WarehouseTabState extends State<WarehouseTab> {
                       : await ApiService.upgradeWarehouseMulti(sid, selectedLevels);
                   if (!mounted) return;
                   if (result == null || result['err'] != 0) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(result?['msg'] ?? 'Upgrade failed')));
+                    AppNotify.show(context, result?['msg'] as String? ?? 'Upgrade failed', isError: true);
                   } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Warehouse upgraded to Lv ${result['newLvl']}!')));
+                    AppNotify.show(context, 'Warehouse upgraded to level ${result['newLvl']}');
                     context.read<PlayerProvider>().refresh();
                     _load();
                   }

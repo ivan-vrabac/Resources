@@ -61,7 +61,7 @@ def test_luxury_board_and_company_sheet():
     set_building(a, 25, 2)                                       # brick factory
     board = call("/api/v1/rank/luxury", v_sid)
     top = board["rows"][0]
-    assert top["name"] == a_name and top["points"] == 999999 and top["items"][0]["itemID"] == 128
+    assert top["name"] == a_name and top["points"] == 999999 and top["itemCount"] >= 1 and "items" not in top
     pid = top["pid"]
     p = call("/api/v1/social/profile", v_sid, pid=pid)["profile"]
     assert p["ageDays"] == 0 and p["luxuryPoints"] == 999999

@@ -175,22 +175,9 @@ class _LuxuryBoardState extends _BoardState<_LuxuryBoard> {
     return AsyncView(loading: loading && data == null, error: error, onRetry: load, builder: () {
       final rows = (data!['rows'] as List).cast<Map<String, dynamic>>();
       return list(rows, (r) {
-        final items = (r['items'] as List).cast<Map<String, dynamic>>();
+        final n = (r['itemCount'] as num? ?? 0).toInt();     // just how many luxury items
         return _row(context, r, value: fmtNum((r['points'] as num).toInt()), unit: 'LP',
-            middle: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(children: [
-                for (final it in items)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      ItemIcon((it['itemID'] as num).toInt(), size: 20),
-                      if ((it['qty'] as num) > 1)
-                        Text('×${it['qty']}', style: TextStyle(fontSize: 10, color: AppColors.t54)),
-                    ]),
-                  ),
-              ]),
-            ));
+            middle: Text('$n luxury item${n == 1 ? '' : 's'}', style: TextStyle(fontSize: 12, color: AppColors.t70)));
       }, header: controls(note: 'Your luxury points: ${fmtNum((data!['myPoints'] as num).toInt())}'
           '${data!['myRank'] != null ? ' · #${data!['myRank']}' : ''}'));
     });

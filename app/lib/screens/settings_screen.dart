@@ -929,8 +929,7 @@ class _ChangePasswordDialogState extends State<_ChangePasswordDialog> {
       return;
     }
     popIfCurrent(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Password changed')));
+    AppNotify.show(context, 'Password changed');
   }
 
   Widget _field(TextEditingController c, String label) => Padding(
@@ -980,9 +979,8 @@ class _AppIconPageState extends State<_AppIconPage> {
     final ok = await LauncherIconService.select(id);
     if (!mounted) return;
     if (ok) setState(() => _current = id);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ok
-        ? 'Launcher icon changed. Your launcher may take a moment to update.'
-        : 'Could not change the launcher icon on this device.')));
+    AppNotify.show(context, ok ? 'Launcher icon changed. Your launcher may take a moment to update.'
+        : 'Could not change the launcher icon on this device.', isError: !ok);
   }
 
   @override

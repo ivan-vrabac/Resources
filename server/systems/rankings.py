@@ -139,9 +139,9 @@ def install(api) -> None:
         cc = countries(conn)
         out = []
         for n, r in part:
-            items = [{"itemID": x[0], "qty": int(x[1])} for x in conn.execute(
-                "SELECT item_id, qty FROM luxury_items WHERE hid=? AND qty>=1 ORDER BY qty DESC", (r[0],))]
-            out.append({"rank": n, **social.public_ref(conn, r[0]), "points": r[1], "items": items,
+            count = int(conn.execute("SELECT COALESCE(SUM(qty),0) FROM luxury_items WHERE hid=? AND qty>=1",
+                                     (r[0],)).fetchone()[0])
+            out.append({"rank": n, **social.public_ref(conn, r[0]), "points": r[1], "itemCount": count,
                         "country": cc.get(r[0], ""), "isMe": r[0] == hid})
         mine = conn.execute("SELECT points FROM luxury_points WHERE hid=?", (hid,)).fetchone()
         return {"err": 0, **meta, "rows": out, "myPoints": int(mine[0]) if mine else 0}
