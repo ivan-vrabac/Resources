@@ -2,7 +2,7 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY main.py auth.py admin.py econ.py protection.py ./
+COPY main.py auth.py admin.py econ.py protection.py economy.py names.py ./
 COPY systems ./systems
 RUN useradd --system --uid 10001 app && mkdir -p /data /logs && chown app /data /logs
 USER app
