@@ -127,29 +127,52 @@ def test_truck_collects_everything_nearby():
 
 def test_stacked_cargo_split_and_one_vehicle_per_crate():
     hid, sid, _ = new_player("cs", wh_level=60)
-    set_building(hid, 65, 10)                     # museum 10: every rolled content is visible
     _grant(hid, 1000)
-    assert call(C + "drop", sid, stacked=1, count=300, stacks=2, lat=LAT, lng=LNG)["code"] == "locked"
+    assert call(C + "drop", sid, stacked=1, count=300, lat=LAT, lng=LNG)["code"] == "locked"
     set_building(hid, 123, 5)
-    assert call(C + "drop", sid, stacked=1, count=250, stacks=2, lat=LAT, lng=LNG)["code"] == "bad_input"   # steps of 100
-    assert call(C + "drop", sid, stacked=1, count=300, stacks=6, lat=LAT, lng=LNG)["code"] == "bad_input"   # max 5 stacks
-    r = call(C + "drop", sid, stacked=1, count=300, stacks=2, lat=LAT, lng=LNG)
-    assert r["dropped"] == 2 and sorted(r["stacks"]) == [100, 200] and call(C + "stock", sid)["crates"] == 700
+    assert call(C + "drop", sid, stacked=1, count=250, lat=LAT, lng=LNG)["code"] == "bad_input"   # steps of 100
+    r = call(C + "drop", sid, stacked=1, count=300, lat=LAT, lng=LNG)
+    assert 1 <= r["dropped"] <= 3 and sum(r["stacks"]) == 300 and all(x % 100 == 0 for x in r["stacks"])
+    assert call(C + "stock", sid)["crates"] == 700
     stacks = sorted(_crates(hid), key=lambda c: c["crates"])
-    small, big = stacks[0], stacks[1]
-    assert (small["crates"], big["crates"]) == (100, 200)
+    big = stacks[-1]
+    assert big["museum_level"] == 0 and big["mix"]                       # visible to everyone, a mix
+    seen = {c["id"] for c in call(C + "nearby", sid, lat1=LAT - .01, lng1=LNG - .01,
+                                  lat2=LAT + .01, lng2=LNG + .01)["crates"]}
+    assert big["id"] in seen                                             # Museum 0 still sees stacks
+    n = big["crates"]
     assert call(C + "collect", sid, id=big["id"], lat=LAT, lng=LNG)["code"] == "needs_vehicle"
-    give(hid, 124, 150)
-    assert call(C + "collect", sid, id=big["id"], lat=LAT, lng=LNG, method="truck")["code"] == "no_vehicle"  # 200 needed
-    r = call(C + "collect", sid, id=small["id"], lat=LAT, lng=LNG, method="truck")
-    assert r["err"] == 0 and qty(hid, 124) == 150                                 # trucks are not used up
-    far_lat = big["lat"] + 0.02                                                    # ~2 km away
+    give(hid, 124, n - 1)
+    assert call(C + "collect", sid, id=big["id"], lat=LAT, lng=LNG, method="truck")["code"] == "no_vehicle"
+    give(hid, 124, 1)
+    r = call(C + "collect", sid, id=big["id"], lat=LAT, lng=LNG, method="truck")
+    assert r["err"] == 0 and qty(hid, 124) == n and r["items"]                # trucks are not used up
+    allowed = {i for i, v in cargo.LOOT.items() if v[2] == 0}               # Museum 0: only level-0 objects
+    assert {x["itemID"] for x in r["items"]} <= allowed
+
+
+def test_drone_collects_stack_one_drone_per_crate():
+    hid, sid, _ = new_player("cdr", wh_level=60)
+    _grant(hid, 100)
+    set_building(hid, 123, 5)
     set_building(hid, 119, 5)
-    give(hid, 117, 199)
-    assert call(C + "collect", sid, id=big["id"], lat=far_lat, lng=LNG, method="drone")["code"] == "insufficient_items"
+    call(C + "drop", sid, stacked=1, count=100, lat=LAT + 0.3, lng=LNG)
+    st = _crates(hid)[0]
+    far_lat = st["lat"] + 0.02                                              # ~2 km away
+    give(hid, 117, 99)
+    assert call(C + "collect", sid, id=st["id"], lat=far_lat, lng=LNG, method="drone")["code"] == "insufficient_items"
     give(hid, 117, 1)
-    r = call(C + "collect", sid, id=big["id"], lat=far_lat, lng=LNG, method="drone")
-    assert r["err"] == 0 and qty(hid, 117) == 0                                    # one drone per crate, used up
+    assert call(C + "collect", sid, id=st["id"], lat=far_lat, lng=LNG, method="drone")["err"] == 0
+    assert qty(hid, 117) == 0
+
+
+def test_boxes_can_hold_specials_containers_cannot():
+    import random as _r
+    rng = _r.Random(3)
+    box_items = {cargo.roll(rng, table=cargo.BOX_LOOT)[0] for _ in range(200000)}
+    assert box_items & {42, 44, 45, 46, 48}                                  # boxes: specials possible
+    cont_items = {cargo.roll(rng)[0] for _ in range(20000)}
+    assert not cont_items & {42, 44, 45, 46, 48, 158, 159, 160, 161}
 
 
 def test_cargo_collected_counts_for_quests():

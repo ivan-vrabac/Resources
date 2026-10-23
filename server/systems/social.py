@@ -21,9 +21,25 @@ CONTACT_KINDS = ("friend", "enemy", "blacklist", "watch")
 # Adding a contact of one kind removes conflicting kinds for the same player.
 _CONFLICTS = {"friend": ("enemy", "blacklist"), "enemy": ("friend",), "blacklist": ("friend",), "watch": ()}
 
-chat_limit_burst = econ.RateLimit(5, 10)    # max 5 messages / 10 s
-chat_limit_minute = econ.RateLimit(20, 60)  # max 20 messages / minute
-CHAT_MAX_LEN = 500
+# owner 2026-10-23: 3 tokens, one new token every 2 seconds (chat and private messages)
+chat_bucket = econ.TokenBucket(3, 2.0)
+
+
+class _Always:                 # kept for older call sites: the bucket does the limiting now
+    @staticmethod
+    def allow(key):
+        return chat_bucket.allow(key)
+
+
+chat_limit_burst = _Always()
+chat_limit_minute = type("_Pass", (), {"allow": staticmethod(lambda key: True)})()
+CHAT_MAX_LEN = 300
+# Chat rules shown on top of the chat — edit here (they ship with the server).
+CHAT_RULES = [
+    "Respect each other.",
+    "Only English is allowed.",
+    "No spam and no links — game talk only.",
+]
 
 
 def init_schema(conn) -> None:
@@ -261,7 +277,7 @@ def install(api) -> None:
             msgs = _messages(conn, hid, "1=1", (), limit)
         latest = conn.execute("SELECT COALESCE(MAX(id),0) FROM chat_messages").fetchone()[0]
         conn.commit()  # pid_of may have created ids
-        return {"err": 0, "messages": msgs, "latestId": latest}
+        return {"err": 0, "messages": msgs, "latestId": latest, "rules": CHAT_RULES, "maxLength": CHAT_MAX_LEN}
 
     @api.endpoint("/api/v1/chat/unread", feature="SOCIAL")
     def chat_unread(conn, hid, form):
@@ -281,12 +297,12 @@ def install(api) -> None:
             raise econ.GameError("bad_input", "Message is empty")
         if len(msg) > CHAT_MAX_LEN:
             raise econ.GameError("bad_input", f"Message is too long (max {CHAT_MAX_LEN})")
-        if not (chat_limit_burst.allow(hid) and chat_limit_minute.allow(hid)):
-            raise econ.GameError("rate_limited", "You're sending messages too fast")
         last = conn.execute("SELECT msg FROM chat_messages WHERE hid=? ORDER BY id DESC LIMIT 1",
                             (hid,)).fetchone()
         if last and last[0] == msg:
             raise econ.GameError("duplicate", "You just sent that message")
+        if not (chat_limit_burst.allow(hid) and chat_limit_minute.allow(hid)):
+            raise econ.GameError("rate_limited", "Slow down — one message every 2 seconds")
         name = conn.execute("SELECT company_name FROM players WHERE hID=?", (hid,)).fetchone()[0]
         with econ.tx(conn):
             cur = conn.execute("INSERT INTO chat_messages(hid, name, msg, ts) VALUES(?,?,?,?)",

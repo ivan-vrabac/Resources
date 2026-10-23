@@ -205,7 +205,7 @@ def install(api) -> None:
                              "nextAttackAt": next_at if next_at and next_at > econ.utcnow_iso() else None,
                              "lootItem": h.MINE_TYPES.get(m["item_id"], {}).get("res"),
                              "stationed": stationed if own else None, "defenceValues": defence_values(camp),
-                             "inHqArea": in_hq_area(conn, m), "condition": m["condition"],
+                             "inHqArea": in_hq_area(conn, m), "condition": h.current_condition(m),
                              "lastAttack": last,
                              "lootEstimate": round(h.mine_rate_hr(conn, m["owner_hid"], m) * LOOT_HOURS_PER_LEVEL * mafia
                                                    * 0.5 ** recent_wins(conn, hid, econ.utcnow()))}
@@ -355,7 +355,7 @@ def install(api) -> None:
                 raise econ.GameError("own_mine", "External maintenance is for other players' mines")
             econ.require_within(lat, lng, m["lat"], m["lng"],
                                 helper_range(h.building_level(conn, hid, HAULAGE_FIRM)), "mine")
-            if float(m["condition"]) > 96.0:
+            if h.current_condition(m) > 96.0:
                 raise econ.GameError("not_needed", "This mine doesn't need maintenance (above 96%)")
             now = econ.utcnow()
             active = conn.execute("SELECT MAX(day) FROM player_activity WHERE hid=?", (owner,)).fetchone()[0]

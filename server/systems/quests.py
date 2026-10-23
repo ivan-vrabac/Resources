@@ -16,7 +16,8 @@ Lifecycle (documented assumptions):
     · every 7 consecutive days  → 5 Giant Diamonds
     · every 30 consecutive days → 10 Giant Diamonds  (30-day milestones, NOT calendar months;
       both are paid when a day is a multiple of 7 and of 30, e.g. day 210)
-  Missing a day ends the streak; a new streak starts its own milestones from day 1.
+  One missed day is forgiven; two missed days in a row end the streak, and a new streak starts its
+  own milestones from day 1 (owner 2026-10-23: players need to be able to rest).
 """
 from __future__ import annotations
 
@@ -136,30 +137,44 @@ def progress(conn, q) -> int:
     return min(n, target)
 
 
-def streak_ending(conn, hid, day: str) -> int:
-    """Length of the run of consecutive qualifying days ending at `day` (0 if day isn't qualifying)."""
+def streak_run(conn, hid, day: str):
+    """(qualifying days, first day) of the streak ending at `day` (0 if day isn't qualifying).
+    Owner 2026-10-23: one missed day is forgiven, two missed days in a row end the streak."""
     qualifying = {r[0] for r in conn.execute(
         "SELECT day FROM daily_quests WHERE hid=? GROUP BY day "
         "HAVING COUNT(*) = SUM(CASE WHEN claimed_at IS NOT NULL THEN 1 ELSE 0 END)", (hid,))}
-    n, d = 0, datetime.date.fromisoformat(day)
-    while d.isoformat() in qualifying:
-        n += 1
+    d = datetime.date.fromisoformat(day)
+    if d.isoformat() not in qualifying:
+        return 0, day
+    n, gap, first = 0, 0, d
+    while gap < 2:
+        if d.isoformat() in qualifying:
+            n, gap, first = n + 1, 0, d
+        else:
+            gap += 1
         d -= datetime.timedelta(days=1)
-    return n
+    return n, first.isoformat()
+
+
+def streak_ending(conn, hid, day: str) -> int:
+    return streak_run(conn, hid, day)[0]
 
 
 def current_streak(conn, hid, now=None) -> int:
     now = now or econ.utcnow()
-    today, yesterday = _day(now), _day(now - datetime.timedelta(days=1))
-    return streak_ending(conn, hid, today) or streak_ending(conn, hid, yesterday)
+    # alive while at most one day has been missed since the last qualifying day
+    for back in (0, 1, 2):
+        n = streak_ending(conn, hid, _day(now - datetime.timedelta(days=back)))
+        if n:
+            return n
+    return 0
 
 
 def pay_milestones(conn, hid, day: str) -> list:
     """Pay any streak milestones reached by the run ending at `day` (idempotent per streak)."""
-    length = streak_ending(conn, hid, day)
+    length, start = streak_run(conn, hid, day)
     if not length:
         return []
-    start = (datetime.date.fromisoformat(day) - datetime.timedelta(days=length - 1)).isoformat()
     paid = []
     # daily Tech Upgrade reward for this streak day (every=1 rows; PK keeps it once per day)
     tu = daily_tu(length)

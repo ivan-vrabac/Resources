@@ -71,9 +71,16 @@ LOOT = {
     40: ("Roman Coins", 14.95, 0), 70: ("Scrap Metal", 9.11, 3), 74: ("Used Oil", 7.36, 4),
     43: ("Maintenance Kit", 7.36, 4), 115: ("Waste Glass", 5.52, 6), 78: ("Electronic Scrap", 5.29, 6),
     77: ("Plastic Scrap", 4.6, 6), 120: ("Drone Wreckage", 3.68, 7),
-    # sfo.txt also lists Giant Diamond, Tech Upgrades 1–4 and the production boosters 158–161;
-    # the owner excluded those from cargo (2026-10-19).
 }
+# Cargo BOXES (owner 2026-10-23, eva.txt: Giant Diamonds come in crates, not containers) can also
+# hold the sfo.txt specials; containers and stacks hold the regular LOOT only.
+BOX_EXTRA = {
+    42: ("Giant Diamond", 0.02, 10), 44: ("Tech Upgrade 1", 0.58, 10), 45: ("Tech Upgrade 2", 0.23, 10),
+    46: ("Tech Upgrade 3", 0.12, 10), 48: ("Tech Upgrade 4", 0.02, 10), 159: ("Overtime", 0.12, 0),
+    158: ("Night Shift", 0.12, 0), 160: ("Guest Workers", 0.12, 0), 161: ("Wage Subsidy", 0.12, 0),
+}
+BOX_LOOT = {**LOOT, **BOX_EXTRA}
+BOX_SHARE = 0.2              # one crate in five is a cargo box, the rest are containers
 # Assumed quantity per crate (min, max) — not in the sources.
 QTY = {57: (1, 20), 41: (1, 20), 55: (1, 10), 40: (1, 10), 70: (5, 50), 74: (5, 50), 43: (1, 1),
        115: (5, 50), 78: (5, 30), 77: (5, 50), 120: (1, 3), 42: (1, 1), 44: (1, 3), 45: (1, 2),
@@ -109,6 +116,8 @@ def ensure_schema(conn) -> None:
             museum_level INTEGER NOT NULL,
             stacked      INTEGER NOT NULL DEFAULT 0,
             crates       INTEGER NOT NULL DEFAULT 1,       -- crates in this object (stacks: many)
+            kind         TEXT NOT NULL DEFAULT 'container',  -- box | container | stack
+            mix          TEXT,                              -- stacks: JSON {item: qty}
             created_at   TEXT NOT NULL,
             expires_at   TEXT NOT NULL,
             collected_by TEXT,
@@ -127,9 +136,21 @@ def ensure_schema(conn) -> None:
     if "crates" not in cols:
         conn.execute("ALTER TABLE cargo_crates ADD COLUMN crates INTEGER NOT NULL DEFAULT 1")
         conn.execute("UPDATE cargo_crates SET crates=? WHERE stacked=1", (STACK_SIZE,))
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(cargo_crates)")]
+    if "kind" not in cols:
+        conn.execute("ALTER TABLE cargo_crates ADD COLUMN kind TEXT NOT NULL DEFAULT 'container'")
+        conn.execute("ALTER TABLE cargo_crates ADD COLUMN mix TEXT")
+        conn.execute("UPDATE cargo_crates SET kind='stack' WHERE stacked=1")
+    # stacks of earlier builds held one item (often invisible to the dropper): turn them into a mix,
+    # make them visible to everyone and give them a fresh day
+    rng0 = random.Random()
+    tomorrow = (econ.utcnow() + datetime.timedelta(hours=CRATE_HOURS)).isoformat()
+    for r in conn.execute("SELECT id, crates FROM cargo_crates WHERE stacked=1 AND mix IS NULL AND collected_at IS NULL").fetchall():
+        conn.execute("UPDATE cargo_crates SET mix=?, museum_level=0, kind='stack', expires_at=MAX(expires_at, ?) WHERE id=?",
+                     (json.dumps(stack_mix(rng0, int(r[1] or STACK_SIZE))), tomorrow, r[0]))
     # crates of earlier builds that hold items no longer allowed in cargo: drop them
     conn.execute("DELETE FROM cargo_crates WHERE item_id IN (42, 44, 45, 46, 48, 158, 159, 160, 161) "
-                 "AND collected_by IS NULL")
+                 "AND collected_by IS NULL AND kind <> 'box'")
 
 
 def stock(conn, hid) -> int:
@@ -178,11 +199,11 @@ def collect_range(museum_level: int) -> float:
     return LOCAL_RANGE_BASE_M + LOCAL_RANGE_PER_MUSEUM_M * max(0, min(10, museum_level))
 
 
-def roll(rng: random.Random, stacked: bool = False, crates: int = 1):
-    """Roll a crate's content: (item_id, qty, museum level). A stack holds `crates` crates of the
-    same rolled item (exact sum of rolls up to 2000 crates, the expected value beyond)."""
-    items = list(LOOT)
-    item = rng.choices(items, weights=[LOOT[i][1] for i in items])[0]
+def roll(rng: random.Random, stacked: bool = False, crates: int = 1, table=None):
+    """Roll a crate's content: (item_id, qty, museum level) from `table` (default: regular LOOT)."""
+    table = table or LOOT
+    items = list(table)
+    item = rng.choices(items, weights=[table[i][1] for i in items])[0]
     lo, hi = QTY[item]
     n = max(1, crates) if stacked else 1
     if hi <= lo:
@@ -191,7 +212,26 @@ def roll(rng: random.Random, stacked: bool = False, crates: int = 1):
         q = sum(rng.randint(lo, hi) for _ in range(n))
     else:
         q = int(round(n * (lo + hi) / 2))
-    return item, q, LOOT[item][2]
+    return item, q, table[item][2]
+
+
+def stack_mix(rng: random.Random, crates: int) -> dict:
+    """Content of a stack of `crates` regular crates: {item: qty}, each crate rolled (exactly up to
+    2000 crates, by expected shares beyond)."""
+    mix = {}
+    if crates <= 2000:
+        for _ in range(crates):
+            item, q, _ = roll(rng)
+            mix[item] = mix.get(item, 0) + q
+        return mix
+    total_w = sum(v[1] for v in LOOT.values())
+    for item, (_, w, _) in LOOT.items():
+        n = crates * w / total_w
+        lo, hi = QTY[item]
+        q = int(round(n * (lo + hi) / 2 * rng.uniform(0.95, 1.05)))
+        if q > 0:
+            mix[item] = q
+    return mix
 
 
 def split_stacks(total: int, stacks: int) -> list:
@@ -234,10 +274,24 @@ def install(api) -> None:
             raise econ.GameError("gone", "You already collected this crate")
         conn.execute("UPDATE cargo_crates SET collected_by=COALESCE(collected_by, ?), "
                      "collected_at=COALESCE(collected_at, ?) WHERE id=?", (hid, now, c["id"]))
-        amount = int(round(c["qty"] * (1 + MUSEUM_QTY_BONUS * museum)))
+        bonus = 1 + MUSEUM_QTY_BONUS * museum
+        if c["mix"]:
+            got = {}
+            for item, q in json.loads(c["mix"]).items():
+                item = int(item)
+                if LOOT.get(item, ("", 0, 99))[2] > museum:
+                    continue                      # your Museum can't find this one
+                n = int(econ.give(conn, hid, item, int(round(q * bonus)), "cargo_collect", c["id"], strict=False))
+                if n:
+                    got[item] = n
+            econ.emit(conn, "cargo_collected", hid, {"crates": int(c["crates"] or 1), "items": got}, public=False)
+            return got
+        amount = int(round(c["qty"] * bonus))
         got = int(econ.give(conn, hid, c["item_id"], amount, "cargo_collect", c["id"], strict=strict))
         econ.emit(conn, "cargo_collected", hid, {"crates": int(c["crates"] or 1),
                                                   "itemID": c["item_id"], "qty": got}, public=False)
+        if c["item_id"] in (42, 48):
+            econ.emit(conn, "rare_find", hid, {"itemID": c["item_id"], "qty": got})
         return got
 
     def drone_range(dr_level: int) -> float:
@@ -261,13 +315,13 @@ def install(api) -> None:
         """Drop crates around the player's position: count=1..100 normal crates, or stacked=1 with
         count = any multiple of 100 split over stacks=1..5 stacks (Haulage Firm level ≥ 5)."""
         lat, lng = econ.parse_pos(form)
-        stacked = form.get("stacked") == "1" or int_arg(form, "stacks", 0, 0, 10**6) > 0
+        stacked = form.get("stacked") == "1"
         if stacked:
-            stacks = int_arg(form, "stacks", 1, 1, MAX_STACKS_PER_DROP) if form.get("stacked") == "1" else \
-                min(MAX_STACKS_PER_DROP, int_arg(form, "stacks", 1, 1, 10**6))
-            count = int_arg(form, "count", stacks * STACK_SIZE, STACK_SIZE, 10**9)
+            count = int_arg(form, "count", STACK_SIZE, STACK_SIZE, 10**9)
             if count % STACK_SIZE:
                 raise econ.GameError("bad_input", f"Stacked Cargo Rain goes in steps of {STACK_SIZE} crates")
+            # the server decides how many stacks (1–5, never more than count / 100)
+            stacks = random.randint(1, min(MAX_STACKS_PER_DROP, count // STACK_SIZE))
         else:
             stacks = 0
             count = int_arg(form, "count", None, 1, MAX_DROP)
@@ -289,11 +343,17 @@ def install(api) -> None:
                 a = rng.random() * 2 * math.pi
                 clat = lat + r * math.cos(a) / 111320.0
                 clng = lng + r * math.sin(a) / (111320.0 * max(0.01, math.cos(math.radians(lat))))
-                item, q, mus = roll(rng, stacked=stacked, crates=size)
+                if stacked:            # a mix of regular found objects, visible to everyone
+                    mix = stack_mix(rng, size)
+                    item, q, mus, kind = max(mix, key=mix.get), sum(mix.values()), 0, "stack"
+                else:                  # one crate: a cargo box (may hold specials) or a container
+                    kind = "box" if rng.random() < BOX_SHARE else "container"
+                    item, q, mus = roll(rng, table=BOX_LOOT if kind == "box" else LOOT)
+                    mix = None
                 conn.execute("INSERT INTO cargo_crates(id, dropper_hid, lat, lng, item_id, qty, museum_level, stacked, "
-                             "crates, created_at, expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                             (uuid.uuid4().hex, hid, clat, clng, item, q, mus, 1 if stacked else 0, size,
-                              now.isoformat(), exp))
+                             "crates, kind, mix, created_at, expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                             (uuid.uuid4().hex, hid, clat, clng, item, q, mus, 1 if stacked else 0, size, kind,
+                              json.dumps(mix) if mix else None, now.isoformat(), exp))
             econ.emit(conn, "cargo_rain", hid, {"crates": count, "stacked": stacked},
                       lat=round(lat, 2), lng=round(lng, 2))
             out = {"err": 0, "dropped": len(sizes), "crates": count, "stacks": sizes if stacked else [],
@@ -316,7 +376,7 @@ def install(api) -> None:
         rows = conn.execute(OPEN_SQL + " AND c.museum_level <= ? AND c.lat BETWEEN ? AND ? AND c.lng BETWEEN ? AND ? "
                             "LIMIT 2000", open_args(hid) + (museum, lat1, lat2, lng1, lng2)).fetchall()
         return {"err": 0, "crates": [{"id": r["id"], "lat": r["lat"], "lng": r["lng"], "itemID": r["item_id"],
-                                      "stacked": bool(r["stacked"]), "count": r["crates"],
+                                      "stacked": bool(r["stacked"]), "count": r["crates"], "kind": r["kind"],
                                       "expiresAt": gone_at(r)} for r in rows]}
 
     @api.endpoint("/api/v1/cargo/collect", feature="CARGO")
@@ -355,6 +415,9 @@ def install(api) -> None:
                     raise econ.GameError("bad_input", "Collect normal crates by hand")
                 econ.require_within(lat, lng, c["lat"], c["lng"], collect_range(lv["museum"]), "crate")
             got = take_crate(conn, hid, c, lv["museum"])
+        if isinstance(got, dict):
+            return {"err": 0, "items": [{"itemID": k, "qty": v} for k, v in sorted(got.items(), key=lambda x: -x[1])],
+                    "distance": round(d)}
         return {"err": 0, "itemID": c["item_id"], "qty": got, "distance": round(d)}
 
     @api.endpoint("/api/v1/cargo/truck", feature="CARGO")
@@ -397,8 +460,9 @@ def install(api) -> None:
                     q = take_crate(conn, hid, c, lv["museum"], strict=False)
                 except econ.GameError:
                     continue
-                if q > 0:
-                    got[c["item_id"]] = got.get(c["item_id"], 0) + q
+                for k, v in (q.items() if isinstance(q, dict) else ((c["item_id"], q),)):
+                    if v > 0:
+                        got[k] = got.get(k, 0) + v
             used = trucks - free
             collected = sum(int(c["crates"] or 1) for c in chosen)
         return {"err": 0, "trucksUsed": used, "trucks": trucks, "collected": collected,

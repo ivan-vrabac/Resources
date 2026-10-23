@@ -57,7 +57,8 @@ def test_chat_order_history_blocking_and_rate_limit():
     call("/api/v1/social/contact", b_sid, pid=a_pid, kind="blacklist")
     assert all(m["pid"] != a_pid for m in call("/api/v1/chat/messages", b_sid)["messages"])
     assert any(m["pid"] == a_pid for m in call("/api/v1/chat/messages", a_sid)["messages"])
-    assert call("/api/v1/chat/send", b_sid, msg="x" * 501)["code"] == "bad_input"
+    assert call("/api/v1/chat/send", b_sid, msg="x" * 301)["code"] == "bad_input"
+    assert call("/api/v1/chat/messages", b_sid)["rules"]
 
 
 def test_private_messages_threads_read_and_block():

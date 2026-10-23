@@ -17,11 +17,12 @@ def effects(h, item_id: int, lvl: int) -> list:
     if item_id == 119:                                              # Drone Research
         rng = h.DRONE_SCAN_RANGES[max(0, min(lvl, len(h.DRONE_SCAN_RANGES)) - 1)] if lvl else 0
         return [("Drone range", f"{rng / 1000:g} km" if rng else "—"),
-                ("Remote construction", "yes" if lvl >= 10 else "level 10")]
+                ("Remote construction", "yes" if lvl >= 10 else "no")]
     if item_id == MUSEUM:
         return [("Pick-up range (cargo, artifacts)", f"{archaeology.pickup_range(lvl):.0f} m"),
                 ("Crate quantity bonus", f"+{round(cargo.MUSEUM_QTY_BONUS * lvl * 100)}%"),
-                ("Found objects visible", ", ".join(n for i, (n, _, m) in cargo.LOOT.items() if m == lvl) or "—")]
+                ("Objects that can be found",
+                 ", ".join(n for _, (n, _, m) in sorted(cargo.BOX_LOOT.items(), key=lambda x: x[1][2]) if m <= lvl))]
     if item_id == 71:                                               # Hospital
         return [("Disease chance", f"−{round((1 - protection.disease_factor(lvl)) * 100)}%"),
                 ("Disease spread", f"−{round((1 - protection.spread_factor(lvl)) * 100)}%")]
@@ -59,6 +60,18 @@ def effects(h, item_id: int, lvl: int) -> list:
 
 def install(api) -> None:
     h = api.h
+
+    @api.endpoint("/api/v1/hq/info")
+    def hq_info(conn, hid, form):
+        """Headquarters levels: boost and range per level, and what each upgrade needs."""
+        cur = conn.execute("SELECT level FROM hq WHERE hid=?", (hid,)).fetchone()
+        levels = []
+        for lvl in range(1, 11):
+            levels.append({"level": lvl, "res": {str(k): v for k, v in h.HQ_UPGRADE_REQS.get(lvl, {}).items()},
+                           "effects": [{"label": "Mine boost", "value": f"+{round((h.HQ_BOOST_FACTORS[lvl] - 1) * 100)}%"},
+                                       {"label": "Boost range", "value": f"{h.HQ_BOOST_RADIUS[lvl]} m"}]})
+        return {"err": 0, "level": cur[0] if cur else 0, "levels": levels,
+                "bonusLevels": "HQ level 10 bonus levels 1–6: one per 10 000 luxury points"}
 
     @api.endpoint("/api/v1/buildings/info")
     def info(conn, hid, form):

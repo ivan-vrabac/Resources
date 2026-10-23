@@ -314,6 +314,26 @@ class RateLimit:
             return True
 
 
+class TokenBucket:
+    """`capacity` tokens per key, refilled one every `refill_s` seconds; each action costs one."""
+
+    def __init__(self, capacity: int, refill_s: float):
+        self.capacity, self.refill_s = capacity, refill_s
+        self._state: dict[str, tuple[float, float]] = {}
+        self._lock = threading.Lock()
+
+    def allow(self, key: str) -> bool:
+        now = time.time()
+        with self._lock:
+            tokens, at = self._state.get(key, (float(self.capacity), now))
+            tokens = min(float(self.capacity), tokens + (now - at) / self.refill_s)
+            if tokens < 1:
+                self._state[key] = (tokens, now)
+                return False
+            self._state[key] = (tokens - 1, now)
+            return True
+
+
 # ── geography ────────────────────────────────────────────────────────────────
 
 def dist_m(lat1, lng1, lat2, lng2) -> float:

@@ -1315,14 +1315,16 @@ def collect_mine(conn, mine) -> tuple:
         return 0.0, False
 
     last = datetime.datetime.fromisoformat(mine["last_coll"])
-    hours = max(0.0, (datetime.datetime.utcnow() - last).total_seconds() / 3600)
-    hours = min(hours, 24.0)  # cap at 24h buffer
+    hours_real = max(0.0, (datetime.datetime.utcnow() - last).total_seconds() / 3600)
+    hours = min(hours_real, 24.0)  # production: 24h buffer
 
-    # Condition uses float: 4%/day = 1/6 per hour.
+    # Condition uses float: 4%/day = 1/6 per hour, over the REAL time since the last collection
+    # (owner 2026-10-23: mines of inactive players keep decaying on the server, so they show
+    # their real condition and can be attacked). Production stays capped at the 24 h buffer.
     # Round to 2 decimal places so that a mine freshly set to 100 never stores
     # a value like 99.9999... that Flutter's int truncation would display as 99.
     cond_start = float(mine["condition"])
-    cond_end = round(cond_start - hours / 6.0, 2)
+    cond_end = round(cond_start - hours_real / 6.0, 2)
 
     # Destruction at condition < 20.0 (exactly 20.00 is still valid)
     destroyed = cond_end < 20.0
@@ -1384,6 +1386,15 @@ def collect_mine(conn, mine) -> tuple:
 
     return added, destroyed
 
+def current_condition(mine) -> float:
+    """Condition right now (stored value minus the decay since the last collection), 0–100."""
+    try:
+        hours = max(0.0, (datetime.datetime.utcnow() - datetime.datetime.fromisoformat(mine["last_coll"])
+                          ).total_seconds() / 3600)
+    except (TypeError, ValueError):
+        hours = 0.0
+    return round(max(0.0, float(mine["condition"]) - hours / 6.0), 2)
+
 def _hq_boost_from(hq, mine) -> float:
     """hq_boost_for_mine() with the HQ row already loaded."""
     if not hq:
@@ -1422,6 +1433,8 @@ def _prepare_mine_temp(conn, hid: str, hq) -> None:
 
 # SQL fragment: hours since last collection, capped like collect_mine() (needs :now).
 _SQL_HOURS = "MIN(MAX(0.0, (julianday(:now) - julianday(m.last_coll)) * 24.0), 24.0)"
+# uncapped hours: condition decays with real time
+_SQL_HOURS_RAW = "MAX(0.0, (julianday(:now) - julianday(m.last_coll)) * 24.0)"
 _SQL_TECH = ("(1.0 + (COALESCE(m.tu1,0)*1.0 + COALESCE(m.tu2,0)*1.0 + "
              "COALESCE(m.tu3,0)*1.5 + COALESCE(m.tu4,0)*1.5) / 100.0)")
 # rateHr exactly as build_player_data() reports it (no sickness factor, condition floor 0.1).
@@ -1453,7 +1466,7 @@ def collect_mines_bulk(conn, hid: str, only_ids=None) -> int:
         space = max(0.0, wh_capacity(player["wh_level"]) - wh_total(conn, hid))
         p = {"hid": hid, "now": datetime.datetime.utcnow().isoformat(), "space": space}
 
-        cond_end = f"ROUND(m.condition - {_SQL_HOURS} / 6.0, 2)"
+        cond_end = f"ROUND(m.condition - {_SQL_HOURS_RAW} / 6.0, 2)"
         # 1. warehouse additions, capped per mine in rowid order like sequential wh_add()
         adds = conn.execute(f"""
             WITH c AS (
@@ -1486,7 +1499,7 @@ def collect_mines_bulk(conn, hid: str, only_ids=None) -> int:
         # 2. destroyed mines, 3. surviving mines (same expressions, before last_coll changes)
         own = "owner_hid = :hid AND item_id IN (SELECT item_id FROM _mt)" + (
             " AND mine_id IN (SELECT mine_id FROM _only)" if only_ids is not None else "")
-        hours_u = _SQL_HOURS.replace("m.last_coll", "last_coll")
+        hours_u = _SQL_HOURS_RAW.replace("m.last_coll", "last_coll")
         cond_u = f"ROUND(condition - {hours_u} / 6.0, 2)"
         destroyed = conn.execute(f"DELETE FROM mines WHERE {own} AND {cond_u} < 20.0", p).rowcount
         conn.execute(f"UPDATE mines SET condition = {cond_u}, last_coll = :now WHERE {own}", p)
@@ -2548,7 +2561,7 @@ async def mine_load_markers(request: Request):
             "lng":       m["lng"],
             "itemID":    m["item_id"],
             "resID":     mt.get("res", 0),
-            "cond":      m["condition"],
+            "cond":      current_condition(m),      # real, decayed condition (server-side)
             "lvl":       m["level"],
             "isMine":    m["owner_hid"] == hid,
         })
@@ -2840,7 +2853,7 @@ async def map_load_markers(request: Request):
             "mID": m["mine_id"], "ownerHID": m["owner_hid"],
             "ownerName": m["owner_name"], "lat": m["lat"], "lng": m["lng"],
             "itemID": m["item_id"], "resID": mt.get("res", 0),
-            "cond": m["condition"], "lvl": m["level"], "isMine": m["owner_hid"] == hid,
+            "cond": current_condition(m), "lvl": m["level"], "isMine": m["owner_hid"] == hid,
         })
     for h in hqs:
         markers.append({
@@ -4435,14 +4448,30 @@ def _owner_balance_x10_once() -> None:
 
 _owner_balance_x10_once()
 
+
+def _realtime_decay_start_once() -> None:
+    """One-time (2026-10-23): condition now decays with real time. So that long-unvisited mines aren't
+    all destroyed at once, decay starts from now for mines older than 24 h: their clock is set to
+    24 h ago, which keeps the full 24 h production buffer and the old decay behaviour for the past."""
+    with get_db() as c:
+        with econ.tx(c):
+            if c.execute("SELECT 1 FROM scheduler WHERE name='realtime_decay_start'").fetchone():
+                return
+            cutoff = (datetime.datetime.utcnow() - datetime.timedelta(hours=24)).isoformat()
+            c.execute("UPDATE mines SET last_coll=? WHERE last_coll < ?", (cutoff, cutoff))
+            c.execute("INSERT INTO scheduler(name, last_run) VALUES('realtime_decay_start', ?)", (utcnow_iso(),))
+
+_realtime_decay_start_once()
+
 SYSTEM_HELPERS = _types.SimpleNamespace(
     get_db=get_db, hid_from_sid=hid_from_sid, read_form=read_form, zlib_resp=zlib_resp,
     get_player=get_player, wh_capacity=wh_capacity, building_level=building_level,
-    mine_rate_hr=mine_rate_hr, collect_mine=collect_mine, compute_repair_cost=compute_repair_cost, collect_mines_bulk=collect_mines_bulk,
+    mine_rate_hr=mine_rate_hr, collect_mine=collect_mine, current_condition=current_condition, compute_repair_cost=compute_repair_cost, collect_mines_bulk=collect_mines_bulk,
     award_xp=award_xp, add_proto=add_proto, level_from_xp=level_from_xp, push=_push_to_player,
     mine_stats=mine_stats, mine_rows=mine_rows,
     MINE_TYPES=MINE_TYPES, SPECIAL_BUILDINGS=SPECIAL_BUILDINGS, HQ_BOOST_RADIUS=HQ_BOOST_RADIUS,
     HQ_BOOST_FACTORS=HQ_BOOST_FACTORS, FACTORY_TYPES=FACTORY_TYPES, TC_CONFIG=TC_CONFIG,
+    HQ_UPGRADE_REQS=HQ_UPGRADE_REQS,
     DRONE_SCAN_RANGES=DRONE_SCAN_RANGES, new_id=new_id, SYSTEM_PRICES=SYSTEM_PRICES,
     LEVEL_UP_HOOKS=LEVEL_UP_HOOKS, CASINO_FIVE_HOOKS=CASINO_FIVE_HOOKS, OUTPUT_HOOKS=OUTPUT_HOOKS,
 )

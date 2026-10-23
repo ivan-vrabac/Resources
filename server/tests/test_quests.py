@@ -157,3 +157,17 @@ def test_daily_tech_upgrade_tiers_and_variable_targets():
     assert "artifacts" not in codes                                     # needs an Archaeological Center
     plan = call(Q, sid)["rewardPlan"]
     assert plan["daily"][0]["qty"] == 5 and plan["milestones"][0]["every"] == 7
+
+
+def test_one_missed_day_keeps_the_streak_two_end_it():
+    hid, _, _ = new_player("qrest")
+    today = econ.utcnow().date()
+    with main.get_db() as conn:
+        # qualifying: today, (gap 1 day), 2 days ago, 3 days ago, (gap 2 days), 6 days ago
+        for back in (0, 2, 3, 6):
+            d = (today - datetime.timedelta(days=back)).isoformat()
+            conn.execute("INSERT INTO daily_quests(hid, day, code, assigned_at, expires_at, claimed_at) "
+                         "VALUES(?,?,?,?,?,?)", (hid, d, "scan", d, d, d))
+        conn.commit()
+        assert quests.streak_ending(conn, hid, today.isoformat()) == 3     # day 6 is cut off by the 2-day gap
+        assert quests.current_streak(conn, hid) == 3
