@@ -82,6 +82,11 @@ def main() -> int:
         for term in deny:
             if term.lower() in text.lower():
                 problems.append(f"denylisted term '{term}': {rel}")
+    # every server module must be in the Docker image (round 12: economy.py was missing → crash loop)
+    dockerfile = (ROOT / "server" / "Dockerfile").read_text(encoding="utf-8")
+    for py in sorted((ROOT / "server").glob("*.py")):
+        if py.name not in dockerfile:
+            problems.append(f"server/{py.name} is not copied in server/Dockerfile")
     for msg in problems:
         print("ERROR", msg)
     print(f"checked {len(files)} files")
