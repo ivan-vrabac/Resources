@@ -104,7 +104,8 @@ class Player {
   final String hid;
   final String name;
   final int credits;
-  final int xp;
+  /// 0..1 progress inside the current level (the server keeps XP itself private).
+  final double levelProgress;
   final int level;
   final int teamId;
   final int whLevel;
@@ -124,7 +125,7 @@ class Player {
 
   const Player({
     required this.hid, required this.name, required this.credits,
-    required this.xp, required this.level, required this.teamId,
+    this.levelProgress = 0, required this.level, required this.teamId,
     required this.whLevel, required this.whCap,
     this.whUsed = 0,
     this.wa = 80,
@@ -141,13 +142,7 @@ class Player {
   // Boss maintenance range: 100m at level 0/1, +11m per level, max ~200m at level 10
   double get bossRangeM => haulageLevel <= 0 ? 100.0 : (100.0 + (haulageLevel - 1) * 11.0).clamp(100.0, 200.0);
 
-  // Progressive XP: level N requires N*1000 XP; total to START level N = 500*N*(N-1)
-  int get xpAtLevelStart => level * (level - 1) * 500;
-  int get xpForCurrentLevel => level * 1000;
-  int get currentLevelXp => xp - xpAtLevelStart;
-  double get xpProgress => xpForCurrentLevel > 0
-      ? (currentLevelXp / xpForCurrentLevel).clamp(0.0, 1.0)
-      : 0.0;
+  double get xpProgress => levelProgress.clamp(0.0, 1.0);
 
   factory Player.fromJson(Map<String, dynamic> j) {
     final mineList = (j['mines'] as List? ?? [])
@@ -164,7 +159,7 @@ class Player {
       hid: j['hID'] as String? ?? '',
       name: j['pN'] as String? ?? '',
       credits: (j['crd'] as num? ?? 0).toInt(),
-      xp: (j['xp'] as num? ?? 0).toInt(),
+      levelProgress: (j['lvlProgress'] as num? ?? 0).toDouble(),
       level: (j['lvl'] as num? ?? 1).toInt(),
       teamId: (j['teamID'] as num? ?? 0).toInt(),
       whLevel: (j['whLvl'] as num? ?? 1).toInt(),

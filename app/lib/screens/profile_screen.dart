@@ -169,7 +169,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _stat('Artifacts', '${p['artifacts'] ?? 0}', icon: Icons.museum_outlined),
             ]),
             Row(children: [
-              _stat('Rank by XP', '#${p['rankXp']}'),
+              _stat('Rank by points', '#${p['rankPoints']}'),
+              _stat('Rank by luxury points', '#${p['rankLuxury']}'),
               _stat('Rank by mines', '#${p['rankMines']}'),
             ]),
             if (p['combat'] is Map)

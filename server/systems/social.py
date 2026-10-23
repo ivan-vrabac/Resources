@@ -6,7 +6,7 @@ internal hID: in AUTH_MODE=mixed an hID still works like a password for accounts
 
 Public profile fields (deliberately limited): company name, level, HQ level, current mine
 count, total mines ever built, total production per hour, country, member since, rankings
-(by XP and by mine count), achievements. Never: credits, inventory, coordinates.
+(by points, luxury points and mine count), achievements. Never: credits, inventory, coordinates.
 """
 from __future__ import annotations
 
@@ -106,8 +106,14 @@ def public_profile(conn, h, viewer_hid: str, target_hid: str) -> dict:
     ever = conn.execute("SELECT COUNT(*) FROM game_events WHERE hid=? AND type='mine_built'",
                         (target_hid,)).fetchone()[0]
     stats = h.mine_stats(conn, target_hid) if hasattr(h, "mine_stats") else {}
-    xp = p["xp"] or 0
-    rank_xp = _rank(conn, xp, "SELECT COUNT(*) FROM players WHERE COALESCE(xp,0) > ?")
+    # owner 2026-10-23: rank by points (the overall leaderboard) and by luxury points, never by XP
+    from . import rankings
+    board = rankings.overall_rows(conn)
+    rank_points = next((i + 1 for i, r in enumerate(board) if r[2] == target_hid), len(board) + 1)
+    lux_pts = conn.execute("SELECT points FROM luxury_points WHERE hid=?", (target_hid,)).fetchone() \
+        if _has_table(conn, "luxury_points") else None
+    rank_luxury = _rank(conn, int(lux_pts[0]) if lux_pts else 0,
+                        "SELECT COUNT(*) FROM luxury_points WHERE points > ?") if _has_table(conn, "luxury_points") else 1
     rank_mines = _rank(conn, mines,
                        "SELECT COUNT(*) FROM (SELECT owner_hid, COUNT(*) c FROM mines GROUP BY owner_hid) WHERE c > ?")
     rel = {r[0] for r in conn.execute("SELECT kind FROM contacts WHERE owner_hid=? AND target_hid=?",
@@ -124,7 +130,8 @@ def public_profile(conn, h, viewer_hid: str, target_hid: str) -> dict:
         "productionPerHour": round(stats.get("totalRateHr", 0.0)),
         "country": p["country_code"] if "country_code" in p.keys() else None,
         "memberSince": (p["created_at"] or "")[:10],
-        "rankXp": rank_xp,
+        "rankPoints": rank_points,
+        "rankLuxury": rank_luxury,
         "rankMines": rank_mines,
         "achievements": ach,
         "isMe": viewer_hid == target_hid,
@@ -163,7 +170,6 @@ def public_profile(conn, h, viewer_hid: str, target_hid: str) -> dict:
     except Exception:
         pass
     if viewer_hid == target_hid:  # private extras only for yourself
-        out["xp"] = xp
         out["credits"] = p["credits"]
     return out
 

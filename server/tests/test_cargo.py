@@ -147,7 +147,7 @@ def test_stacked_cargo_split_and_one_vehicle_per_crate():
     give(hid, 124, 1)
     r = call(C + "collect", sid, id=big["id"], lat=LAT, lng=LNG, method="truck")
     assert r["err"] == 0 and qty(hid, 124) == n and r["items"]                # trucks are not used up
-    allowed = {i for i, v in cargo.LOOT.items() if v[2] == 0}               # Museum 0: only level-0 objects
+    allowed = {i for i, v in cargo.BOX_LOOT.items() if v[2] == 0}           # Museum 0: only level-0 objects (boxes too)
     assert {x["itemID"] for x in r["items"]} <= allowed
 
 

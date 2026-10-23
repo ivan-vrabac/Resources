@@ -93,3 +93,18 @@ def test_social_badge_counts_mentions_and_private_messages():
     call("/api/v1/chat/dm/messages", a_sid, pid=b_pid)          # reading clears it
     assert call("/api/v1/chat/unread", a_sid, seen=r["latestId"])["dm"] == 0
 
+
+def test_xp_is_never_sent_and_profile_ranks_by_points():
+    """Owner 2026-10-23: XP is server-only; profiles rank by points and luxury points."""
+    import json, zlib
+    hid, sid, _ = new_player("xphide")
+    me = call("/api/v1/social/profile", sid)["profile"]
+    assert "xp" not in me and "rankXp" not in me
+    assert me["rankPoints"] >= 1 and me["rankLuxury"] >= 1
+    r = client.post("/flut23/playerGetData.php", data={"sid": sid})
+    data = json.loads(zlib.decompress(r.content))
+    data = data[0] if isinstance(data, list) else data
+    assert "xp" not in data and 0 <= data["lvlProgress"] <= 1
+    board = json.loads(zlib.decompress(client.post("/flut23/leaderboard.php", data={"sid": sid}).content))
+    assert all("xp" not in e for e in board["leaderboard"])
+

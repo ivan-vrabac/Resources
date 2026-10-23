@@ -1204,6 +1204,11 @@ def level_from_xp(xp: int) -> int:
         L += 1
     return max(1, L)
 
+def level_progress(xp: int, level: int) -> float:
+    """0..1 progress inside the current level (level N needs N*1000 XP)."""
+    start = 500 * level * (level - 1)
+    return round(max(0.0, min(1.0, (xp - start) / (level * 1000.0))), 4)
+
 def get_player(conn, hid: str):
     return conn.execute("SELECT * FROM players WHERE hID=?", (hid,)).fetchone()
 
@@ -2074,7 +2079,8 @@ def build_player_data(conn, row, include_mines: bool = True) -> dict:
         "hID":    hid,
         "pN":     row["company_name"],
         "crd":    row["credits"],
-        "xp":     row["xp"],
+        # XP stays on the server (owner 2026-10-23); the app only gets the progress to the next level
+        "lvlProgress": level_progress(row["xp"] or 0, row["level"] or 1),
         "lvl":    row["level"],
         "teamID": row["team_id"],
         "whLvl":  row["wh_level"],
@@ -3829,7 +3835,6 @@ async def leaderboard(request: Request):
             scored.append({
                 "hID": public_refs(conn, {r["hID"]}, hid)[r["hID"]],
                 "name": r["company_name"],
-                "xp": xp,
                 "level": r["level"],
                 "countryCode": r["country_code"] or "",
                 "score": score,

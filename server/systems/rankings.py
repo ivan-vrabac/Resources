@@ -29,6 +29,30 @@ def _cached(key, fn):
     return val
 
 
+def overall_rows(conn):
+    """Overall board rows (points, activity %, hid, level, country), best first (cached)."""
+    return _cached("overall", lambda: _overall(conn))
+
+
+def _overall(conn):
+    now = datetime.datetime.utcnow()
+    today = now.strftime("%Y-%m-%d")
+    cutoff = (now - datetime.timedelta(days=100)).strftime("%Y-%m-%d")
+    act_all = dict(conn.execute("SELECT hid, COUNT(*) FROM player_activity WHERE day<=? GROUP BY hid", (today,)).fetchall())
+    act_100 = dict(conn.execute("SELECT hid, COUNT(*) FROM player_activity WHERE day>=? AND day<=? GROUP BY hid",
+                                (cutoff, today)).fetchall())
+    rows = []
+    for r in conn.execute("SELECT hID, xp, level, country_code, created_at FROM players"):
+        try:
+            age = max(1, (now - datetime.datetime.fromisoformat(r["created_at"])).days)
+        except (TypeError, ValueError):
+            age = 1
+        activity = min(1.0, act_all.get(r["hID"], 0) / age if age < 100 else act_100.get(r["hID"], 0) / 100.0)
+        rows.append((round((r["xp"] or 0) * 2 * activity), round(activity * 100), r["hID"], r["level"], r["country_code"]))
+    rows.sort(key=lambda x: -x[0])
+    return rows
+
+
 def install(api) -> None:
     h = api.h
     mine_res = {}                              # resource → [mine item ids]
@@ -37,24 +61,6 @@ def install(api) -> None:
     factory_res = {}                           # product → [factory item ids]
     for fid, ft in h.FACTORY_TYPES.items():
         factory_res.setdefault(ft["produces"], []).append(fid)
-
-    def overall(conn):
-        now = datetime.datetime.utcnow()
-        today = now.strftime("%Y-%m-%d")
-        cutoff = (now - datetime.timedelta(days=100)).strftime("%Y-%m-%d")
-        act_all = dict(conn.execute("SELECT hid, COUNT(*) FROM player_activity WHERE day<=? GROUP BY hid", (today,)).fetchall())
-        act_100 = dict(conn.execute("SELECT hid, COUNT(*) FROM player_activity WHERE day>=? AND day<=? GROUP BY hid",
-                                    (cutoff, today)).fetchall())
-        rows = []
-        for r in conn.execute("SELECT hID, xp, level, country_code, created_at FROM players"):
-            try:
-                age = max(1, (now - datetime.datetime.fromisoformat(r["created_at"])).days)
-            except (TypeError, ValueError):
-                age = 1
-            activity = min(1.0, act_all.get(r["hID"], 0) / age if age < 100 else act_100.get(r["hID"], 0) / 100.0)
-            rows.append((round((r["xp"] or 0) * 2 * activity), round(activity * 100), r["hID"], r["level"], r["country_code"]))
-        rows.sort(key=lambda x: -x[0])
-        return rows
 
     def mining(conn, res):
         ids = mine_res.get(res)
@@ -119,7 +125,7 @@ def install(api) -> None:
 
     @api.endpoint("/api/v1/rank/players")
     def players(conn, hid, form):
-        rows = _cached("overall", lambda: overall(conn))
+        rows = overall_rows(conn)
         part, meta = page_of(conn, hid, form, rows, lambda r: r[2])
         rf = refs(conn, [r[2] for _, r in part], hid)
         return {"err": 0, **meta, "rows": [{"rank": n, **rf[r[2]], "score": r[0], "activity": r[1],
