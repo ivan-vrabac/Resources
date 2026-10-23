@@ -156,7 +156,7 @@ const Map<int, int> kSpecialBuildingImageId = {
 const Map<int, Map<String, dynamic>> kSpecialBuildings = {
   116: {
     'name': 'Tech Center',
-    'desc': 'Increases scan radius and quality cap. Lv0: 300m/26% → Lv10: 2250m/100%.',
+    'desc': 'Your scanning base. It decides how far your scans reach and how good the resources are that they can reveal.',
     'maxLevel': 10,
     'costs': [
       {'credits': 200000,    'res': {'24': 100}},
@@ -173,7 +173,7 @@ const Map<int, Map<String, dynamic>> kSpecialBuildings = {
   },
   119: {
     'name': 'Drone Research',
-    'desc': 'Drone scan/build radius: Lv1 500m · Lv3 2km · Lv5 10km · Lv7 30km · Lv10 100km. Level 10 required for remote construction. Scans cost 3× normal.',
+    'desc': 'Lets you scan and collect cargo with drones far from where you are, and at the top level build mines remotely.',
     'maxLevel': 10,
     'costs': [
       {'credits': 1000000,     'res': {'66': 500,    '117': 2}},
@@ -190,7 +190,7 @@ const Map<int, Map<String, dynamic>> kSpecialBuildings = {
   },
   65: {
     'name': 'Museum',
-    'desc': 'Increases the chance of finding more valuable resources and greater amounts during scans.',
+    'desc': 'Studies the objects you find. It lets you pick up cargo and artifacts from further away, adds to every crate you open and unlocks rarer objects.',
     'maxLevel': 10,
     'costs': [
       {'credits': 500000,      'res': {'41': 200,    '40': 100}},
@@ -207,7 +207,7 @@ const Map<int, Map<String, dynamic>> kSpecialBuildings = {
   },
   71: {
     'name': 'Hospital',
-    'desc': 'Reduces mine disease rate and accident damage. Higher levels provide stronger protection.',
+    'desc': 'Keeps your miners healthy, so diseases break out less often and spread less between your mines.',
     'maxLevel': 10,
     'costs': [
       {'credits': 500000,      'res': {'24': 2000,    '75': 50}},
@@ -224,7 +224,7 @@ const Map<int, Map<String, dynamic>> kSpecialBuildings = {
   },
   58: {
     'name': 'Recycling Plant',
-    'desc': 'Allows recycling of loot items. Higher levels improve recycling yield.',
+    'desc': 'Turns found objects you don\'t need into useful resources.',
     'maxLevel': 10,
     'costs': [
       {'credits': 300000,      'res': {'70': 1000,    '77': 500,    '115': 500}},
@@ -241,7 +241,7 @@ const Map<int, Map<String, dynamic>> kSpecialBuildings = {
   },
   127: {
     'name': 'Seismology Centre',
-    'desc': 'Reduces damage to mines from earthquakes. Higher levels provide stronger protection.',
+    'desc': 'Monitors earthquakes and reinforces your mines, so quakes damage them less.',
     'maxLevel': 10,
     'costs': [
       {'credits': 1000000,     'res': {'66': 1000,    '93': 500,    '79': 100}},
@@ -258,7 +258,7 @@ const Map<int, Map<String, dynamic>> kSpecialBuildings = {
   },
   126: {
     'name': 'Fire Station',
-    'desc': 'Reduces risk of factory fires and decreases damage when fires occur.',
+    'desc': 'Protects your factories: fires break out less often and are put out sooner.',
     'maxLevel': 10,
     'costs': [
       {'credits': 1000000,     'res': {'124': 500,     '117': 50,    '97': 500}},
@@ -275,7 +275,7 @@ const Map<int, Map<String, dynamic>> kSpecialBuildings = {
   },
   123: {
     'name': 'Haulage Firm',
-    'desc': 'Increases boss maintenance range (100m at Lv1 → 200m at Lv10). Reduces trade transport fees.',
+    'desc': 'Your transport company. It lowers the market transport tax, extends the range of your trucks and unlocks Stacked Cargo Rain and truck collection.',
     'maxLevel': 10,
     'costs': [
       {'credits': 200000,      'res': {'7': 500,    '2': 1000}},
@@ -292,7 +292,7 @@ const Map<int, Map<String, dynamic>> kSpecialBuildings = {
   },
   61: {
     'name': 'Casino',
-    'desc': 'Slot machine! 500 free spins per day. Max bet = 1M × level. 115% RTP. Jackpot grows with every spin.',
+    'desc': 'Your own slot machine with free daily spins and a jackpot that grows with every spin.',
     'maxLevel': 10,
     'costs': [
       {'credits': 2500000,     'res': {'7': 2000,    '40': 1000,   '55': 500}},
@@ -309,7 +309,7 @@ const Map<int, Map<String, dynamic>> kSpecialBuildings = {
   },
   86: {
     'name': 'Mafia HQ',
-    'desc': 'Hire criminals to damage competitor mines. Winners get a cut of the mine\'s production. Higher levels = better loot and stronger criminals.',
+    'desc': 'Hires criminals to attack other players\' mines. A won attack brings you part of the mine\'s output.',
     'maxLevel': 10,
     'costs': [
       {'credits': 2000000,     'res': {'24': 500,    '20': 500,   '70': 500}},
@@ -326,7 +326,7 @@ const Map<int, Map<String, dynamic>> kSpecialBuildings = {
   },
   72: {
     'name': 'Law Firm',
-    'desc': 'Reduces the penalties of incidents: shorter mine diseases, less earthquake damage and shorter factory fires. The higher the level, the smaller the penalties.',
+    'desc': 'Your lawyers soften the consequences of incidents: mine diseases, earthquake damage and factory fires.',
     'maxLevel': 10,
     'costs': [
       {'credits': 500000,     'res': {'59': 200,   '32': 100,   '57': 50}},
@@ -343,7 +343,7 @@ const Map<int, Map<String, dynamic>> kSpecialBuildings = {
   },
   121: {
     'name': 'Service Center',
-    'desc': 'Increases the premium from your external maintenance services.',
+    'desc': 'Rewards you for maintaining other players\' mines and can add bonus crates to the reward.',
     'maxLevel': 10,
     'costs': [
       {'credits': 1000000,    'res': {'93': 20,    '35': 50,     '36': 15}},
@@ -360,7 +360,7 @@ const Map<int, Map<String, dynamic>> kSpecialBuildings = {
   },
   122: {
     'name': 'HR Department',
-    'desc': 'Decreases the chance of a strike and the related claims.',
+    'desc': 'Keeps your workforce content. Strikes and claims are not in the game yet.',
     'maxLevel': 10,
     'costs': [
       {'credits': 1000000,    'res': {'36': 50,     '98': 1,    '66': 50}},
@@ -377,7 +377,7 @@ const Map<int, Map<String, dynamic>> kSpecialBuildings = {
   },
   164: {
     'name': 'Archaeological Center',
-    'desc': 'Unlocks artifact detection and excavation. Higher levels increase detector range and reduce archaeologists needed.',
+    'desc': 'Unlocks the artifact detector and the recovery of ancient artifacts by your archaeologists.',
     'maxLevel': 10,
     'costs': [
       {'credits': 2000000,    'res': {'166': 1,   '124': 10,    '79': 40}},

@@ -39,6 +39,9 @@ TEXT_EXT = {".dart", ".py", ".kt", ".kts", ".gradle", ".xml", ".json", ".yaml", 
 ALLOW_SECRET_IN = {"tools/check_repo.py", "SECURITY.md", "docs/INSTALL.md"}
 
 
+MOJIBAKE = re.compile("\u00e2\u20ac|\u00c3[\u00a2\u00a9\u00a8\u00b6\u00bc]|\u00ea\u017e|\u00e2\u201d")
+
+
 def candidate_files(scan_all: bool) -> list[str]:
     if scan_all:
         return [p.relative_to(ROOT).as_posix() for p in ROOT.rglob("*")
@@ -71,6 +74,11 @@ def main() -> int:
                 if m:
                     line = text.count("\n", 0, m.start()) + 1
                     problems.append(f"{name}: {rel}:{line}")
+        # text saved with the wrong encoding (UTF-8 read as cp1252), e.g. "â€¢" for "•"
+        m = MOJIBAKE.search(text)
+        if m and rel != "tools/check_repo.py":
+            line = text.count("\n", 0, m.start()) + 1
+            problems.append(f"garbled text (wrong encoding) '{m.group(0)}': {rel}:{line}")
         for term in deny:
             if term.lower() in text.lower():
                 problems.append(f"denylisted term '{term}': {rel}")

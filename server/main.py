@@ -121,7 +121,7 @@ SPECIAL_BUILDINGS = {
     116: {
         "name": "Tech Center",
         "max_level": 10,
-        "desc": "Increases scan radius (300m→2250m) and quality cap (26%→100%).",
+        "desc": "Your scanning base. It decides how far your scans reach and how good the resources are that they can reveal.",
         "costs": [
             {"credits": 200000,      "res": {24: 100}},
             {"credits": 500000,      "res": {24: 500,  7: 100}},
@@ -138,7 +138,7 @@ SPECIAL_BUILDINGS = {
     119: {
         "name": "Drone Research",
         "max_level": 10,
-        "desc": "Increases drone scan radius. Level 10 required for remote mine construction. Drone scans cost 3× normal.",
+        "desc": "Lets you scan and collect cargo with drones far from where you are, and at the top level build mines remotely.",
         "costs": [
             {"credits": 1000000,     "res": {66: 500,    117: 2}},
             {"credits": 5000000,     "res": {66: 2000,   117: 8}},
@@ -155,7 +155,7 @@ SPECIAL_BUILDINGS = {
     65: {
         "name": "Museum",
         "max_level": 10,
-        "desc": "Increases the chance of finding more valuable resources and greater amounts during scans.",
+        "desc": "Studies the objects you find. It lets you pick up cargo and artifacts from further away, adds to every crate you open and unlocks rarer objects.",
         "costs": [
             {"credits": 500000,    "res": {41: 200,   40: 100}},
             {"credits": 2000000,   "res": {41: 800,   40: 400,  55: 200}},
@@ -172,7 +172,7 @@ SPECIAL_BUILDINGS = {
     71: {
         "name": "Hospital",
         "max_level": 10,
-        "desc": "Reduces mine disease rate and accident damage. Higher levels provide stronger protection.",
+        "desc": "Keeps your miners healthy, so diseases break out less often and spread less between your mines.",
         "costs": [
             {"credits": 500000,    "res": {24: 2000,   75: 50}},
             {"credits": 2000000,   "res": {24: 8000,   75: 200,  35: 500}},
@@ -189,7 +189,7 @@ SPECIAL_BUILDINGS = {
     58: {
         "name": "Recycling Plant",
         "max_level": 10,
-        "desc": "Allows recycling of loot items. Higher levels improve recycling yield.",
+        "desc": "Turns found objects you don't need into useful resources.",
         "costs": [
             {"credits": 300000,    "res": {70: 1000,   77: 500,   115: 500}},
             {"credits": 1500000,   "res": {70: 5000,   77: 2000,  115: 2000}},
@@ -206,7 +206,7 @@ SPECIAL_BUILDINGS = {
     127: {
         "name": "Seismology Centre",
         "max_level": 10,
-        "desc": "Reduces damage to mines from earthquakes. Higher levels provide stronger protection.",
+        "desc": "Monitors earthquakes and reinforces your mines, so quakes damage them less.",
         "costs": [
             {"credits": 1000000,    "res": {66: 1000,   93: 500,   79: 100}},
             {"credits": 5000000,    "res": {66: 5000,   93: 2000,  79: 500}},
@@ -223,7 +223,7 @@ SPECIAL_BUILDINGS = {
     126: {
         "name": "Fire Station",
         "max_level": 10,
-        "desc": "Reduces risk of factory fires and decreases damage when fires occur.",
+        "desc": "Protects your factories: fires break out less often and are put out sooner.",
         "costs": [
             {"credits": 1000000,    "res": {124: 500,   117: 50,   97: 500}},
             {"credits": 5000000,    "res": {124: 2000,  117: 100,  97: 2000}},
@@ -240,7 +240,7 @@ SPECIAL_BUILDINGS = {
     123: {
         "name": "Haulage Firm",
         "max_level": 10,
-        "desc": "Increases boss maintenance range (100m at L1 → 200m at L10). Reduces trade transport fees (15% → 5%).",
+        "desc": "Your transport company. It lowers the market transport tax, extends the range of your trucks and unlocks Stacked Cargo Rain and truck collection.",
         "costs": [
             {"credits": 200000,      "res": {7: 500,   2: 1000}},
             {"credits": 600000,      "res": {7: 2000,  2: 4000}},
@@ -257,7 +257,7 @@ SPECIAL_BUILDINGS = {
     86: {
         "name": "Mafia HQ",
         "max_level": 10,
-        "desc": "Hire criminals to damage competitor mines. Winners get a cut of the mine's production. Higher levels = better loot and stronger criminals.",
+        "desc": "Hires criminals to attack other players' mines. A won attack brings you part of the mine's output.",
         "costs": [
             {"credits": 2000000,    "res": {24: 500,   20: 500,   70: 500}},
             {"credits": 8000000,    "res": {24: 2000,  20: 2000,  70: 2000}},
@@ -274,7 +274,7 @@ SPECIAL_BUILDINGS = {
     72: {
         "name": "Law Firm",
         "max_level": 10,
-        "desc": "Reduces the penalties of incidents: shorter mine diseases, less earthquake damage and shorter factory fires. The higher the level, the smaller the penalties.",
+        "desc": "Your lawyers soften the consequences of incidents: mine diseases, earthquake damage and factory fires.",
         "costs": [
             {"credits": 500000,    "res": {59: 200,   32: 100,  57: 50}},
             {"credits": 2000000,   "res": {59: 800,   32: 300,  57: 200}},
@@ -291,7 +291,7 @@ SPECIAL_BUILDINGS = {
     121: {
         "name": "Service Center",
         "max_level": 10,
-        "desc": "Increases the premium from your external maintenance services.",
+        "desc": "Rewards you for maintaining other players' mines and can add bonus crates to the reward.",
         "costs": [
             {"credits": 1000000,   "res": {93: 20,   35: 50,   36: 15}},
             {"credits": 4000000,   "res": {93: 80,   35: 200,  36: 60}},
@@ -308,7 +308,7 @@ SPECIAL_BUILDINGS = {
     122: {
         "name": "HR Department",
         "max_level": 10,
-        "desc": "Decreases the chance of a strike and the related claims.",
+        "desc": "Keeps your workforce content. Strikes and claims are not in the game yet.",
         "costs": [
             {"credits": 1000000,   "res": {36: 50,    98: 1,   66: 50}},
             {"credits": 4000000,   "res": {36: 200,   98: 2,   66: 200}},
@@ -325,7 +325,7 @@ SPECIAL_BUILDINGS = {
     164: {
         "name": "Archaeological Center",
         "max_level": 10,
-        "desc": "Unlocks artifact detection and excavation. Higher levels increase detector range and reduce archaeologists needed.",
+        "desc": "Unlocks the artifact detector and the recovery of ancient artifacts by your archaeologists.",
         "costs": [
             {"credits": 2000000,    "res": {166: 1,   124: 10,   79: 40}},
             {"credits": 8000000,    "res": {166: 2,   124: 30,   79: 150}},
@@ -342,7 +342,7 @@ SPECIAL_BUILDINGS = {
     61: {
         "name": "Casino",
         "max_level": 10,
-        "desc": "Slot machine! 500 free spins per day. Max bet = 1M x level. 115% RTP. Jackpot grows with every spin.",
+        "desc": "Your own slot machine with free daily spins and a jackpot that grows with every spin.",
         "costs": [
             {"credits": 2500000,    "res": {7: 2000,    40: 1000,   55: 500}},
             {"credits": 7500000,    "res": {7: 5000,    40: 3000,   55: 1500}},

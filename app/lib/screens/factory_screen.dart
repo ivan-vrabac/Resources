@@ -164,7 +164,7 @@ class _FactoryScreenState extends State<FactoryScreen> {
           Row(children: [
             const Icon(Icons.monetization_on, size: 14, color: Colors.amber),
             const SizedBox(width: 4),
-            Text('êž“${fmtNum(upgCredits)}', style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)),
+            Text('ꞓ${fmtNum(upgCredits)}', style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)),
           ]),
           // Resource requirements
           if (upgRes.isNotEmpty) ...[
@@ -299,7 +299,7 @@ class _FactoryScreenState extends State<FactoryScreen> {
                 const Icon(Icons.info_outline, color: Colors.orange, size: 14),
                 const SizedBox(width: 6),
                 Expanded(child: Text(
-                  'Only ${applyHrs < 24 ? '${applyHrs.round()}h' : '${(applyHrs/24).toStringAsFixed(1)}d'} remaining â€” less than the 7-day max',
+                  'Only ${applyHrs < 24 ? '${applyHrs.round()}h' : '${(applyHrs/24).toStringAsFixed(1)}d'} remaining, less than the 7-day max',
                   style: const TextStyle(color: Colors.orange, fontSize: 11),
                 )),
               ]),
@@ -636,7 +636,7 @@ class _FactoryTileState extends State<_FactoryTile> {
                 ],
               ]),
             ])),
-            // Boost button â€” always tappable
+            // Boost button — always tappable
             GestureDetector(
               onTap: widget.onBoost,
               child: ColorFiltered(
@@ -686,7 +686,7 @@ class _FactoryTileState extends State<_FactoryTile> {
             ] else ...[
               Row(children: [
                 // ignore: unnecessary_non_null_assertion
-                Expanded(child: Text('${itemName(prodItem!)}  â€¢  ${fmtNum(f['prodAmt'] as num)} units',
+                Expanded(child: Text('${itemName(prodItem!)}  •  ${fmtNum(f['prodAmt'] as num)} units',
                     style: TextStyle(color: AppColors.t54, fontSize: 11))),
                 Text(_countdown,
                     style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 13)),
@@ -710,7 +710,7 @@ class _FactoryTileState extends State<_FactoryTile> {
               const Text('Cannot produce while on fire.',
                   style: TextStyle(color: Colors.red, fontSize: 11))
             else ...[
-              Text('${fmtNum(outPerHr.round())} units/hr  â€¢  ${fmtNum(baseOut)} per batch  â€¢  ${_fmtHrs(hrsPerBatch)}',
+              Text('${fmtNum(outPerHr.round())} units/hr  •  ${fmtNum(baseOut)} per batch  •  ${_fmtHrs(hrsPerBatch)}',
                   style: TextStyle(color: AppColors.t54, fontSize: 11)),
               const SizedBox(height: 8),
               Row(children: [
@@ -1044,7 +1044,7 @@ class _StartProdSheetState extends State<_StartProdSheet> {
           ),
           const SizedBox(width: 8),
           Text(
-            '${fmtNum(totalOut)} ${itemName(_producesId)}  â€¢  ${_fmtHrs(_hrsPerBatch * _batches)}',
+            '${fmtNum(totalOut)} ${itemName(_producesId)}  •  ${_fmtHrs(_hrsPerBatch * _batches)}',
             style: TextStyle(color: AppColors.accent, fontSize: 12),
           ),
           const Spacer(),
@@ -1110,7 +1110,7 @@ class _StartProdSheetState extends State<_StartProdSheet> {
               const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 14),
               const SizedBox(width: 6),
               Expanded(child: Text(
-                'Warehouse full â€” ${fmtNum(-whFreeAfter)} units excess will be lost',
+                'Warehouse full: ${fmtNum(-whFreeAfter)} excess units will be lost',
                 style: const TextStyle(color: Colors.orange, fontSize: 11),
               )),
             ]),
@@ -1154,12 +1154,12 @@ class _BoostSheet extends StatelessWidget {
         if (rem != null && !rem.isNegative) {
           final d = rem.inDays;
           final h = rem.inHours % 24;
-          return 'Boost on cooldown  â€¢  ${d}d ${h}h remaining';
+          return 'Boost on cooldown  •  ${d}d ${h}h remaining';
         }
       }
       return 'Boost on cooldown';
     }
-    return 'Instantly collect ~${fmtNum(out7days)} units (7-day output)  â€¢  ${_fmtDays(kBoostCooldownDays)} cooldown';
+    return 'Instantly collect ~${fmtNum(out7days)} units (7-day output)  •  ${_fmtDays(kBoostCooldownDays)} cooldown';
   }
 
   @override
@@ -1269,7 +1269,7 @@ class _BoostSheet extends StatelessWidget {
                     : const Icon(Icons.work_outline, color: Colors.amber)),
             title: Text(b['name'] as String,
                 style: TextStyle(color: isActiveThis ? Colors.green : null)),
-            subtitle: Text('+$pct% output  â€¢  WA ${waDelta >= 0 ? '+' : ''}$waDelta  â€¢  8h',
+            subtitle: Text('+$pct% output  •  WA ${waDelta >= 0 ? '+' : ''}$waDelta  •  8h',
                 style: const TextStyle(fontSize: 10)),
             trailing: SizedBox(
               width: 80,
