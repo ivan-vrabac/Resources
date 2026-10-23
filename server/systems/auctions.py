@@ -27,7 +27,10 @@ from __future__ import annotations
 
 import datetime
 import math
+import os
 import random
+import threading
+import time
 import uuid
 
 import econ
@@ -290,6 +293,35 @@ def install(api) -> None:
     def hq_level(conn, hid):
         r = conn.execute("SELECT level FROM hq WHERE hid=?", (hid,)).fetchone()
         return int(r[0]) if r else 0
+
+    def clock() -> None:
+        """Server-side auction clock (owner 2026-10-23): ends the lot at its real end time, even after
+        late bids moved it (30 s → 60 s, any number of times), and opens the next lot at once,
+        whether or not anyone is looking. The end time is re-read every few seconds."""
+        while True:
+            wait = 5.0
+            try:
+                with h.get_db() as conn:
+                    r = conn.execute("SELECT ends_at FROM auctions WHERE status='open' ORDER BY ends_at LIMIT 1").fetchone()
+                    now = econ.utcnow()
+                    if r is None or r[0] <= now.isoformat():
+                        with econ.tx(conn):
+                            pushes = sweep(conn, h, now)
+                        for hid, title, body in pushes:
+                            try:
+                                h.push(conn, hid, title, body)
+                            except Exception:
+                                pass
+                        wait = 1.0
+                    else:
+                        left = (datetime.datetime.fromisoformat(r[0]) - now).total_seconds()
+                        wait = max(0.2, min(5.0, left + 0.05))
+            except Exception:
+                wait = 5.0
+            time.sleep(wait)
+
+    if os.environ.get("WORLD_EVENTS_THREAD", "1") != "0":
+        threading.Thread(target=clock, daemon=True, name="auction-clock").start()
 
     def min_bid(a):
         return max(a["start_price"], int(a["top_bid"] * (1 + MIN_RAISE)) + 1) if a["top_bid"] else a["start_price"]
