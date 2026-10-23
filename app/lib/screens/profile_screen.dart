@@ -101,8 +101,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _relationChip(String kind, String label, IconData icon, Color color) {
     final rel = (_p?['relations'] as List? ?? const []).contains(kind);
     return FilterChip(
-      avatar: Icon(icon, size: 16, color: rel ? Colors.black : color),
-      label: Text(label),
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      showCheckmark: false,
+      avatar: Icon(icon, size: 14, color: rel ? Colors.black : color),
+      label: Text(label, style: TextStyle(fontSize: 12, color: rel ? Colors.black : null)),
       selected: rel,
       selectedColor: color,
       onSelected: _busy ? null : (v) => _toggle(kind, v),
@@ -139,6 +142,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Text('Member since ${p['memberSince'] ?? '?'}',
                     style: const TextStyle(color: Colors.white54, fontSize: 12)),
               ])),
+              if (!isMe)
+                IconButton(
+                  tooltip: (p['relations'] as List? ?? const []).contains('blacklist') ? 'Unblock' : 'Block',
+                  icon: Icon(Icons.block,
+                      color: (p['relations'] as List? ?? const []).contains('blacklist')
+                          ? Colors.redAccent : Colors.white38),
+                  onPressed: _busy ? null : () => _toggle('blacklist',
+                      !(p['relations'] as List? ?? const []).contains('blacklist')),
+                ),
             ]),
             const SizedBox(height: 12),
             Row(children: [
@@ -158,7 +170,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Row(children: [
               _stat('Rank by XP', '#${p['rankXp']}'),
               _stat('Rank by mines', '#${p['rankMines']}'),
-              if (isMe) _stat('Credits', fmtCredits(p['credits'] as num? ?? 0)),
             ]),
             if (p['combat'] is Map)
               Row(children: [
@@ -173,37 +184,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _itemSection('Luxury items', p['luxuryItems'], 'qty', prefix: '×'),
             if (!isMe) ...[
               const SizedBox(height: 12),
-
-              const Text('Contacts', style: TextStyle(color: Colors.white54, fontSize: 12)),
-              const SizedBox(height: 6),
-              Wrap(spacing: 6, runSpacing: 6, children: [
-                _relationChip('friend', 'Friend', Icons.person_add_alt, Colors.lightBlueAccent),
-                _relationChip('enemy', 'Enemy', Icons.gpp_bad_outlined, Colors.orangeAccent),
-                _relationChip('watch', 'Watch', Icons.visibility_outlined, Colors.amber),
-                _relationChip('blacklist', 'Block', Icons.block, Colors.redAccent),
-              ]),
+              // compact "Mark as:" row (block is the icon in the header)
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(children: [
+                  const Text('Mark as:', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                  const SizedBox(width: 6),
+                  _relationChip('friend', 'Friend', Icons.person_add_alt, Colors.lightBlueAccent),
+                  const SizedBox(width: 4),
+                  _relationChip('enemy', 'Enemy', Icons.gpp_bad_outlined, Colors.orangeAccent),
+                  const SizedBox(width: 4),
+                  _relationChip('watch', 'Person of Interest', Icons.visibility_outlined, Colors.amber),
+                ]),
+              ),
             ],
             const SizedBox(height: 16),
-            Row(children: [
-              const Expanded(child: Text('Achievements', style: TextStyle(color: Colors.white54, fontSize: 12))),
-              if (isMe)
-                TextButton.icon(
-                  icon: const Icon(Icons.star_outline, size: 16),
-                  label: const Text('All achievements'),
-                  onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const AchievementsScreen())),
-                ),
-            ]),
-            const SizedBox(height: 6),
-            if (ach.isEmpty)
-              const Text('No achievements yet', style: TextStyle(color: Colors.white38))
-            else
-              ...ach.map((a) => ListTile(
-                    dense: true,
-                    leading: const Icon(Icons.star, color: Colors.amber),
-                    title: Text(a['title'] as String? ?? ''),
-                    subtitle: Text((a['ts'] as String? ?? '').split('T').first),
-                  )),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.star, color: Colors.amber),
+                title: Text('Achievements: ${p['stars'] ?? ach.length} out of ${p['maxStars'] ?? 54} stars'),
+                trailing: isMe
+                    ? FilledButton.tonal(
+                        onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const AchievementsScreen())),
+                        child: const Text('View'))
+                    : null,
+              ),
+            ),
           ]),
         );
       },

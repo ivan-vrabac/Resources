@@ -32,6 +32,14 @@ DEFS = {
     "level":        ("Experience", "Player level", (10, 100, 500), ""),
 }
 TIER_NAMES = ("First star", "Second star", "Third star")
+# short score label shown as "<label>: value / target"
+LABELS = {
+    "hq_level": "HQ level", "hq_influence": "Mines in HQ area", "age": "Days", "balance": "Credits",
+    "points": "Points", "luxury_points": "Luxury points", "gambler": "Five of a kind", "decadence": "Luxury items",
+    "factories": "Factory levels", "hoarder": "Mines", "attacker": "Attacks won", "friend": "Repairs for others",
+    "special": "Upgrades", "artifacts": "Artifacts", "repairs": "Repairs", "streak": "Streak days",
+    "warehouse": "Warehouse level", "level": "Level",
+}
 
 
 def _one(conn, sql, args=()):
@@ -114,7 +122,8 @@ def install(api) -> None:
         for key, (title, desc, tiers, unit) in DEFS.items():
             stars = sum(1 for i in range(len(tiers)) if f"{key}_{i + 1}" in got)
             nxt = next((t for t in tiers if m[key] < t), None)
-            out.append({"key": key, "title": title, "description": desc, "unit": unit, "value": m[key],
+            out.append({"key": key, "title": title, "description": desc, "unit": unit, "label": LABELS[key],
+                        "value": m[key],
                         "tiers": list(tiers), "stars": stars, "next": nxt,
                         "unlockedAt": [got.get(f"{key}_{i + 1}") for i in range(len(tiers))]})
         return {"err": 0, "achievements": out, "new": new,

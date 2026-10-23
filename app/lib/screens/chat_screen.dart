@@ -8,10 +8,13 @@ import '../models/player_provider.dart';
 import '../services/game_api.dart';
 import '../services/storage_service.dart';
 import '../widgets/top_banner.dart';
+import 'dm_screen.dart';
 import 'profile_screen.dart';
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key});
+  /// Inside the Social tab (no app bar of its own).
+  final bool embedded;
+  const ChatScreen({super.key, this.embedded = false});
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
@@ -28,8 +31,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Timer? _pollTimer;
 
   Set<String> _mutedHids   = {};   // muted player ids (pid), local: no mention alerts
-  bool _loadingOlder = false;
-  bool _noOlder      = false;
+  List<String> _rules = const [];   // chat rules from the server (shown on top)
+  int _maxLen = 300;
 
   // @ autocomplete
   bool         _showSuggestions = false;
@@ -70,6 +73,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
     final myName = context.read<PlayerProvider>().player?.name ?? '';
     final newMsgs = r.list('messages');
+    if (r.data['rules'] is List) _rules = (r.data['rules'] as List).cast<String>();
+    _maxLen = (r.data['maxLength'] as num? ?? _maxLen).toInt();
 
     bool hasMention = false;
     for (final m in newMsgs) {
@@ -100,21 +105,6 @@ class _ChatScreenState extends State<ChatScreen> {
     } else {
       if (mounted) setState(() => _loading = false);
     }
-  }
-
-  Future<void> _loadOlder() async {
-    if (_loadingOlder || _noOlder || _messages.isEmpty) return;
-    setState(() => _loadingOlder = true);
-    final r = await GameApi.call('/api/v1/chat/messages', context.read<PlayerProvider>().sid,
-        {'before': _messages.first['id'], 'limit': 50});
-    if (!mounted) return;
-    final older = r.ok ? r.list('messages') : <Map<String, dynamic>>[];
-    setState(() {
-      _loadingOlder = false;
-      if (older.isEmpty) _noOlder = true;
-      _messages = [...older, ..._messages];
-      _rebuildHints();
-    });
   }
 
   void _scrollBottom() {
@@ -151,6 +141,15 @@ class _ChatScreenState extends State<ChatScreen> {
         .where((n) => n.toLowerCase().startsWith(_mentionQuery))
         .take(5)
         .toList();
+  }
+
+  /// Long-press on a message: add "@name " to your message.
+  void _mention(String name) {
+    if (name.isEmpty) return;
+    final t = _input.text;
+    final add = '${t.isEmpty || t.endsWith(' ') ? '' : ' '}@$name ';
+    _input.value = TextEditingValue(text: t + add, selection: TextSelection.collapsed(offset: (t + add).length));
+    _focus.requestFocus();
   }
 
   void _insertMention(String name) {
@@ -191,7 +190,17 @@ class _ChatScreenState extends State<ChatScreen> {
     final name = msg['name'] as String? ?? '';
     if (hid.isEmpty) return;
     final isMuted   = _mutedHids.contains(hid);
+    final sid = context.read<PlayerProvider>().sid;
+    GameApi.call('/api/v1/chat/dm/threads', sid).then((th) {
+      if (!mounted) return;
+      final unread = th.ok
+          ? (th.list('threads').firstWhere((t) => t['pid'] == hid, orElse: () => const {})['unread'] as num? ?? 0).toInt()
+          : 0;
+      _openPlayerSheet(hid, name, isMuted, unread);
+    });
+  }
 
+  void _openPlayerSheet(String hid, String name, bool isMuted, int unread) {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1A1A2E),
@@ -203,11 +212,26 @@ class _ChatScreenState extends State<ChatScreen> {
                 style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
           ),
           ListTile(
-            leading: const Icon(Icons.person_outline, color: Colors.tealAccent),
-            title: const Text('View profile', style: TextStyle(color: Colors.white)),
+            leading: const Icon(Icons.query_stats, color: Colors.tealAccent),
+            title: const Text('View stats', style: TextStyle(color: Colors.white)),
             onTap: () {
               Navigator.pop(context);
               ProfileScreen.open(context, hid);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.mail_outline, color: Colors.tealAccent),
+            title: const Text('Private messages', style: TextStyle(color: Colors.white)),
+            trailing: unread > 0
+                ? Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(color: Colors.deepOrange, borderRadius: BorderRadius.circular(10)),
+                    child: Text('$unread new', style: const TextStyle(color: Colors.white, fontSize: 12)),
+                  )
+                : null,
+            onTap: () {
+              Navigator.pop(context);
+              DmScreen.open(context, hid, name);
             },
           ),
           ListTile(
@@ -310,7 +334,8 @@ class _ChatScreenState extends State<ChatScreen> {
     // same colour as the bottom bar; no title (it's obviously the chat) — only a slim bar for
     // the back button (opened from More) or the muted-players list
     final bg = Theme.of(context).colorScheme.surface;
-    final showBar = ModalRoute.of(context)?.canPop == true || _mutedHids.isNotEmpty;
+    final showBar = !widget.embedded && (ModalRoute.of(context)?.canPop == true || _mutedHids.isNotEmpty);
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
       backgroundColor: bg,
       appBar: !showBar ? null : AppBar(
@@ -328,6 +353,21 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       body: Column(
         children: [
+          // chat rules (from the server)
+          if (_rules.isNotEmpty)
+            Container(
+              width: double.infinity,
+              color: cs.surfaceContainerHigh,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Row(children: [
+                Icon(Icons.gavel, size: 14, color: cs.primary),
+                const SizedBox(width: 6),
+                Expanded(child: Text(_rules.join(' · '), style: const TextStyle(fontSize: 11, color: Colors.white70))),
+                if (widget.embedded && _mutedHids.isNotEmpty)
+                  InkWell(onTap: _showMutedList,
+                      child: const Icon(Icons.notifications_off, size: 16, color: Colors.orange)),
+              ]),
+            ),
           // Messages
           Expanded(
             child: _loading
@@ -340,14 +380,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     : ListView.builder(
                         controller: _scroll,
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        itemCount: _messages.length + 1,
-                        itemBuilder: (_, i) => i == 0
-                            ? (_noOlder
-                                ? const SizedBox(height: 4)
-                                : TextButton(
-                                    onPressed: _loadingOlder ? null : _loadOlder,
-                                    child: Text(_loadingOlder ? 'Loading…' : 'Load older messages')))
-                            : _buildMsgTile(_messages[i - 1], myHid),
+                        itemCount: _messages.length,
+                        itemBuilder: (_, i) => _buildMsgTile(_messages[i], myHid),
                       ),
           ),
 
@@ -369,7 +403,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
           // Input bar
           Container(
-            color: const Color(0xFF12122A),
+            color: cs.surface,
             padding: EdgeInsets.only(
               left: 12, right: 8, top: 8,
               bottom: MediaQuery.of(context).viewInsets.bottom + 8,
@@ -380,15 +414,19 @@ class _ChatScreenState extends State<ChatScreen> {
                   controller: _input,
                   focusNode: _focus,
                   style: const TextStyle(color: Colors.white, fontSize: 14),
-                  maxLength: 500,
-                  maxLines: null,
+                  maxLength: _maxLen,
+                  maxLengthEnforcement: MaxLengthEnforcement.enforced,
+                  minLines: 1,
+                  maxLines: 4,
                   textCapitalization: TextCapitalization.sentences,
                   decoration: InputDecoration(
                     hintText: 'Type a message… use @ to mention',
                     hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
                     filled: true,
-                    fillColor: const Color(0xFF1E1E3A),
-                    counterText: '',
+                    fillColor: cs.surfaceContainerHighest,
+                    // show what's left only near the limit, so the bar never jumps
+                    counterText: _input.text.length > _maxLen * 0.8 ? '${_maxLen - _input.text.length}' : '',
+                    counterStyle: const TextStyle(fontSize: 10, color: Colors.white38),
                     border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(20),
                         borderSide: BorderSide.none),
@@ -403,7 +441,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 icon: _sending
                     ? const SizedBox(width: 20, height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.send_rounded, color: Colors.tealAccent),
+                    : Icon(Icons.send_rounded, color: cs.primary),
               ),
             ]),
           ),
@@ -428,19 +466,23 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (_) {}
 
     return GestureDetector(
-      onLongPress: isMe ? null : () => _showMuteBlockMenu(msg),
+      behavior: HitTestBehavior.opaque,
+      onTap: pid.isEmpty ? null : () => ProfileScreen.open(context, pid),
+      onLongPress: isMe ? null : () => _mention(name),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 3),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Avatar
-            CircleAvatar(
-              radius: 14,
-              backgroundColor: isMe ? Colors.teal.shade800 : const Color(0xFF2A2A4A),
-              child: Text(
-                name.isNotEmpty ? name[0].toUpperCase() : '?',
-                style: const TextStyle(fontSize: 11, color: Colors.white70),
+            // Avatar: the player's HQ picture; tap for the player menu
+            GestureDetector(
+              onTap: isMe ? null : () => _showMuteBlockMenu(msg),
+              child: SizedBox(
+                width: 30, height: 30,
+                child: Image.asset('assets/images/hq_thumb_${((msg['hqLevel'] as num?) ?? 1).toInt().clamp(1, 10)}.png',
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => CircleAvatar(radius: 14,
+                        child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: const TextStyle(fontSize: 11)))),
               ),
             ),
             const SizedBox(width: 8),
@@ -450,7 +492,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 children: [
                   Row(children: [
                     GestureDetector(
-                      onTap: pid.isEmpty ? null : () => ProfileScreen.open(context, pid),
+                      onTap: isMe ? null : () => _showMuteBlockMenu(msg),
                       child: Text(name,
                           style: TextStyle(
                               color: isMe ? Colors.tealAccent : Colors.white70,

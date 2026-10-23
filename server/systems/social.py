@@ -154,6 +154,14 @@ def public_profile(conn, h, viewer_hid: str, target_hid: str) -> dict:
         a = conn.execute("SELECT COALESCE(SUM(success),0), COUNT(*) FROM attacks WHERE attacker_hid=?", (target_hid,)).fetchone()
         d = conn.execute("SELECT COALESCE(SUM(1-success),0), COUNT(*) FROM attacks WHERE defender_hid=?", (target_hid,)).fetchone()
         out["combat"] = {"attacksWon": a[0], "attacks": a[1], "defencesWon": d[0], "defences": d[1]}
+    try:                              # achievement stars (systems/achievements.py: "<key>_<tier>")
+        from . import achievements as _ach
+        codes = {f"{k}_{i}" for k in _ach.DEFS for i in (1, 2, 3)}
+        out["stars"] = sum(1 for r in conn.execute("SELECT code FROM achievements WHERE hid=?", (target_hid,))
+                           if r[0] in codes)
+        out["maxStars"] = 3 * len(_ach.DEFS)
+    except Exception:
+        pass
     if viewer_hid == target_hid:  # private extras only for yourself
         out["xp"] = xp
         out["credits"] = p["credits"]
@@ -256,12 +264,16 @@ def install(api) -> None:
         hidden = blocked_by(conn, hid)
         rows = conn.execute(f"SELECT id, hid, name, msg, ts FROM chat_messages WHERE {where} "
                             f"ORDER BY id DESC LIMIT ?", args + (limit,)).fetchall()
+        hq = {}
         out = []
         for r in reversed(rows):  # oldest first; ids give a total order
             if r[1] in hidden:
                 continue
+            if r[1] not in hq:
+                x = conn.execute("SELECT level FROM hq WHERE hid=?", (r[1],)).fetchone()
+                hq[r[1]] = x[0] if x else 0
             out.append({"id": r[0], "pid": pid_of(conn, r[1]), "name": r[2], "msg": r[3],
-                        "ts": r[4], "isMe": r[1] == hid})
+                        "ts": r[4], "isMe": r[1] == hid, "hqLevel": hq[r[1]]})
         return out
 
     @api.endpoint("/api/v1/chat/messages", feature="SOCIAL")

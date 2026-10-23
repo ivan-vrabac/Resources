@@ -21,6 +21,11 @@ bool kNotifWarehouseFull = true;
 // ── App color palette ──────────────────────────────────────────────────────────
 Color  kAppSeedColor  = Branding.themeSeed;
 double kSurfaceTone   = 0.5; // 0.0 = very dark, 1.0 = less dark
+// owner 2026-10-23: stronger looks — own background colour and tint strength, text and icon colours
+Color? kBgColor;              // null = the accent colour
+double kBgStrength    = 0.3;  // how strongly backgrounds and panels take the background colour
+Color? kTextColor;            // null = default (white)
+Color? kIconColor;            // null = default
 
 ThemeData _buildAppTheme(Color seed, double surfaceTone) {
   // vibrant variant + the exact chosen colour as primary, and backgrounds tinted with it, so the
@@ -28,18 +33,34 @@ ThemeData _buildAppTheme(Color seed, double surfaceTone) {
   final scheme = ColorScheme.fromSeed(
       seedColor: seed, brightness: Brightness.dark, dynamicSchemeVariant: DynamicSchemeVariant.vibrant);
   final base = Color.lerp(const Color(0xFF0A0A0A), const Color(0xFF2D2D3D), surfaceTone)!;
-  final surface = Color.lerp(base, seed, 0.14)!;
-  return ThemeData(
+  final bg = kBgColor ?? seed;
+  final k = kBgStrength;
+  final surface = Color.lerp(base, bg, k * 0.9)!;
+  var theme = ThemeData(
     colorScheme: scheme.copyWith(
       primary: seed,
       surface: surface,
-      surfaceContainer: Color.lerp(base, seed, 0.20),
-      surfaceContainerHigh: Color.lerp(base, seed, 0.26),
-      surfaceContainerHighest: Color.lerp(base, seed, 0.32),
+      onSurface: kTextColor,
+      surfaceContainer: Color.lerp(base, bg, k * 1.2),
+      surfaceContainerHigh: Color.lerp(base, bg, k * 1.5),
+      surfaceContainerHighest: Color.lerp(base, bg, (k * 1.8).clamp(0.0, 1.0)),
+      onSurfaceVariant: kIconColor,
     ),
-    scaffoldBackgroundColor: Color.lerp(base, seed, 0.08),
+    scaffoldBackgroundColor: Color.lerp(base, bg, k * 0.6),
     useMaterial3: true,
   );
+  if (kTextColor != null) {
+    theme = theme.copyWith(textTheme: theme.textTheme.apply(bodyColor: kTextColor, displayColor: kTextColor));
+  }
+  if (kIconColor != null) {
+    theme = theme.copyWith(
+      iconTheme: theme.iconTheme.copyWith(color: kIconColor),
+      listTileTheme: theme.listTileTheme.copyWith(iconColor: kIconColor),
+      appBarTheme: theme.appBarTheme.copyWith(iconTheme: IconThemeData(color: kIconColor),
+          actionsIconTheme: IconThemeData(color: kIconColor)),
+    );
+  }
+  return theme;
 }
 
 final appThemeNotifier = ValueNotifier<ThemeData>(
@@ -719,6 +740,13 @@ const _kSeedPresetColors = [
   Colors.brown, Colors.blueGrey, Color(0xFF9E9E9E),
 ];
 
+// readable text colours on dark backgrounds
+const _kTextPresetColors = <Color>[
+  Colors.white, Color(0xFFE0E0E0), Color(0xFFFFF8E1), Color(0xFFFFE082), Color(0xFFFFCC80),
+  Color(0xFFB2DFDB), Color(0xFF80DEEA), Color(0xFFB3E5FC), Color(0xFFC5CAE9), Color(0xFFE1BEE7),
+  Color(0xFFF8BBD0), Color(0xFFC8E6C9), Color(0xFFDCEDC8),
+];
+
 class _AppAppearancePage extends StatefulWidget {
   const _AppAppearancePage();
   @override
@@ -752,7 +780,54 @@ class _AppAppearancePageState extends State<_AppAppearancePage> {
     await prefs.setDouble('app_surface_tone', t);
   }
 
+  /// Background / text / icon colour (null = default) and tint strength, saved and applied at once.
+  Future<void> _setExtra({Color? bg, Color? text, Color? icon, double? strength,
+      bool clearBg = false, bool clearText = false, bool clearIcon = false}) async {
+    final prefs = await SharedPreferences.getInstance();
+    Future<void> put(String key, Color? c) => c == null ? prefs.remove(key) : prefs.setInt(key, c.toARGB32());
+    setState(() {
+      if (bg != null || clearBg) kBgColor = bg;
+      if (text != null || clearText) kTextColor = text;
+      if (icon != null || clearIcon) kIconColor = icon;
+      if (strength != null) kBgStrength = strength;
+    });
+    appThemeNotifier.value = _buildAppTheme(_seed, _tone);
+    await put('app_bg_color', kBgColor);
+    await put('app_text_color', kTextColor);
+    await put('app_icon_color', kIconColor);
+    await prefs.setDouble('app_bg_strength', kBgStrength);
+  }
+
+  Widget _optionalColor(String title, Color? value, List<Color> presets, String defaultLabel,
+      void Function(Color?) onChanged) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(child: Text(title, style: const TextStyle(fontSize: 13))),
+          ChoiceChip(label: Text(defaultLabel), selected: value == null, onSelected: (_) => onChanged(null)),
+        ]),
+        const SizedBox(height: 6),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final c in presets)
+            GestureDetector(
+              onTap: () => onChanged(c),
+              child: Container(
+                width: 32, height: 32,
+                decoration: BoxDecoration(
+                  color: c, shape: BoxShape.circle,
+                  border: Border.all(color: value?.toARGB32() == c.toARGB32() ? Colors.white : Colors.white24,
+                      width: value?.toARGB32() == c.toARGB32() ? 3 : 1),
+                ),
+              ),
+            ),
+        ]),
+      ]),
+    );
+  }
+
   Future<void> _reset() async {
+    await _setExtra(strength: 0.3, clearBg: true, clearText: true, clearIcon: true);
     await _setSeed(Branding.themeSeed);
     await _setTone(0.5);
   }
@@ -799,6 +874,24 @@ class _AppAppearancePageState extends State<_AppAppearancePage> {
             ),
           ]),
         ),
+        _settingsSectionHeader('Background Colour'),
+        _optionalColor('Colour of backgrounds and panels', kBgColor, _kSeedPresetColors, 'Accent',
+            (c) => _setExtra(bg: c, clearBg: c == null)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(children: [
+            const Text('Subtle', style: TextStyle(color: Colors.white38, fontSize: 11)),
+            Expanded(child: Slider(value: kBgStrength, min: 0.0, max: 0.6, divisions: 12,
+                activeColor: cs.primary, onChanged: (v) => _setExtra(strength: v))),
+            const Text('Strong', style: TextStyle(color: Colors.white38, fontSize: 11)),
+          ]),
+        ),
+        _settingsSectionHeader('Text Colour'),
+        _optionalColor('Colour of text', kTextColor, _kTextPresetColors, 'Default',
+            (c) => _setExtra(text: c, clearText: c == null)),
+        _settingsSectionHeader('Icon & Symbol Colour'),
+        _optionalColor('Colour of icons and symbols', kIconColor, _kSeedPresetColors, 'Default',
+            (c) => _setExtra(icon: c, clearIcon: c == null)),
         const SizedBox(height: 8),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1066,6 +1159,12 @@ Future<void> loadNumDecimalsPrefs() async {
   final seedArgb = prefs.getInt('app_seed_color');
   if (seedArgb != null) kAppSeedColor = Color(seedArgb);
   kSurfaceTone = (prefs.getDouble('app_surface_tone') ?? 0.5).clamp(0.0, 1.0);
+  final bgArgb = prefs.getInt('app_bg_color'), textArgb = prefs.getInt('app_text_color'),
+      iconArgb = prefs.getInt('app_icon_color');
+  kBgColor = bgArgb == null ? null : Color(bgArgb);
+  kTextColor = textArgb == null ? null : Color(textArgb);
+  kIconColor = iconArgb == null ? null : Color(iconArgb);
+  kBgStrength = (prefs.getDouble('app_bg_strength') ?? 0.3).clamp(0.0, 0.6);
   appThemeNotifier.value = _buildAppTheme(kAppSeedColor, kSurfaceTone);
 }
 

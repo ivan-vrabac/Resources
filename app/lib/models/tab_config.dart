@@ -19,6 +19,7 @@ enum GameTabId {
   quests,
   stats,
   contacts,
+  social,      // chat + contacts + private messages (replaces chat and contacts in the bar)
 }
 
 const _kPrefKey = 'bottom_bar_tabs';
@@ -40,10 +41,15 @@ class TabConfig {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getStringList(_kPrefKey);
     if (raw == null) return const TabConfig(kDefaultBottomTabs);
-    final ids = raw
-        .map((s) => GameTabId.values.where((e) => e.name == s).firstOrNull)
-        .whereType<GameTabId>()
-        .toList();
+    final ids = <GameTabId>[];
+    for (final s in raw) {
+      // chat and contacts were merged into Social
+      // ... and the HQ moved into Special Buildings
+      final id = (s == 'chat' || s == 'contacts') ? GameTabId.social
+          : s == 'headquarters' ? GameTabId.specialBuildings
+          : GameTabId.values.where((e) => e.name == s).firstOrNull;
+      if (id != null && !ids.contains(id)) ids.add(id);
+    }
     if (ids.isEmpty) return const TabConfig(kDefaultBottomTabs);
     return TabConfig(ids);
   }

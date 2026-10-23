@@ -38,7 +38,9 @@ String cargoMarkerAsset(Map<String, dynamic> c) {
   if (c['stacked'] == true) return 'assets/mapmarkers/stacked${1 + v % 2}_map.png';
   final h = _holiday(DateTime.now());
   if (h != null) return 'assets/mapmarkers/cargo$h${v % 5}_map.png';
-  return v % 5 == 0 ? 'assets/mapmarkers/cargobox_map.png' : 'assets/mapmarkers/cargocontainer${v % 4}_map.png';
+  // the server decides the kind: cargo box (may hold specials) or container
+  final isBox = c['kind'] == 'box' || (c['kind'] == null && v % 5 == 0);
+  return isBox ? 'assets/mapmarkers/cargobox_map.png' : 'assets/mapmarkers/cargocontainer${v % 4}_map.png';
 }
 
 /// Cargo Rain on the map: crate markers, the Museum collection-range ring and the left-side
@@ -143,7 +145,11 @@ class CargoController extends ChangeNotifier {
         {'id': crate['id'], 'method': method, 'lat': pos.latitude, 'lng': pos.longitude});
     if (!context.mounted) return;
     if (r.ok) {
-      AppNotify.show(context, 'Found ${(r.data['qty'] as num).toInt()} × ${itemName(r.data['itemID'] as int)}');
+      final items = (r.data['items'] as List?)?.cast<Map<String, dynamic>>();
+      AppNotify.show(context, items != null
+          ? (items.isEmpty ? 'Nothing your Museum can find in this stack'
+              : 'Found ${items.map((i) => '${fmtNum((i['qty'] as num).toInt())} ${itemName((i['itemID'] as num).toInt())}').join(', ')}')
+          : 'Found ${(r.data['qty'] as num).toInt()} × ${itemName(r.data['itemID'] as int)}');
       crates.removeWhere((c) => c['id'] == crate['id']);
       notifyListeners();
       refreshInfo(sid);
@@ -437,7 +443,6 @@ class _CargoPanel extends StatefulWidget {
 class _CargoPanelState extends State<_CargoPanel> {
   double _count = 10;
   bool _stacked = false;
-  int _stacks = 1;
   bool _busy = false;
 
   Future<void> _drop() async {
@@ -449,14 +454,15 @@ class _CargoPanelState extends State<_CargoPanel> {
     setState(() => _busy = true);
     final rid = '${DateTime.now().microsecondsSinceEpoch}${Random().nextInt(1 << 30)}';
     final r = await GameApi.call('/api/v1/cargo/drop', widget.sid, {
-      if (_stacked) ...{'stacked': 1, 'stacks': _stacks, 'count': _count.round()} else 'count': _count.round(),
+      if (_stacked) ...{'stacked': 1, 'count': _count.round()} else 'count': _count.round(),
       'lat': pos.latitude, 'lng': pos.longitude, 'rid': rid,
     });
     if (!mounted) return;
     setState(() => _busy = false);
     if (r.ok) {
+      final n = (r.data['dropped'] as num? ?? 1).toInt();
       AppNotify.show(context, _stacked
-          ? 'Dropped ${fmtNum(_count.round())} crates in $_stacks stack${_stacks == 1 ? '' : 's'}'
+          ? 'Dropped ${fmtNum(_count.round())} crates in $n stack${n == 1 ? '' : 's'}'
           : 'Cargo Rain! ${_count.round()} crates dropped');
       await widget.controller.refreshInfo(widget.sid);
       widget.onDropped();
@@ -478,8 +484,7 @@ class _CargoPanelState extends State<_CargoPanel> {
     final minVal = _stacked ? stackSize.toDouble() : 1.0;
     if (_count > maxVal) _count = max(minVal, maxVal);
     if (_count < minVal) _count = minVal;
-    final maxStacksNow = max(1, min((c.info['maxStacks'] as num? ?? 5).toInt(), _count.round() ~/ stackSize));
-    if (_stacks > maxStacksNow) _stacks = maxStacksNow;
+
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -503,7 +508,7 @@ class _CargoPanelState extends State<_CargoPanel> {
                 ButtonSegment(value: true, label: Text('Stacked')),
               ],
               selected: {_stacked},
-              onSelectionChanged: (s) => setState(() { _stacked = s.first; _count = s.first ? 100 : 1; _stacks = 1; }),
+              onSelectionChanged: (s) => setState(() { _stacked = s.first; _count = s.first ? 100 : 1; }),
             )
           else
             Text('Stacked Cargo Rain unlocks at Haulage Firm level ${c.info['stackHaulageLevel'] ?? 5}.',
@@ -519,26 +524,15 @@ class _CargoPanelState extends State<_CargoPanel> {
                   _count = _stacked ? (v / stackSize).round() * stackSize.toDouble() : v) : null,
             ),
             if (_stacked)
-              Row(children: [
-                const Text('Split into', style: TextStyle(color: Colors.white70)),
-                const SizedBox(width: 8),
-                for (var n = 1; n <= 5; n++)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: ChoiceChip(
-                      label: Text('$n'),
-                      selected: _stacks == n,
-                      onSelected: n <= maxStacksNow ? (_) => setState(() => _stacks = n) : null,
-                    ),
-                  ),
-                const Text('stacks', style: TextStyle(color: Colors.white70)),
-              ]),
+              const Text('The crates are split into 1–5 stacks. Everyone can see a stack; each collector '
+                  'gets the found objects their Museum level allows.',
+                  style: TextStyle(color: Colors.white54, fontSize: 11)),
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
                 icon: const Icon(Icons.water_drop_outlined),
                 label: Text(_stacked
-                    ? 'Drop ${fmtNum(_count.round())} crates in $_stacks stack${_stacks == 1 ? '' : 's'}'
+                    ? 'Drop ${fmtNum(_count.round())} stacked crates'
                     : 'Drop ${_count.round()} crate${_count.round() == 1 ? '' : 's'} here'),
                 onPressed: _busy ? null : _drop,
               ),

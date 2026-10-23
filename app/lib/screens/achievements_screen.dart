@@ -87,10 +87,8 @@ class _AchievementsScreenState extends State<AchievementsScreen> {
                 color: next == null ? Colors.amber : Colors.teal),
           ),
           const SizedBox(height: 4),
-          Text(next == null
-                  ? 'All stars: ${fmtNum(value)} $unit'
-                  : '${fmtNum(value)} / ${fmtNum(next)} $unit  ·  stars at ${tiers.map(fmtNum).join(' / ')}',
-              style: const TextStyle(fontSize: 11, color: Colors.white60)),
+          Text('${a['label'] ?? unit}: ${fmtNum(value)} / ${fmtNum(next ?? tiers.last)}',
+              style: const TextStyle(fontSize: 12, color: Colors.white70)),
         ]),
       ),
     );

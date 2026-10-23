@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/player_provider.dart';
 import '../services/api_service.dart';
 import '../constants.dart';
@@ -33,10 +34,17 @@ class _FactoryScreenState extends State<FactoryScreen> {
   Map<String, dynamic>? _data;
   bool _loading = true;
   Timer? _refreshTimer;
+  // player's own order of factories (item ids), kept on this device
+  static const _kOrder = 'factory_order';
+  List<int> _order = [];
+  bool _arranging = false;
 
   @override
   void initState() {
     super.initState();
+    SharedPreferences.getInstance().then((p) {
+      if (mounted) setState(() => _order = (p.getStringList(_kOrder) ?? []).map(int.tryParse).whereType<int>().toList());
+    });
     _load();
     _refreshTimer = Timer.periodic(
         const Duration(seconds: 60), (_) => _load(silent: true));
@@ -154,7 +162,7 @@ class _FactoryScreenState extends State<FactoryScreen> {
           Row(children: [
             const Icon(Icons.monetization_on, size: 14, color: Colors.amber),
             const SizedBox(width: 4),
-            Text('ꞓ${fmtNum(upgCredits)}', style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)),
+            Text('êž“${fmtNum(upgCredits)}', style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)),
           ]),
           // Resource requirements
           if (upgRes.isNotEmpty) ...[
@@ -289,7 +297,7 @@ class _FactoryScreenState extends State<FactoryScreen> {
                 const Icon(Icons.info_outline, color: Colors.orange, size: 14),
                 const SizedBox(width: 6),
                 Expanded(child: Text(
-                  'Only ${applyHrs < 24 ? '${applyHrs.round()}h' : '${(applyHrs/24).toStringAsFixed(1)}d'} remaining — less than the 7-day max',
+                  'Only ${applyHrs < 24 ? '${applyHrs.round()}h' : '${(applyHrs/24).toStringAsFixed(1)}d'} remaining â€” less than the 7-day max',
                   style: const TextStyle(color: Colors.orange, fontSize: 11),
                 )),
               ]),
@@ -369,10 +377,58 @@ class _FactoryScreenState extends State<FactoryScreen> {
     );
   }
 
+  /// Own factories (no special buildings) in the player's order; new ones go last.
+  List<dynamic> get _myFactories {
+    final list = (_data?['factories'] as List? ?? const [])
+        .where((f) => !kSpecialBuildings.containsKey(f['itemID'] as int? ?? 0)).toList();
+    int pos(dynamic f) {
+      final i = _order.indexOf(f['itemID'] as int? ?? 0);
+      return i < 0 ? 1 << 30 : i;
+    }
+    final idx = {for (var i = 0; i < list.length; i++) list[i]: i};
+    list.sort((a, b) { final c = pos(a).compareTo(pos(b)); return c != 0 ? c : idx[a]!.compareTo(idx[b]!); });
+    return list;
+  }
+
+  Widget _arrangeView(List<dynamic> mine) => Scaffold(
+        appBar: AppBar(toolbarHeight: 40, title: const Text('Arrange factories'), actions: [
+          TextButton(onPressed: () => setState(() => _arranging = false), child: const Text('Done')),
+        ]),
+        body: ReorderableListView.builder(
+          padding: const EdgeInsets.all(12),
+          itemCount: mine.length,
+          onReorderItem: (from, to) async {
+            final ids = mine.map((f) => f['itemID'] as int).toList();
+            ids.insert(to, ids.removeAt(from));
+            setState(() => _order = ids);
+            final p = await SharedPreferences.getInstance();
+            await p.setStringList(_kOrder, ids.map((e) => '$e').toList());
+          },
+          itemBuilder: (_, i) {
+            final f = mine[i];
+            final out = kFactoryTypes[f['itemID']]?['produces'];
+            return Card(
+              key: ValueKey(f['fID']),
+              margin: const EdgeInsets.only(bottom: 6),
+              child: ListTile(
+                dense: true,
+                leading: SizedBox(width: 32, height: 32, child: Image.asset('assets/images_res/res${f['itemID']}.png',
+                    errorBuilder: (_, __, ___) => const Icon(Icons.factory_outlined))),
+                title: Text(itemName(f['itemID'] as int)),
+                subtitle: out is int ? Text('Produces ${itemName(out)}') : null,
+                trailing: Text('Lv ${f['lvl'] ?? 1}'),
+              ),
+            );
+          },
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>().player;
     final canPop = ModalRoute.of(context)?.canPop == true;
+    final mine = _myFactories;
+    if (_arranging && !_loading) return _arrangeView(mine);
     if (_loading) {
       return Scaffold(
         appBar: canPop ? AppBar(toolbarHeight: 36) : null,
@@ -384,12 +440,19 @@ class _FactoryScreenState extends State<FactoryScreen> {
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(padding: const EdgeInsets.all(12), children: [
-          if (_data != null && (_data!['factories'] as List)
-              .where((f) => !kSpecialBuildings.containsKey(f['itemID'] as int? ?? 0)).isNotEmpty) ...[
-            const _SectionHeader('My Factories'),
-            ...(_data!['factories'] as List)
-                .where((f) => !kSpecialBuildings.containsKey(f['itemID'] as int? ?? 0))
-                .map((f) => _FactoryTile(
+          if (mine.isNotEmpty) ...[
+            Row(children: [
+              const Expanded(child: _SectionHeader('My Factories')),
+              if (mine.length > 1)
+                TextButton.icon(
+                  onPressed: () => setState(() => _arranging = true),
+                  icon: const Icon(Icons.swap_vert, size: 16),
+                  label: const Text('Arrange', style: TextStyle(fontSize: 12)),
+                  style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                ),
+            ]),
+            ...mine.map((f) => _FactoryTile(
+              key: ValueKey(f['fID']),
               factory: f,
               player: player,
               onCollect: () => _collect(f['fID'] as String),
@@ -447,6 +510,7 @@ class _FactoryTile extends StatefulWidget {
   final VoidCallback onUpgrade;
   final VoidCallback onBoost;
   const _FactoryTile({
+    super.key,
     required this.factory, required this.player,
     required this.onCollect, required this.onStart,
     required this.onStop, required this.onUpgrade, required this.onBoost,
@@ -570,7 +634,7 @@ class _FactoryTileState extends State<_FactoryTile> {
                 ],
               ]),
             ])),
-            // Boost button — always tappable
+            // Boost button â€” always tappable
             GestureDetector(
               onTap: widget.onBoost,
               child: ColorFiltered(
@@ -620,7 +684,7 @@ class _FactoryTileState extends State<_FactoryTile> {
             ] else ...[
               Row(children: [
                 // ignore: unnecessary_non_null_assertion
-                Expanded(child: Text('${itemName(prodItem!)}  •  ${fmtNum(f['prodAmt'] as num)} units',
+                Expanded(child: Text('${itemName(prodItem!)}  â€¢  ${fmtNum(f['prodAmt'] as num)} units',
                     style: const TextStyle(color: Colors.white54, fontSize: 11))),
                 Text(_countdown,
                     style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 13)),
@@ -644,7 +708,7 @@ class _FactoryTileState extends State<_FactoryTile> {
               const Text('Cannot produce while on fire.',
                   style: TextStyle(color: Colors.red, fontSize: 11))
             else ...[
-              Text('${fmtNum(outPerHr.round())} units/hr  •  ${fmtNum(baseOut)} per batch  •  ${_fmtHrs(hrsPerBatch)}',
+              Text('${fmtNum(outPerHr.round())} units/hr  â€¢  ${fmtNum(baseOut)} per batch  â€¢  ${_fmtHrs(hrsPerBatch)}',
                   style: const TextStyle(color: Colors.white54, fontSize: 11)),
               const SizedBox(height: 8),
               Row(children: [
@@ -978,7 +1042,7 @@ class _StartProdSheetState extends State<_StartProdSheet> {
           ),
           const SizedBox(width: 8),
           Text(
-            '${fmtNum(totalOut)} ${itemName(_producesId)}  •  ${_fmtHrs(_hrsPerBatch * _batches)}',
+            '${fmtNum(totalOut)} ${itemName(_producesId)}  â€¢  ${_fmtHrs(_hrsPerBatch * _batches)}',
             style: const TextStyle(color: Colors.teal, fontSize: 12),
           ),
           const Spacer(),
@@ -1044,7 +1108,7 @@ class _StartProdSheetState extends State<_StartProdSheet> {
               const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 14),
               const SizedBox(width: 6),
               Expanded(child: Text(
-                'Warehouse full — ${fmtNum(-whFreeAfter)} units excess will be lost',
+                'Warehouse full â€” ${fmtNum(-whFreeAfter)} units excess will be lost',
                 style: const TextStyle(color: Colors.orange, fontSize: 11),
               )),
             ]),
@@ -1088,12 +1152,12 @@ class _BoostSheet extends StatelessWidget {
         if (rem != null && !rem.isNegative) {
           final d = rem.inDays;
           final h = rem.inHours % 24;
-          return 'Boost on cooldown  •  ${d}d ${h}h remaining';
+          return 'Boost on cooldown  â€¢  ${d}d ${h}h remaining';
         }
       }
       return 'Boost on cooldown';
     }
-    return 'Instantly collect ~${fmtNum(out7days)} units (7-day output)  •  ${_fmtDays(kBoostCooldownDays)} cooldown';
+    return 'Instantly collect ~${fmtNum(out7days)} units (7-day output)  â€¢  ${_fmtDays(kBoostCooldownDays)} cooldown';
   }
 
   @override
@@ -1203,7 +1267,7 @@ class _BoostSheet extends StatelessWidget {
                     : const Icon(Icons.work_outline, color: Colors.amber)),
             title: Text(b['name'] as String,
                 style: TextStyle(color: isActiveThis ? Colors.green : null)),
-            subtitle: Text('+$pct% output  •  WA ${waDelta >= 0 ? '+' : ''}$waDelta  •  8h',
+            subtitle: Text('+$pct% output  â€¢  WA ${waDelta >= 0 ? '+' : ''}$waDelta  â€¢  8h',
                 style: const TextStyle(fontSize: 10)),
             trailing: SizedBox(
               width: 80,

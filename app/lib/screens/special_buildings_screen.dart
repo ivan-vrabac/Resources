@@ -1,11 +1,13 @@
-import '../services/game_api.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../constants.dart';
 import '../models/player_provider.dart';
 import '../services/api_service.dart';
+import '../services/game_api.dart';
 import '../widgets/top_banner.dart';
 import 'casino_screen.dart';
+import 'headquarters_screen.dart';
 
 // Helper: resolve res map keys/values to int entries
 List<MapEntry<int, int>> _resEntries(dynamic resMap) {
@@ -25,8 +27,39 @@ class SpecialBuildingsScreen extends StatefulWidget {
 }
 
 class _SpecialBuildingsScreenState extends State<SpecialBuildingsScreen> {
-  // Local state for which special buildings the player owns + their levels
-  // Driven from PlayerProvider's factory list (isSpecial == true)
+  // Order and open cards are a per-device preference (closed by default).
+  static const _kOrder = 'special_buildings_order', _kOpen = 'special_buildings_open';
+  List<int> _order = [];
+  Set<String> _open = {};
+
+  @override
+  void initState() {
+    super.initState();
+    SharedPreferences.getInstance().then((p) {
+      if (!mounted) return;
+      setState(() {
+        _order = (p.getStringList(_kOrder) ?? []).map(int.tryParse).whereType<int>().toList();
+        _open = (p.getStringList(_kOpen) ?? []).toSet();
+      });
+    });
+  }
+
+  Future<void> _save() async {
+    final p = await SharedPreferences.getInstance();
+    await p.setStringList(_kOrder, _order.map((e) => '$e').toList());
+    await p.setStringList(_kOpen, _open.toList());
+  }
+
+  void _toggle(String key) {
+    setState(() => _open.contains(key) ? _open.remove(key) : _open.add(key));
+    _save();
+  }
+
+  /// Saved order first, then any building not in it yet (new ones) in the default order.
+  List<int> get _ids => [
+        ..._order.where(kSpecialBuildings.containsKey),
+        ...kSpecialBuildings.keys.where((k) => !_order.contains(k)),
+      ];
 
   void _snack(String msg, {bool error = false}) =>
       AppNotify.show(context, msg, isError: error);
@@ -46,41 +79,105 @@ class _SpecialBuildingsScreenState extends State<SpecialBuildingsScreen> {
     final lager   = player?.lager ?? {};
     final credits = player?.credits ?? 0;
     final owned   = _ownedMap(facts);
+    final ids = _ids;
+    final hqLevel = player?.hq?.level ?? 0;
 
     return Scaffold(
       appBar: ModalRoute.of(context)?.canPop == true ? AppBar(toolbarHeight: 36) : null,
-      body: ListView(
+      body: ReorderableListView.builder(
         padding: const EdgeInsets.all(16),
-        children: [
+        header: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           const _SectionHeader('Special Buildings'),
           const SizedBox(height: 4),
-          const Text(
-            'Powerful buildings that unlock permanent bonuses.',
-            style: TextStyle(color: Colors.white38, fontSize: 12),
+          const Text('Tap a building to open it; hold and drag to change the order.',
+              style: TextStyle(color: Colors.white38, fontSize: 12)),
+          const SizedBox(height: 12),
+          // Headquarters is always the first section
+          CollapsibleCard(
+            open: _open.contains('hq'),
+            onToggle: () => _toggle('hq'),
+            image: 'assets/images/hq_thumb_${hqLevel.clamp(1, 10)}.png',
+            name: 'Headquarters',
+            level: hqLevel == 0 ? 'Not placed' : 'Level $hqLevel',
+            body: const HeadquartersScreen(embedded: true),
           ),
-          const SizedBox(height: 16),
-          ...kSpecialBuildings.entries.map((e) {
-            final itemId = e.key;
-            final cfg    = e.value;
-            final ownedF = owned[itemId];
-            final currentLevel = ownedF != null ? (ownedF['lvl'] as int? ?? 0) : 0;
-            final maxLevel = cfg['maxLevel'] as int;
-            final costs = (cfg['costs'] as List).cast<Map<String, dynamic>>();
-            return _SpecialBuildingCard(
-              itemId: itemId,
-              cfg: cfg,
-              currentLevel: currentLevel,
-              maxLevel: maxLevel,
-              costs: costs,
-              ownedFid: ownedF?['fID'] as String?,
-              lager: lager,
-              credits: credits,
-              onAction: () => context.read<PlayerProvider>().refresh(),
-              snack: _snack,
-            );
-          }),
-        ],
+        ]),
+        itemCount: ids.length,
+        onReorderItem: (from, to) {
+          setState(() {
+            final list = [...ids];
+            list.insert(to, list.removeAt(from));
+            _order = list;
+          });
+          _save();
+        },
+        itemBuilder: (_, i) {
+          final itemId = ids[i];
+          final cfg    = kSpecialBuildings[itemId]!;
+          final ownedF = owned[itemId];
+          final currentLevel = ownedF != null ? (ownedF['lvl'] as int? ?? 0) : 0;
+          final maxLevel = cfg['maxLevel'] as int;
+          final costs = (cfg['costs'] as List).cast<Map<String, dynamic>>();
+          return _SpecialBuildingCard(
+            key: ValueKey(itemId),
+            itemId: itemId,
+            cfg: cfg,
+            currentLevel: currentLevel,
+            maxLevel: maxLevel,
+            costs: costs,
+            ownedFid: ownedF?['fID'] as String?,
+            lager: lager,
+            credits: credits,
+            open: _open.contains('$itemId'),
+            onToggle: () => _toggle('$itemId'),
+            onAction: () => context.read<PlayerProvider>().refresh(),
+            snack: _snack,
+          );
+        },
       ),
+    );
+  }
+}
+
+/// Compact card (picture, name, level) that opens to show [body].
+class CollapsibleCard extends StatelessWidget {
+  final bool open;
+  final VoidCallback onToggle;
+  final String image;
+  final String name;
+  final String level;
+  final Widget? trailing;
+  final Widget body;
+  const CollapsibleCard({super.key, required this.open, required this.onToggle, required this.image,
+      required this.name, required this.level, required this.body, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      clipBehavior: Clip.antiAlias,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        InkWell(
+          onTap: onToggle,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+            child: Row(children: [
+              SizedBox(width: 40, height: 40, child: Image.asset(image, fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const Icon(Icons.account_balance, size: 30, color: Colors.teal))),
+              const SizedBox(width: 12),
+              Expanded(child: Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15))),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(color: Colors.teal.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(6)),
+                child: Text(level, style: const TextStyle(color: Colors.tealAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+              ),
+              if (trailing != null) trailing!,
+              Icon(open ? Icons.expand_less : Icons.expand_more, color: Colors.white54),
+            ]),
+          ),
+        ),
+        if (open) Padding(padding: const EdgeInsets.fromLTRB(12, 0, 12, 12), child: body),
+      ]),
     );
   }
 }
@@ -98,8 +195,11 @@ class _SpecialBuildingCard extends StatefulWidget {
   final int credits;
   final VoidCallback onAction;
   final void Function(String) snack;
+  final bool open;
+  final VoidCallback onToggle;
 
   const _SpecialBuildingCard({
+    super.key, required this.open, required this.onToggle,
     required this.itemId, required this.cfg, required this.currentLevel,
     required this.maxLevel, required this.costs, required this.ownedFid,
     required this.lager, required this.credits,
@@ -212,62 +312,25 @@ class _SpecialBuildingCardState extends State<_SpecialBuildingCard> {
       ]);
     }
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // Header row
-          Row(children: [
-            SizedBox(
-              width: 48, height: 48,
-              child: Image.asset(
-                'assets/images_res/res${kSpecialBuildingImageId[widget.itemId] ?? widget.itemId}.png',
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) =>
-                    const Icon(Icons.account_balance, size: 36, color: Colors.teal),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-              const SizedBox(height: 2),
-              Row(children: [
-                if (_owned) ...[
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.teal.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      _isMaxLevel ? 'Max Level' : 'Level ${widget.currentLevel}',
-                      style: const TextStyle(color: Colors.tealAccent, fontSize: 11,
-                          fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ] else
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.white12,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Text('Not built',
-                        style: TextStyle(color: Colors.white54, fontSize: 11)),
-                  ),
-              ]),
-            ])),
-            if (_isMaxLevel)
-              const Icon(Icons.star, color: Colors.amber, size: 22),
+    return CollapsibleCard(
+      open: widget.open,
+      onToggle: widget.onToggle,
+      image: 'assets/images_res/res${kSpecialBuildingImageId[widget.itemId] ?? widget.itemId}.png',
+      name: name,
+      level: !_owned ? 'Not built' : _isMaxLevel ? 'Max level' : 'Level ${widget.currentLevel}',
+      trailing: _isMaxLevel ? const Icon(Icons.star, color: Colors.amber, size: 20) : null,
+      body: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(child: Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(desc, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+            )),
             IconButton(
               tooltip: 'Information',
               icon: const Icon(Icons.info_outline, color: Colors.white70),
               onPressed: () => showBuildingInfo(context, widget.itemId),
             ),
           ]),
-          const SizedBox(height: 10),
-          Text(desc, style: const TextStyle(color: Colors.white54, fontSize: 12)),
           if (effectWidget != null) ...[
             const SizedBox(height: 6),
             effectWidget,
@@ -343,8 +406,7 @@ class _SpecialBuildingCardState extends State<_SpecialBuildingCard> {
               ),
             ),
           ],
-        ]),
-      ),
+      ]),
     );
   }
 }

@@ -2,6 +2,8 @@ import 'dart:math';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import '../models/player_provider.dart';
+import 'package:provider/provider.dart';
 import 'package:latlong2/latlong.dart' hide Path;
 import '../services/game_api.dart';
 import 'async_view.dart';
@@ -213,6 +215,12 @@ class DetectorButton extends StatelessWidget {
   final ArchaeologyController controller;
   const DetectorButton({super.key, required this.controller});
 
+  /// Detectors you have: from your warehouse, or the server's count right after a scan.
+  int _count(BuildContext context) {
+    final inv = (context.watch<PlayerProvider>().player?.lager['166'] ?? 0).toInt();
+    return controller.detectorsLeft ?? inv;
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -232,13 +240,13 @@ class DetectorButton extends StatelessWidget {
                 // steady icon (no spinner / flashing while a scan runs)
                 Image.asset('assets/mapmarkers/artifactscanicon.png', width: 30, height: 30, gaplessPlayback: true,
                     errorBuilder: (_, __, ___) => const Icon(Icons.track_changes, color: Colors.yellowAccent)),
-                if (controller.detectorsLeft != null)
+                if (_count(context) > 0)
                   Positioned(
                     right: -2, top: -2,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                       decoration: BoxDecoration(color: Colors.amber.shade800, borderRadius: BorderRadius.circular(8)),
-                      child: Text('${controller.detectorsLeft}', style: const TextStyle(fontSize: 9, color: Colors.white)),
+                      child: Text('${_count(context)}', style: const TextStyle(fontSize: 9, color: Colors.white)),
                     ),
                   ),
               ]),

@@ -11,6 +11,7 @@ import '../models/player.dart';
 import '../models/player_provider.dart';
 import '../widgets/top_banner.dart';
 import '../services/api_service.dart';
+import '../services/game_api.dart';
 
 const Map<int, Map<int, int>> kHqUpgradeReqs = {
   2:  {2: 750000,  3: 750000,  8: 750000,  20: 750000},
@@ -29,7 +30,9 @@ const List<double> kHqBoostFactor = [1.9, 2.8, 3.7, 4.6, 5.5, 6.4, 7.3, 8.2, 9.1
 const List<String> kHqBonusTags = ['10_2', '10_3', '10_4', '10_5', '10_6'];
 
 class HeadquartersScreen extends StatefulWidget {
-  const HeadquartersScreen({super.key});
+  /// Shown as a section inside Special Buildings (no scaffold, no scrolling of its own).
+  final bool embedded;
+  const HeadquartersScreen({super.key, this.embedded = false});
   @override
   State<HeadquartersScreen> createState() => _HeadquartersScreenState();
 }
@@ -94,9 +97,7 @@ class _HeadquartersScreenState extends State<HeadquartersScreen> {
     final hq = player?.hq;
     final lager = player?.lager ?? {};
 
-    return Scaffold(
-      appBar: ModalRoute.of(context)?.canPop == true ? AppBar(toolbarHeight: 36) : null,
-      body: ListView(padding: const EdgeInsets.all(16), children: [
+    final children = <Widget>[
         if (hq == null) ...[
           const _SectionHeader('Headquarters'),
           Card(
@@ -172,7 +173,13 @@ class _HeadquartersScreenState extends State<HeadquartersScreen> {
                 unlocked: (hq.subLevel) > e.key, points: hq.luxuryPoints)),
           ],
         ],
-      ]),
+    ];
+    if (widget.embedded) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children);
+    }
+    return Scaffold(
+      appBar: ModalRoute.of(context)?.canPop == true ? AppBar(toolbarHeight: 36) : null,
+      body: ListView(padding: const EdgeInsets.all(16), children: children),
     );
   }
 }
@@ -202,38 +209,31 @@ class _HQInfoCard extends StatelessWidget {
           ),
           const SizedBox(width: 16),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Headquarters',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 4),
             Row(children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: Colors.teal.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text('Level ${hq.level}',
-                    style: const TextStyle(color: Colors.tealAccent,
-                        fontWeight: FontWeight.bold, fontSize: 13)),
+              const Expanded(child: Text('Headquarters',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+              IconButton(
+                tooltip: 'Information',
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.info_outline, color: Colors.white70),
+                onPressed: () => showHqInfo(context),
               ),
-              if (hq.level < 10) ...[
-                const SizedBox(width: 8),
-                Text('→ Lv ${hq.level + 1}',
-                    style: const TextStyle(color: Colors.white38, fontSize: 12)),
-              ],
             ]),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.teal.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text('Level ${hq.level}',
+                  style: const TextStyle(color: Colors.tealAccent,
+                      fontWeight: FontWeight.bold, fontSize: 13)),
+            ),
             const SizedBox(height: 6),
-            Row(children: [
-              const Icon(Icons.radar_outlined, size: 12, color: Colors.tealAccent),
-              const SizedBox(width: 3),
-              Text('${boostR}m',
-                  style: const TextStyle(color: Colors.white54, fontSize: 11)),
-              const SizedBox(width: 10),
-              const Icon(Icons.bolt, size: 12, color: Colors.amber),
-              const SizedBox(width: 3),
-              Text('${boostF}× boost',
-                  style: const TextStyle(color: Colors.white54, fontSize: 11)),
-            ]),
+            Text('Level ${hq.level} headquarters boost their employees\' efficiency — they would love to work '
+                'at the HQ one day — by ${((boostF - 1) * 100).round()}%. Mines within ${boostR} m, where the '
+                'building can be seen, are affected.',
+                style: const TextStyle(color: Colors.white60, fontSize: 12)),
           ])),
         ]),
       ),
@@ -1172,3 +1172,54 @@ class _DPadPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter _) => false;
 }
+
+/// HQ information: boost and range for every level and what each upgrade needs (/api/v1/hq/info).
+Future<void> showHqInfo(BuildContext context) async {
+  final r = await GameApi.call('/api/v1/hq/info', context.read<PlayerProvider>().sid);
+  if (!context.mounted || !r.ok) return;
+  final levels = (r.data['levels'] as List).cast<Map<String, dynamic>>();
+  final cur = (r.data['level'] as num? ?? 0).toInt();
+  await showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: const Color(0xFF1A1A2E),
+    builder: (ctx) => DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.7,
+      builder: (_, scroll) => ListView(controller: scroll, padding: const EdgeInsets.all(16), children: [
+        const Text('Headquarters', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        Text(r.data['bonusLevels'] as String? ?? '', style: const TextStyle(color: Colors.white60, fontSize: 12)),
+        const SizedBox(height: 10),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            headingRowHeight: 36,
+            dataRowMinHeight: 32,
+            dataRowMaxHeight: 56,
+            columnSpacing: 18,
+            columns: const [
+              DataColumn(label: Text('Level')),
+              DataColumn(label: Text('Mine boost')),
+              DataColumn(label: Text('Boost range')),
+              DataColumn(label: Text('Needs')),
+            ],
+            rows: [
+              for (final l in levels)
+                DataRow(
+                  color: WidgetStatePropertyAll((l['level'] as num).toInt() == cur ? Colors.teal.withValues(alpha: 0.25) : null),
+                  cells: [
+                    DataCell(Text('${l['level']}')),
+                    for (final e in (l['effects'] as List).cast<Map<String, dynamic>>()) DataCell(Text(e['value'] as String)),
+                    DataCell(Text((l['res'] as Map).entries
+                        .map((e) => '${fmtNum(e.value as num)} ${itemName(int.parse(e.key as String))}').join('\n'),
+                        style: const TextStyle(fontSize: 11, color: Colors.white70))),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ]),
+    ),
+  );
+}
+

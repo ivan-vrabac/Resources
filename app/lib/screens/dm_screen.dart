@@ -152,7 +152,9 @@ class _DmScreenState extends State<DmScreen> {
 
 /// Your private conversations, newest first, with unread counts.
 class DmThreadsScreen extends StatefulWidget {
-  const DmThreadsScreen({super.key});
+  /// Inside the Social tab (no app bar of its own).
+  final bool embedded;
+  const DmThreadsScreen({super.key, this.embedded = false});
   @override
   State<DmThreadsScreen> createState() => _DmThreadsScreenState();
 }
@@ -177,7 +179,8 @@ class _DmThreadsScreenState extends State<DmThreadsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(toolbarHeight: 40, title: const Text('Private messages')),
+      backgroundColor: widget.embedded ? Colors.transparent : null,
+      appBar: widget.embedded ? null : AppBar(toolbarHeight: 40, title: const Text('Private messages')),
       body: AsyncView(
         loading: _loading,
         error: _error,
@@ -193,7 +196,9 @@ class _DmThreadsScreenState extends State<DmThreadsScreen> {
               : ListView(children: [
                   for (final t in _threads)
                     ListTile(
-                      leading: CircleAvatar(child: Text((t['name'] as String? ?? '?').characters.first.toUpperCase())),
+                      leading: SizedBox(width: 40, height: 40, child: Image.asset(
+                          'assets/images/hq_thumb_${((t['hqLevel'] as num?) ?? 1).toInt().clamp(1, 10)}.png',
+                          errorBuilder: (_, __, ___) => const Icon(Icons.location_city))),
                       title: Text(t['name'] as String? ?? ''),
                       subtitle: Text('${t['lastFromMe'] == true ? 'You: ' : ''}${t['last']}',
                           maxLines: 1, overflow: TextOverflow.ellipsis),

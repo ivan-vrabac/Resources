@@ -105,7 +105,7 @@ class _QuestsScreenState extends State<QuestsScreen> {
                 row(ItemIcon((m['itemID'] as num).toInt(), size: 32), 'Every ${m['every']} days',
                     '${m['qty']} × ${itemName((m['itemID'] as num).toInt())}'),
               const SizedBox(height: 8),
-              const Text('Missing a day ends the streak; a new streak starts again at day 1.',
+              const Text('Missing a day will not end your streak, but missing two days in a row will.',
                   style: TextStyle(fontSize: 11, color: Colors.white38)),
             ]),
           ),

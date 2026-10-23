@@ -15,10 +15,8 @@ import 'factory_screen.dart';
 import 'market_screen.dart';
 import 'log_screen.dart';
 import 'leaderboard_screen.dart';
-import 'headquarters_screen.dart';
 import 'special_buildings_screen.dart';
-import 'chat_screen.dart';
-import 'contacts_screen.dart';
+import 'social_screen.dart';
 import 'profile_screen.dart';
 import 'quests_screen.dart';
 import 'loans_screen.dart';
@@ -53,16 +51,12 @@ final Map<GameTabId, _TabMeta> tabMeta = {
   GameTabId.log: _TabMeta(label: 'Log', icon: Icons.history,
       build: () => const LogScreen()),
   // Leaderboard accessible from the More tab profile card — not a standalone tab
-  GameTabId.headquarters: _TabMeta(label: 'HQ', icon: Icons.location_city_outlined,
-      build: () => const HeadquartersScreen()),
   GameTabId.specialBuildings: _TabMeta(label: 'Buildings', icon: Icons.account_balance_outlined,
       build: () => const SpecialBuildingsScreen()),
   GameTabId.auctions: _TabMeta(label: 'Auctions', icon: Icons.gavel,
       build: () => const AuctionsScreen(), needsScaffold: true),
   GameTabId.archeology: _TabMeta(label: 'Archeology', icon: Icons.museum_outlined,
       build: () => const _ArchaeologyTab(), needsScaffold: true),
-  GameTabId.chat: _TabMeta(label: 'Chat', icon: Icons.chat_bubble_outline,
-      build: () => const ChatScreen()),
   GameTabId.loans: _TabMeta(label: 'Loans', icon: Icons.account_balance_wallet_outlined,
       build: () => const LoansScreen(), needsScaffold: true),
   GameTabId.news: _TabMeta(label: 'News', icon: Icons.newspaper_outlined,
@@ -71,8 +65,8 @@ final Map<GameTabId, _TabMeta> tabMeta = {
       build: () => const QuestsScreen(), needsScaffold: true),
   GameTabId.stats: _TabMeta(label: 'Stats', icon: Icons.bar_chart_outlined,
       build: () => const ProfileScreen(embedded: true), needsScaffold: true),
-  GameTabId.contacts: _TabMeta(label: 'Contacts', icon: Icons.contacts_outlined,
-      build: () => const ContactsScreen(), needsScaffold: true),
+  GameTabId.social: _TabMeta(label: 'Social', icon: Icons.connect_without_contact,
+      build: () => const SocialScreen()),
 };
 
 class GameScreen extends StatefulWidget {
@@ -280,7 +274,7 @@ class _GameScreenState extends State<GameScreen> {
                 final id         = isMore ? null : _config.bottomTabs[i];
                 final icon       = isMore ? Icons.menu : tabMeta[id]!.icon;
                 final label      = isMore ? 'More' : tabMeta[id]!.label;
-                final isChat     = !isMore && id == GameTabId.chat;
+                final isChat     = !isMore && id == GameTabId.social;
                 final unread     = isChat ? prov.chatUnread : 0;
                 final hasBadge   = isChat && (prov.chatUnreadMentions > 0 || unread > 0);
 
