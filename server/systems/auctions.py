@@ -79,6 +79,9 @@ START_VALUE = 1_000_000_000    # HQ 10 companies are rich (HQ 10 alone needs ~15
 MIN_RAISE = 0.05
 EXTEND_S = 300                 # (old rule, unused)
 SNIPE_WINDOW_S, SNIPE_RESET_S = 30, 60
+# owner 2026-10-23: bids are set automatically; the player only picks how far above the minimum
+BID_STEPS = (0, 10, 25, 50, 100)        # % above the minimum bid
+
 SWEEP_S = 30
 BID_POINTS_PER = 100_000
 WIN_POINTS_BASE = 1_000
@@ -291,11 +294,16 @@ def install(api) -> None:
     def min_bid(a):
         return max(a["start_price"], int(a["top_bid"] * (1 + MIN_RAISE)) + 1) if a["top_bid"] else a["start_price"]
 
+    def bid_steps(a) -> list:
+        mb = min_bid(a)
+        return [{"pct": p, "amount": int(math.ceil(mb * (1 + p / 100)))} for p in BID_STEPS]
+
     def view(conn, a, hid):
         res = BID_RESOURCE[a["item_id"]]
         return {"id": a["id"], "itemID": a["item_id"], "qty": a["qty"], "resID": res,
                 "startPrice": a["start_price"], "topBid": a["top_bid"], "bids": a["bids"], "status": a["status"],
                 "endsAt": a["ends_at"], "settledAt": a["settled_at"], "minBid": min_bid(a),
+                "bidSteps": [{**x, "points": points_for(a["item_id"], x["amount"])} for x in bid_steps(a)],
                 "minBidPoints": points_for(a["item_id"], min_bid(a)),
                 "winPoints": win_points(a["item_id"], max(min_bid(a), a["top_bid"])),
                 "leader": social.public_ref(conn, a["top_hid"]) if a["top_hid"] else None,
@@ -336,7 +344,6 @@ def install(api) -> None:
     @api.endpoint("/api/v1/auctions/bid", feature="AUCTIONS")
     def bid(conn, hid, form):
         aid = (form.get("auctionID") or "").strip()
-        amount = int_arg(form, "amount", None, 1, 10**15)
         now = econ.utcnow()
         maybe_sweep(conn, now)
         outbid = None
@@ -350,9 +357,18 @@ def install(api) -> None:
                 raise econ.GameError("leading", "You already have the highest bid")
             if owned(conn, hid, a["item_id"]) + leading(conn, hid, a["item_id"]) + a["qty"] > MAX_OWN:
                 raise econ.GameError("limit", f"You can own at most {MAX_OWN} of each luxury item")
-            mb = min_bid(a)
-            if amount < mb:
-                raise econ.GameError("too_low", f"Minimum bid is {mb:,}")
+            # the amount is set by the server from the chosen step (or must be exactly one of the steps)
+            steps = bid_steps(a)
+            if form.get("step") not in (None, ""):
+                i = int_arg(form, "step", 0, 0, len(steps) - 1)
+                seen = form.get("seenMin")
+                if seen not in (None, "") and int_arg(form, "seenMin", 0, 0) != min_bid(a):
+                    raise econ.GameError("price_changed", "Someone bid in the meantime. Choose your bid again.")
+                amount = steps[i]["amount"]
+            else:
+                amount = int_arg(form, "amount", None, 1, 10**15)
+                if amount not in {x["amount"] for x in steps}:
+                    raise econ.GameError("bad_bid", "Choose one of the offered bids")
             res = BID_RESOURCE[a["item_id"]]
             econ.take(conn, hid, res, amount, "auction_bid", aid)
             add_points(conn, hid, points_for(a["item_id"], amount))

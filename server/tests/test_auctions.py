@@ -77,7 +77,7 @@ def test_hq10_required_and_min_bid():
     give(hid, lot["resID"], lot["minBid"] * 3)
     assert call(R + "/bid", sid, auctionID=lot["id"], amount=lot["minBid"])["code"] == "locked"
     _hq(hid, 10)
-    assert call(R + "/bid", sid, auctionID=lot["id"], amount=lot["minBid"] - 1)["code"] == "too_low"
+    assert call(R + "/bid", sid, auctionID=lot["id"], amount=lot["minBid"] - 1)["code"] == "bad_bid"   # only offered bids
 
 
 def test_resources_reserved_refunded_points_and_settlement():
@@ -180,4 +180,20 @@ def test_bid_in_last_30_seconds_sets_the_clock_to_60():
     r = call(R + "/bid", a_sid, auctionID=lot["id"], amount=lot["minBid"])
     left = (datetime.datetime.fromisoformat(r["auction"]["endsAt"]) - datetime.datetime.utcnow()).total_seconds()
     assert 55 <= left <= 61
+
+
+def test_bids_use_the_offered_steps_and_a_new_lot_follows_every_end():
+    a, a_sid = _bidder("au10")
+    lot = _lot(a_sid)
+    give(a, lot["resID"], lot["minBid"] * 10)
+    steps = lot["bidSteps"]
+    assert [x["pct"] for x in steps] == [0, 10, 25, 50, 100] and steps[0]["amount"] == lot["minBid"]
+    assert call(R + "/bid", a_sid, auctionID=lot["id"], step=2, seenMin=lot["minBid"] + 1)["code"] == "price_changed"
+    r = call(R + "/bid", a_sid, auctionID=lot["id"], step=2, seenMin=lot["minBid"])
+    assert r["err"] == 0 and r["auction"]["topBid"] == steps[2]["amount"]
+    for _ in range(3):                              # ends with or without bids: there is always a next lot
+        cur = call(R, a_sid)["active"][0]
+        _end(cur["id"])
+        nxt = call(R, a_sid)["active"]
+        assert len(nxt) == 1 and nxt[0]["id"] != cur["id"]
 
