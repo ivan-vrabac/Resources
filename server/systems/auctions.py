@@ -72,7 +72,8 @@ RESOURCE_VALUE = {59: 30, 95: 200, 51: 150, 41: 50, 57: 40, 66: 250, 93: 300, 55
                   22: 20, 28: 30, 67: 100, 87: 400, 92: 500, 70: 15, 84: 1000}
 HQ_LEVEL_REQUIRED = 10
 MAX_OWN = 10
-LOT_HOURS = 24
+LOT_HOURS = 24                 # (old fixed length, kept for reference)
+LOT_HOURS_MIN, LOT_HOURS_MAX = 10, 16   # owner 2026-10-23: each lot runs a random 10-16 h
 START_VALUE = 1_000_000
 MIN_RAISE = 0.05
 EXTEND_S = 300
@@ -247,7 +248,7 @@ def sweep(conn, h, now, rng=None) -> list:
         item = rng.choice([i for i in LUXURY if i != last_item])
         conn.execute("INSERT INTO auctions(id, item_id, qty, start_price, status, created_at, ends_at) "
                      "VALUES(?,?,1,?,'open',?,?)", (uuid.uuid4().hex, item, start_qty(item), iso,
-                                                     (now + datetime.timedelta(hours=LOT_HOURS)).isoformat()))
+                                                     (now + datetime.timedelta(hours=rng.uniform(LOT_HOURS_MIN, LOT_HOURS_MAX))).isoformat()))
     return pushes
 
 

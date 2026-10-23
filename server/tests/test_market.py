@@ -7,7 +7,21 @@ import main
 from helpers import call, credits, give, new_player, qty, set_building
 from systems.market import tax_rate
 
+import pytest
+
 M = "/api/v1/market/"
+# These tests check the market RULES (tax, escrow, bounds). They pin the prices they were written
+# with; the real prices come from economy.py and change with the economy.
+PINNED = {2: 5, 3: 5, 13: 20, 14: 200, 79: 500}
+
+
+@pytest.fixture(autouse=True)
+def _pinned_prices():
+    old = {k: main.SYSTEM_PRICES.get(k) for k in PINNED}
+    main.SYSTEM_PRICES.update(PINNED)
+    yield
+    for k, v in old.items():
+        main.SYSTEM_PRICES[k] = v
 CLAY = 2          # system price 5
 GOLD = 79         # system price 500
 

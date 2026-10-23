@@ -52,7 +52,7 @@ LADDER = [
     ("BBB", 55, 0.030, 0.7), ("BB", 45, 0.040, 0.6), ("B", 35, 0.060, 0.5),
     ("CCC", 25, 0.080, 0.4), ("CC", 15, 0.110, 0.3), ("C", 5, 0.150, 0.2),
 ]
-RISK = {"AAA": "minimal", "AA": "very low", "A": "low", "BBB": "moderate", "BB": "elevated",
+RISK = {"NR": "not rated yet", "AAA": "minimal", "AA": "very low", "A": "low", "BBB": "moderate", "BB": "elevated",
         "B": "high", "CCC": "very high", "CC": "very high", "C": "extreme", "D": "in default"}
 
 _prices = {}   # item → system price, set by install()
@@ -124,7 +124,8 @@ def rating_of(conn, hid, now):
     score = (max(0.0, min(5.0, math.log10(income + 1) - 4)) * 10 + min(20.0, age / 3)
              + min(25, on_time * 5) + late - 40 * len(forgiven))
     score = round(max(0.0, min(100.0, score)), 1)
-    rating = next((name for name, lo, _, _ in LADDER if score >= lo), "D")
+    # below the lowest step without any default: not rated yet (owner 2026-10-23: "D" said "in default")
+    rating = next((name for name, lo, _, _ in LADDER if score >= lo), "NR")
     reset_until = None
     if forgiven:
         last = max(r["closed_at"] or "" for r in forgiven)
@@ -254,8 +255,10 @@ def install(api) -> None:
             reason = "Repay your overdue loans first"
         elif det["resetUntil"]:
             reason = f"Your rating was reset to D after a forgiven loan (until {det['resetUntil'][:10]})"
+        elif rating == "NR":
+            reason = "Not rated yet: earn money and play longer to get a rating"
         elif not row:
-            reason = "Your credit rating is too low (D)"
+            reason = "You are in default (rating D)"
         elif limit - outstanding < MIN_PRINCIPAL:
             reason = "Your credit limit is used up (it grows with the money you earn)"
         return {"rating": rating, "score": score, "risk": RISK[rating], **det,

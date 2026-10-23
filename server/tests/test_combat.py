@@ -123,13 +123,15 @@ def test_repair_cost_rewards_output_and_charges_defence():
     half = main.repair_cost_of(4, 100, 50, 0, 0, 0, 0, 1.0)
     away = main.repair_cost_of(4, 100, 100, 100, 100, 100, 100, 1.0)
     guarded = main.repair_cost_of(4, 100, 100, 0, 0, 0, 0, 1.0, 0, 0, 100)   # 100 elite = 10 000 pts
-    assert plain == 100 and best == main.REPAIR_MIN        # clay pit: 5 % of 2 000 = 100
+    clay = main.MINE_TYPES[4]["cost"] * main.REPAIR_BASE_SHARE         # 5 % of the clay pit's base cost
+    assert plain == round(clay) and best == max(main.REPAIR_MIN, round(clay / 60))
     big = main.repair_cost_of(82, 100, 100, 0, 0, 0, 0, 1.0)                 # diamond mine 50 000 → 2 500
-    assert big == 2500 and main.repair_cost_of(82, 100, 50, 0, 0, 0, 0, 1.0) == 5000
-    assert main.repair_cost_of(82, 100, 100, 100, 100, 100, 100, 1.0) == round(2500 / 6)     # +500 % tech
-    assert main.repair_cost_of(82, 100, 100, 0, 0, 0, 0, 10.0) == 250                      # HQ 10 area: 10× cheaper
+    d = round(main.MINE_TYPES[82]["cost"] * main.REPAIR_BASE_SHARE)
+    assert big == d and main.repair_cost_of(82, 100, 50, 0, 0, 0, 0, 1.0) == 2 * d
+    assert main.repair_cost_of(82, 100, 100, 100, 100, 100, 100, 1.0) == round(d / 6)     # +500 % tech
+    assert main.repair_cost_of(82, 100, 100, 0, 0, 0, 0, 10.0) == round(d / 10)           # HQ 10 area: 10× cheaper
     assert half >= plain and away >= best and guarded >= plain
-    assert main.repair_cost_of(82, 100, 100, 0, 0, 0, 0, 1.0, 0, 0, 100) == 5000   # +100 %
+    assert main.repair_cost_of(82, 100, 100, 0, 0, 0, 0, 1.0, 0, 0, 100) == 2 * d   # +100 %
 
 
 def test_station_defence_only_on_own_mine():

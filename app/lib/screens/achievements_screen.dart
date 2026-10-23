@@ -8,7 +8,10 @@ import '../widgets/async_view.dart';
 import '../app_colors.dart';
 /// Achievements: three stars each, progress to the next star (all computed by the server).
 class AchievementsScreen extends StatefulWidget {
-  const AchievementsScreen({super.key});
+  /// Another player's achievements (public); null = your own.
+  final String? pid;
+  final String? name;
+  const AchievementsScreen({super.key, this.pid, this.name});
   @override
   State<AchievementsScreen> createState() => _AchievementsScreenState();
 }
@@ -25,7 +28,8 @@ class _AchievementsScreenState extends State<AchievementsScreen> {
   }
 
   Future<void> _load() async {
-    final r = await GameApi.call('/api/v1/achievements', context.read<PlayerProvider>().sid);
+    final r = await GameApi.call('/api/v1/achievements', context.read<PlayerProvider>().sid,
+        {if (widget.pid != null) 'pid': widget.pid});
     if (!mounted) return;
     setState(() { _loading = false; _error = r.ok ? null : r.message; if (r.ok) _d = r.data; });
   }
@@ -33,7 +37,7 @@ class _AchievementsScreenState extends State<AchievementsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(toolbarHeight: 40, title: const Text('Achievements')),
+      appBar: AppBar(toolbarHeight: 40, title: Text(widget.name == null ? 'Achievements' : '${widget.name}: achievements')),
       body: AsyncView(
         loading: _loading,
         error: _error,

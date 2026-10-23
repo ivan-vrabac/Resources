@@ -100,7 +100,7 @@ def test_xp_is_never_sent_and_profile_ranks_by_points():
     hid, sid, _ = new_player("xphide")
     me = call("/api/v1/social/profile", sid)["profile"]
     assert "xp" not in me and "rankXp" not in me
-    assert me["rankPoints"] >= 1 and me["rankLuxury"] >= 1
+    assert me["rankPoints"] >= 1 and me["rankLuxury"] is None      # no luxury points: not ranked
     r = client.post("/flut23/playerGetData.php", data={"sid": sid})
     data = json.loads(zlib.decompress(r.content))
     data = data[0] if isinstance(data, list) else data

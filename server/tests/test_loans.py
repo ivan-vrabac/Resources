@@ -119,9 +119,10 @@ def test_overdue_garnishes_half_of_sales_and_output_then_forgives():
     assert credits(b_hid) == 5_000 and credits(lender) == lc + 5_000
     with main.get_db() as conn:                                  # mining output: half sold for the lender
         with econ.tx(conn):
-            kept = main.apply_output_hooks(conn, b_hid, 2, 1000.0)   # clay, price 5
-    assert abs(kept - 500) < 0.01 and credits(lender) == lc + 5_000 + 2_500
-    assert call(R + "mine", b_sid)["borrowed"][0]["repaid"] == 7_500
+            kept = main.apply_output_hooks(conn, b_hid, 2, 1000.0)   # clay: half sold at the system price
+    paid = int(500 * main.SYSTEM_PRICES[2])
+    assert abs(kept - (1000 - paid / main.SYSTEM_PRICES[2])) < 0.01 and credits(lender) == lc + 5_000 + paid
+    assert call(R + "mine", b_sid)["borrowed"][0]["repaid"] == 5_000 + paid
     _shift_due(loan["id"], L.GRACE_DAYS + 1)
     st = call(R + "mine", b_sid)["borrowed"][0]
     assert st["status"] == "forgiven" and st["outstanding"] == 0

@@ -112,8 +112,9 @@ def public_profile(conn, h, viewer_hid: str, target_hid: str) -> dict:
     rank_points = next((i + 1 for i, r in enumerate(board) if r[2] == target_hid), len(board) + 1)
     lux_pts = conn.execute("SELECT points FROM luxury_points WHERE hid=?", (target_hid,)).fetchone() \
         if _has_table(conn, "luxury_points") else None
-    rank_luxury = _rank(conn, int(lux_pts[0]) if lux_pts else 0,
-                        "SELECT COUNT(*) FROM luxury_points WHERE points > ?") if _has_table(conn, "luxury_points") else 1
+    lux_value = int(lux_pts[0]) if lux_pts else 0
+    rank_luxury = _rank(conn, lux_value, "SELECT COUNT(*) FROM luxury_points WHERE points > ?") \
+        if lux_value > 0 else None          # no luxury points: not ranked
     rank_mines = _rank(conn, mines,
                        "SELECT COUNT(*) FROM (SELECT owner_hid, COUNT(*) c FROM mines GROUP BY owner_hid) WHERE c > ?")
     rel = {r[0] for r in conn.execute("SELECT kind FROM contacts WHERE owner_hid=? AND target_hid=?",

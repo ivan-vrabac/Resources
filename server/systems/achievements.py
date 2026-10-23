@@ -114,8 +114,18 @@ def install(api) -> None:
 
     @api.endpoint("/api/v1/achievements")
     def achievements(conn, hid, form):
-        with econ.tx(conn):
-            new = check(conn, h, hid)
+        """Your achievements, or another player's (pid=..., public) — only your own are updated."""
+        new = []
+        pid = (form.get("pid") or "").strip()
+        if pid:
+            from . import social
+            target = social.hid_of(conn, pid)            # raises no_player
+        else:
+            target = hid
+        if target == hid:
+            with econ.tx(conn):
+                new = check(conn, h, hid)
+        hid = target
         m = metrics(conn, h, hid)
         got = {r[0]: r[1] for r in conn.execute("SELECT code, ts FROM achievements WHERE hid=?", (hid,))}
         out = []

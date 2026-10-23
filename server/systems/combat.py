@@ -376,7 +376,7 @@ def install(api) -> None:
             rewarded_today = conn.execute("SELECT COUNT(*) FROM external_repairs WHERE helper_hid=? AND ts>=? "
                                           "AND (reward_qty > 0 OR crates > 0)", (hid, today)).fetchone()[0]
             res, qty, crates = None, 0.0, 0
-            if rewarded_today < REPAIR_DAILY_LIMIT:
+            if True:                              # owner 2026-10-23: no daily maximum
                 res = h.MINE_TYPES.get(m["item_id"], {}).get("res")
                 if sc > 0 and res:
                     qty = econ.give(conn, hid, res, round(h.mine_rate_hr(conn, owner, m) * sc, 2),
@@ -388,4 +388,4 @@ def install(api) -> None:
             econ.emit(conn, "mine_repaired", hid, {"mID": mine_id, "how": "external"}, public=False)
             h.add_proto(conn, owner, "externalrepair", {"mID": mine_id})
         return {"err": 0, "rewardItem": res, "rewardQty": qty, "crates": crates,
-                "dailyLeft": max(0, REPAIR_DAILY_LIMIT - rewarded_today - 1)}
+                "dailyLeft": None}

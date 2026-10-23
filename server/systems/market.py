@@ -18,6 +18,7 @@ Rules (documented assumptions, see .private/NEXT-PROGRESS.md):
 - Not tradeable at all: Giant Diamonds (42), Tech Upgrade IV (48), luxury items (auction-only,
   ownership-capped), special buildings. Player bids must lie between the system's buying price
   (floor) and its selling price (ceiling).
+No XP from any trade (owner 2026-10-23: XP only from permanent sinks).
 All movements go through econ (atomic, non-negative, ledgered); order placement accepts an
 idempotency key `rid` so a retried request never places a second order.
 """
@@ -144,7 +145,6 @@ def install(api) -> None:
             conn.execute("UPDATE mkt_orders SET qty_open=0, escrow=0, status='filled' WHERE id=?", (o["id"],))
         else:
             conn.execute("UPDATE mkt_orders SET qty_open=?, escrow=? WHERE id=?", (new_open, new_escrow, o["id"]))
-        h.award_xp(conn, o["hid"], int(value))
         record(conn, "player", o["item_id"], qty, o["price"], o["hid"], seller_hid, tax, o["hid"], buy_order=o["id"])
         return {"qty": qty, "price": o["price"], "value": value, "tax": 0}
 
@@ -158,7 +158,6 @@ def install(api) -> None:
         new_open = round(o["qty_open"] - qty, 6)
         conn.execute("UPDATE mkt_orders SET qty_open=?, status=? WHERE id=?",
                      (max(0.0, new_open), "filled" if new_open <= 1e-6 else "open", o["id"]))
-        h.award_xp(conn, buyer_hid, int(value))
         record(conn, "player", o["item_id"], qty, o["price"], buyer_hid, o["hid"], tax, o["hid"], sell_order=o["id"])
         return {"qty": qty, "price": o["price"], "value": value, "tax": 0}
 
@@ -319,7 +318,6 @@ def install(api) -> None:
                 tax = round(value * my_tax(conn, hid))
                 econ.debit(conn, hid, value + tax, "system_buy")
                 econ.give(conn, hid, item_id, qty, "system_buy")
-                h.award_xp(conn, hid, int(value))
                 record(conn, "system_buy", item_id, qty, p * SYSTEM_BUY_MARKUP, hid, None, tax, hid)
                 return {"err": 0, "qty": qty, "cost": value + tax, "tax": tax}
             raise econ.GameError("bad_input", "side must be buy or sell")

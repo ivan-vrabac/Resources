@@ -44,7 +44,8 @@ def test_resource_ranking_mine_and_factory():
     rankings._cache.clear()
     f = call("/api/v1/rank/resource", a_sid, kind="factory", item=24)
     me = next(x for x in f["rows"] if x["isMe"])
-    assert me["perHour"] == round(80 / 2 * 3, 1)
+    ft = main.FACTORY_TYPES[25]
+    assert me["perHour"] == round(ft["out"] / ft["hrs"] * 3, 1)
     assert call("/api/v1/rank/resource", a_sid, kind="mine", item=24)["code"] == "bad_input"
 
 

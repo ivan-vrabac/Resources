@@ -6,7 +6,7 @@ import main
 
 def test_new_company_starting_credits():
     hid, _, _ = new_player("start")
-    assert credits(hid) == main.STARTING_CREDITS == 500_000
+    assert credits(hid) == main.STARTING_CREDITS == 250_000
 
 
 def test_scan_cost_divisor():

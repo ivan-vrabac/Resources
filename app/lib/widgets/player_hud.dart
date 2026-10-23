@@ -32,7 +32,9 @@ class PlayerHud extends StatelessWidget {
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                   overflow: TextOverflow.ellipsis),
             ),
-            _stat(Icons.monetization_on_outlined, 'ꞓ${fmtNum(prov.credits)}', Colors.amber),
+            // a negative balance (after penalties) is shown in red
+            _stat(Icons.monetization_on_outlined, 'ꞓ${fmtNum(prov.credits)}', Colors.amber,
+                textColor: prov.credits < 0 ? Colors.redAccent : null),
             const SizedBox(width: 12),
             _stat(Icons.military_tech_outlined, 'Lv ${player.level}', AppColors.accent),
           ]),
@@ -62,12 +64,13 @@ class PlayerHud extends StatelessWidget {
     );
   }
 
-  Widget _stat(IconData icon, String label, Color color) => Row(
+  Widget _stat(IconData icon, String label, Color color, {Color? textColor}) => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
       Icon(icon, size: 14, color: color),
       const SizedBox(width: 2),
-      Text(label, style: TextStyle(fontSize: 12, color: AppColors.t70)),
+      Text(label, style: TextStyle(fontSize: 12, color: textColor ?? AppColors.t70,
+          fontWeight: textColor != null ? FontWeight.bold : null)),
     ],
   );
 }

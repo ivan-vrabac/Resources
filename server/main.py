@@ -100,6 +100,17 @@ FACTORY_BUILD_RESOURCES = {
     165: {7: 400, 93: 10, 59: 400},   # srx.txt materials / 100
 }
 
+# ── Economy revamp (owner 2026-10-23): every number comes from economy.py ─────────
+# (srs.txt mine rates at 100 % quality, costs.txt mine costs, srx.txt factories, derived prices).
+# The tables above are the pre-revamp values, kept for reference only.
+import economy
+MINE_TYPES = {mid: {"res": m[0], "rate": m[2], "cost": economy.mine_base_cost(mid), "lvl": m[1]}
+              for mid, m in economy.MINES.items()}
+FACTORY_TYPES = {fid: {"name": f[0], "produces": f[1], "lvl": f[2], **economy.batch(fid),
+                       "cost": economy.factory_build(fid)["credits"]}
+                 for fid, f in economy.FACTORIES.items()}
+FACTORY_BUILD_RESOURCES = {fid: economy.factory_build(fid)["res"] for fid in economy.FACTORIES}
+
 # Rarity tiers for scanner
 _SCAN_COMMON   = [4, 5, 9, 21, 54]
 _SCAN_UNCOMMON = [16, 17, 19, 27]
@@ -934,10 +945,19 @@ def get_db() -> sqlite3.Connection:
     return conn
 
 def award_xp(conn, hid: str, credits_spent: int):
-    """Award 1% of credits spent as XP and level up if needed."""
+    """XP for credits spent permanently (1 XP per 100 credits, economy.XP_PER_CREDIT)."""
     if credits_spent <= 0:
         return
-    xp_gain = max(1, int(credits_spent * 0.01))
+    add_xp(conn, hid, max(1, int(credits_spent * economy.XP_PER_CREDIT)))
+
+def award_sink(conn, hid: str, credits: float = 0, res: dict | None = None):
+    """XP for a permanent sink: credits plus resources at the system price (owner 2026-10-23:
+    XP only from permanent sinks — never from market trades)."""
+    add_xp(conn, hid, economy.sink_xp(credits, res))
+
+def add_xp(conn, hid: str, xp_gain: int):
+    if xp_gain <= 0:
+        return
     conn.execute("UPDATE players SET xp=xp+? WHERE hID=?", (xp_gain, hid))
     row = conn.execute("SELECT xp, level FROM players WHERE hID=?", (hid,)).fetchone()
     if row:
@@ -946,6 +966,39 @@ def award_xp(conn, hid: str, credits_spent: int):
             conn.execute("UPDATE players SET level=? WHERE hID=?", (new_level, hid))
             for hook in LEVEL_UP_HOOKS:   # e.g. Cargo Rain rewards (systems/cargo.py)
                 hook(conn, hid, row["level"], new_level)
+
+def legacy_error(e, err: int = 5):
+    """econ.GameError → the legacy reply shape."""
+    return zlib_resp({"err": err, "code": e.code, "msg": e.message})
+
+def change_wa(conn, hid: str, delta: float, reason: str = "") -> float:
+    """Change the working atmosphere by `delta` points (0..100, one decimal). Returns the new WA."""
+    r = conn.execute("SELECT wa FROM players WHERE hID=?", (hid,)).fetchone()
+    wa = float(r[0]) if r and r[0] is not None else 80.0
+    new = round(max(0.0, min(100.0, wa + delta)), 1)
+    if new != wa:
+        conn.execute("UPDATE players SET wa=? WHERE hID=?", (new, hid))
+    return new
+
+# ── Travel check (GPS spoofing) ─────────────────────────────────────────────────
+# Positions come from the phone. Teleporting is refused: between two positioned actions the player
+# can't have travelled faster than TRAVEL_MAX_KMH (allowing GPS jitter). Long gaps are always fine.
+TRAVEL_MAX_KMH = 300
+TRAVEL_FREE_M = 2000          # jumps up to this distance are always accepted (GPS, drone aiming)
+
+def check_travel(conn, hid: str, lat: float, lng: float) -> None:
+    """Raise GameError('teleport') when the position implies impossible travel; else remember it."""
+    r = conn.execute("SELECT pos_lat, pos_lng, pos_at FROM players WHERE hID=?", (hid,)).fetchone()
+    now = datetime.datetime.utcnow()
+    if r and r["pos_lat"] is not None and r["pos_at"]:
+        try:
+            dt_h = max(1e-6, (now - datetime.datetime.fromisoformat(r["pos_at"])).total_seconds() / 3600)
+        except ValueError:
+            dt_h = 1e9
+        d = haversine_m(r["pos_lat"], r["pos_lng"], lat, lng)
+        if d > TRAVEL_FREE_M and d / 1000 / dt_h > TRAVEL_MAX_KMH:
+            raise econ.GameError("teleport", "Your position jumped too far too fast. Wait a moment and try again.")
+    conn.execute("UPDATE players SET pos_lat=?, pos_lng=?, pos_at=? WHERE hID=?", (lat, lng, now.isoformat(), hid))
 
 # Called as hook(conn, hid, old_level, new_level) inside the transaction that levelled up.
 LEVEL_UP_HOOKS = []
@@ -958,8 +1011,10 @@ def apply_output_hooks(conn, hid, item_id, qty):
 
 CASINO_FIVE_HOOKS = []   # fn(conn, symbol, spinner_hid) -> dict | None, inside the roll transaction
 
-SCAN_COST_DIVISOR = 10
-STARTING_CREDITS = 500000   # new companies (owner: 10× the original 50 000, 2026-10-19)
+SCAN_COST_DIVISOR = 10      # (pre-revamp scan formula, unused)
+# Owner 2026-10-23: start with enough for about six clay pits; scans are free below level 5
+# (economy.FREE_SCAN_LEVEL), so a new company can always get going.
+STARTING_CREDITS = 250000
 
 def record_daily_activity(conn, hid: str):
     today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
@@ -1117,6 +1172,17 @@ def init_db():
             ("players",   "wa", "INTEGER DEFAULT 80"),
             ("players",   "last_event_check", "TEXT"),
             ("players",   "country_code", "TEXT"),
+            # economy revamp 2026-10-23
+            ("mines",     "paid", "INTEGER"),               # credits paid for the mine (refund, XP)
+            ("players",   "pos_lat", "REAL"),               # last reported position (travel check)
+            ("players",   "pos_lng", "REAL"),
+            ("players",   "pos_at", "TEXT"),
+            ("players",   "hq_moved_at", "TEXT"),
+            ("players",   "name_changes", "INTEGER DEFAULT 0"),
+            ("players",   "delete_at", "TEXT"),             # GDPR deletion scheduled for
+            ("factories", "last_active", "TEXT"),           # last production start/collect (idle WA)
+            ("factories", "strike_at", "TEXT"),             # on strike since (frozen)
+            ("factories", "strike_cost", "INTEGER"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE {col_def[0]} ADD COLUMN {col_def[1]} {col_def[2]}")
@@ -1194,20 +1260,12 @@ def wh_capacity(wh_level: int) -> float:
     return WAREHOUSE_BASE_CAPACITY * (wh_level ** 2)
 
 def level_from_xp(xp: int) -> int:
-    """Progressive XP: level N requires N*1000 XP. Total XP to START level N = 500*N*(N-1)."""
-    if xp <= 0:
-        return 1
-    L = int((1 + (1 + 8 * xp / 1000) ** 0.5) / 2)
-    while 500 * L * (L - 1) > xp:
-        L -= 1
-    while 500 * (L + 1) * L <= xp:
-        L += 1
-    return max(1, L)
+    """Level curve from economy.py (calibrated: level 50 ≈ day 30, 60 ≈ day 40, then +6 %/level)."""
+    return economy.level_from_xp(xp or 0)
 
 def level_progress(xp: int, level: int) -> float:
-    """0..1 progress inside the current level (level N needs N*1000 XP)."""
-    start = 500 * level * (level - 1)
-    return round(max(0.0, min(1.0, (xp - start) / (level * 1000.0))), 4)
+    """0..1 progress inside the current level."""
+    return economy.level_progress(xp or 0, level or 1)
 
 def get_player(conn, hid: str):
     return conn.execute("SELECT * FROM players WHERE hID=?", (hid,)).fetchone()
@@ -1260,14 +1318,12 @@ def wh_add(conn, hid: str, item_id: int, qty: float, cap: float) -> float:
     return added
 
 def wh_remove(conn, hid: str, item_id: int, qty: float) -> bool:
-    """Remove qty from warehouse. Returns False if insufficient."""
-    cur = conn.execute(
-        "SELECT qty FROM warehouse WHERE hid=? AND item_id=?", (hid, item_id)).fetchone()
-    if not cur or cur["qty"] < qty:
+    """Remove qty from the warehouse (conditional UPDATE: never below zero). False if insufficient."""
+    try:
+        econ.take(conn, hid, item_id, qty, "wh_remove")
+        return True
+    except econ.GameError:
         return False
-    conn.execute(
-        "UPDATE warehouse SET qty=qty-? WHERE hid=? AND item_id=?", (qty, hid, item_id))
-    return True
 
 def hq_boost_for_mine(conn, mine) -> float:
     """Return HQ boost multiplier if mine is within HQ radius (level-dependent), else 1.0."""
@@ -1675,9 +1731,9 @@ def _remote_build_wait(hid: str):
     return f"{m // 60} h {m % 60} min"
 
 def mine_scaled_cost(base_cost: int, mine_count: int) -> int:
-    """Linear scaling: each mine adds 10% of base cost."""
-    scaled = base_cost * (1 + mine_count / 10)
-    return max(base_cost, round(scaled / 100) * 100)
+    """costs.txt: base × (1 + mines owned / 50), rounded to 100."""
+    scaled = base_cost * (1 + mine_count / economy.MINE_COST_GROWTH)
+    return max(100, int(round(scaled / 100.0)) * 100)
 
 def scan_location(lat: float, lng: float, scanner_level: int = 0, mine_count: int = 0) -> list:
     found = []
@@ -2143,51 +2199,43 @@ async def scanner_payscan(request: Request):
         row = get_player(conn, hid)
         if not row:
             return zlib_resp({"err": 2, "msg": "player not found"})
-
-        # TC level determines scan quality cap and cost
-        tc_row = conn.execute(
-            "SELECT level FROM factories WHERE hid=? AND item_id=116", (hid,)).fetchone()
-        tc_level = tc_row["level"] if tc_row else 0
-
-        # Mine count affects scan cost
-        mine_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM mines WHERE owner_hid=?", (hid,)).fetchone()["cnt"]
-
-        # owner: scans cost 10× less than the original formula (2026-10-19)
-        raw_cost = (10 * (2.4 ** tc_level)) * (1 + mine_count / 1000) / SCAN_COST_DIVISOR
-        scan_cost = max(5000 // SCAN_COST_DIVISOR, int(round(raw_cost / 500) * 500))
-
-        drone_range = None
-        scan_dist = haversine_m(player_lat, player_lng, lat, lng)
-        if not is_drone and scan_dist > LOCAL_CONSTRUCTION_RANGE_M + GPS_TOLERANCE_M:
-            return zlib_resp({"err": 6, "msg": f"Scan spot is {scan_dist:.0f} m away — local scans reach "
-                                                f"{LOCAL_CONSTRUCTION_RANGE_M} m. Use a drone scan."})
-        if is_drone:
-            if not DRONE_OVERRIDE:
-                drone_row = conn.execute(
-                    "SELECT qty FROM warehouse WHERE hid=? AND item_id=117", (hid,)).fetchone()
-                if not drone_row or drone_row["qty"] < 1:
-                    return zlib_resp({"err": 5, "msg": "No Scan Drones in inventory"})
-            dr_row = conn.execute(
-                "SELECT level FROM factories WHERE hid=? AND item_id=119", (hid,)).fetchone()
-            dr_level = dr_row["level"] if dr_row else 0
-            dr_idx = max(0, min(dr_level - 1, len(DRONE_SCAN_RANGES) - 1))
-            drone_range = DRONE_SCAN_RANGES[dr_idx] if dr_level > 0 else DRONE_SCAN_RANGES[0]
-            if scan_dist > drone_range + GPS_TOLERANCE_M:
-                return zlib_resp({"err": 7, "msg": f"Scan spot is {scan_dist / 1000:.1f} km away — your drones "
-                                                    f"reach {drone_range / 1000:.1f} km."})
-
-        # Drone scans cost only 1 Scan Drone (item 117), no credits.
-        if not is_drone:
-            if row["credits"] < scan_cost:
-                return zlib_resp({"err": 3, "msg": f"Not enough credits (need ꞓ{scan_cost:,})"})
-            conn.execute("UPDATE players SET credits=credits-? WHERE hID=?", (scan_cost, hid))
-        if is_drone and not DRONE_OVERRIDE:
-            wh_remove(conn, hid, 117, 1)
-        results = scan_location(lat, lng, tc_level, mine_count)
-        add_proto(conn, hid, "scan", {"lat": lat, "lng": lng, "results": len(results), "drone": is_drone})
-        econ.emit(conn, "scan", hid, {"drone": is_drone}, public=False)
-        conn.commit()
+        try:
+            with econ.tx(conn):
+                tc_level = building_level(conn, hid, 116)
+                mine_count = conn.execute("SELECT COUNT(*) FROM mines WHERE owner_hid=?", (hid,)).fetchone()[0]
+                # owner 2026-10-23: free below level 5, then 25 × level² × (1 + 10 % per Tech Center level)
+                scan_cost = economy.scan_cost(row["level"] or 1, tc_level)
+                drone_range = None
+                scan_dist = haversine_m(player_lat, player_lng, lat, lng)
+                if not is_drone and scan_dist > LOCAL_CONSTRUCTION_RANGE_M + GPS_TOLERANCE_M:
+                    raise econ.GameError("out_of_range", f"Scan spot is {scan_dist:.0f} m away. Local scans reach "
+                                                         f"{LOCAL_CONSTRUCTION_RANGE_M} m; use a drone scan.")
+                check_travel(conn, hid, player_lat, player_lng)
+                if is_drone:
+                    dr_level = building_level(conn, hid, 119)
+                    dr_idx = max(0, min(dr_level - 1, len(DRONE_SCAN_RANGES) - 1))
+                    drone_range = DRONE_SCAN_RANGES[dr_idx] if dr_level > 0 else DRONE_SCAN_RANGES[0]
+                    if scan_dist > drone_range + GPS_TOLERANCE_M:
+                        raise econ.GameError("out_of_range", f"Scan spot is {scan_dist / 1000:.1f} km away. Your "
+                                                             f"drones reach {drone_range / 1000:.1f} km.")
+                    if not DRONE_OVERRIDE:
+                        try:
+                            econ.take(conn, hid, 117, 1, "drone_scan")      # atomic: one drone per scan
+                        except econ.GameError:
+                            raise econ.GameError("no_drone", "No Scan Drones in inventory")
+                        award_sink(conn, hid, res={117: 1})
+                else:
+                    try:
+                        econ.debit(conn, hid, scan_cost, "scan")
+                    except econ.GameError:
+                        raise econ.GameError("insufficient_credits", f"Not enough credits (need ꞓ{scan_cost:,})")
+                    award_sink(conn, hid, credits=scan_cost)
+                results = scan_location(lat, lng, tc_level, mine_count)
+                add_proto(conn, hid, "scan", {"lat": lat, "lng": lng, "results": len(results), "drone": is_drone})
+                econ.emit(conn, "scan", hid, {"drone": is_drone}, public=False)
+        except econ.GameError as e:
+            code = {"out_of_range": 6 if not is_drone else 7, "no_drone": 5, "insufficient_credits": 3}.get(e.code, 8)
+            return legacy_error(e, code)
 
     # Issue one single-use prospect token covering all resources found in this scan.
     # Store the player's GPS position so mineNew can determine local vs remote authoritatively.
@@ -2232,7 +2280,6 @@ async def mine_new(request: Request):
         lat            = float(form.get("lat", 0))
         lng            = float(form.get("lng", 0))
         item_id        = int(form.get("itemID", 0))
-        quality        = int(form.get("quality", 70))
         prospect_token = form.get("prospect_token", "")
     except (ValueError, TypeError):
         return zlib_resp({"err": 1})
@@ -2244,30 +2291,22 @@ async def mine_new(request: Request):
     if time.time() > stored["expires"]:
         _scan_tokens.pop(prospect_token, None)
         _player_tokens.pop(hid, None)
-        return zlib_resp({"err": 9, "msg": "Prospecting result expired — scan again"})
+        return zlib_resp({"err": 9, "msg": "Prospecting result expired. Scan again."})
     if item_id not in stored["item_ids"]:
         return zlib_resp({"err": 9, "msg": "This resource was not found in your last scan"})
     # 100m tolerance covers hex-snap drift (nearest valid adjacent slot can be ~52m from scan centre).
     if haversine_m(lat, lng, stored["lat"], stored["lng"]) > 100:
         return zlib_resp({"err": 9, "msg": "Build location is too far from the scanned area"})
 
-    # Current player GPS is REQUIRED — never fall back to scan-centre as a substitute for player
-    # position. If the client cannot provide it, reject rather than silently treat everything as local.
     cur_lat_raw = form.get("cur_lat")
     cur_lng_raw = form.get("cur_lng")
     if cur_lat_raw is None or cur_lng_raw is None:
-        # Fallback: use the GPS stored at scan time (reliable after the Flutter fix that now passes
-        # player_lat/player_lng during every scan).  If those were not stored either, reject.
         fallback_lat = stored.get("player_lat")
         fallback_lng = stored.get("player_lng")
-        if fallback_lat is None or fallback_lng is None:
+        if fallback_lat is None or fallback_lng is None or \
+                (fallback_lat == stored["lat"] and fallback_lng == stored["lng"]):
             return zlib_resp({"err": 1, "msg": "Player GPS required for construction"})
-        # Detect the old broken behaviour: player_lat == lat means scan stored scan-centre instead of
-        # real GPS.  In that case we cannot trust it for local/remote determination — reject.
-        if fallback_lat == stored["lat"] and fallback_lng == stored["lng"]:
-            return zlib_resp({"err": 1, "msg": "Player GPS required for construction"})
-        player_lat = float(fallback_lat)
-        player_lng = float(fallback_lng)
+        player_lat, player_lng = float(fallback_lat), float(fallback_lng)
     else:
         try:
             player_lat = float(cur_lat_raw)
@@ -2275,141 +2314,88 @@ async def mine_new(request: Request):
         except (ValueError, TypeError):
             return zlib_resp({"err": 1, "msg": "Invalid player GPS"})
 
-    dist_to_mine = haversine_m(player_lat, player_lng, lat, lng)
-    is_remote = dist_to_mine > LOCAL_CONSTRUCTION_RANGE_M
-
-    # ── All eligibility checks before token consumption ─────────────────────────
-    # DRONE_OVERRIDE is intentionally excluded from construction checks — it must never
-    # bypass remote-build payment requirements in production.
-    with get_db() as _pre_conn:
-        _dr_row = _pre_conn.execute(
-            "SELECT level FROM factories WHERE hid=? AND item_id=119", (hid,)).fetchone()
-        _dr_level = _dr_row["level"] if _dr_row else 0
-
-    _dr_idx = max(0, min(_dr_level - 1, len(DRONE_SCAN_RANGES) - 1))
-    drone_build_range = DRONE_SCAN_RANGES[_dr_idx] if _dr_level > 0 else LOCAL_CONSTRUCTION_RANGE_M
-
-    if dist_to_mine > drone_build_range + GPS_TOLERANCE_M:
-        return zlib_resp({"err": 11, "msg": f"Building failed: this spot is {dist_to_mine:.0f} m from you, "
-                                             f"your range is {drone_build_range:.0f} m"})
-
-    if is_remote:
-        if _dr_level < 10:
-            return zlib_resp({"err": 10,
-                "msg": f"Remote construction requires Drone Research level 10 (you have level {_dr_level})"})
-        with get_db() as _pre_conn2:
-            _drone_qty = (_pre_conn2.execute(
-                "SELECT qty FROM warehouse WHERE hid=? AND item_id=117", (hid,)).fetchone() or {}).get("qty", 0)
-            _diamond_qty = (_pre_conn2.execute(
-                "SELECT qty FROM warehouse WHERE hid=? AND item_id=42", (hid,)).fetchone() or {}).get("qty", 0)
-        _wait = _remote_build_wait(hid)
-        with get_db() as _c3:
-            _remote_hours = remote_build_hours(_c3, hid)
-        if _wait:
-            return zlib_resp({"err": 12, "msg": f"Remote construction is possible once every "
-                              f"{_remote_hours} hours — next in {_wait}"})
-        if _drone_qty < 1:
-            return zlib_resp({"err": 8, "msg": "Remote build requires 1× Scan Drone"})
-        if _diamond_qty < 1:
-            return zlib_resp({"err": 8, "msg": "Remote build requires 1× Giant Diamond"})
-
-    DRONE_ITEM_ID   = 117
-    DIAMOND_ITEM_ID = 42
-
     mt = MINE_TYPES.get(item_id)
     if not mt:
         return zlib_resp({"err": 2, "msg": "unknown mine type"})
+    # quality always comes from the server's own resource field (never from the app)
+    true_quality = resource_quality_at(lat, lng, item_id)
+    if true_quality < 1.0:
+        return zlib_resp({"err": 9, "msg": "There is (almost) none of this resource on this spot"})
+    final_quality = max(1, round(true_quality))
+
+    dist_to_mine = haversine_m(player_lat, player_lng, lat, lng)
+    is_remote = dist_to_mine > LOCAL_CONSTRUCTION_RANGE_M
+    DRONE_ITEM_ID, DIAMOND_ITEM_ID = 117, 42
 
     conn = get_db()
     try:
-        # BEGIN IMMEDIATE acquires a write lock before the overlap check so that
-        # two concurrent requests targeting the same hex cannot both pass.
-        conn.execute("BEGIN IMMEDIATE")
-
-        row = get_player(conn, hid)
-        if not row:
-            conn.rollback(); conn.close()
-            return zlib_resp({"err": 3})
-        if row["level"] < mt["lvl"]:
-            conn.rollback(); conn.close()
-            return zlib_resp({"err": 4, "msg": f"requires level {mt['lvl']}"})
-
-        mine_count = conn.execute("SELECT COUNT(*) as cnt FROM mines WHERE owner_hid=?", (hid,)).fetchone()["cnt"]
-        if mine_count >= MAX_MINES_PER_PLAYER:
-            conn.rollback(); conn.close()
-            return zlib_resp({"err": 7, "msg": "Maximum amount of mines reached."})
-
-        actual_cost = mine_scaled_cost(mt["cost"], mine_count)
-        if row["credits"] < actual_cost:
-            conn.rollback(); conn.close()
-            return zlib_resp({"err": 5, "msg": "not enough credits"})
-
-        if is_remote:
-            dr_row = conn.execute(
-                "SELECT level FROM factories WHERE hid=? AND item_id=119", (hid,)).fetchone()
-            dr_level = dr_row["level"] if dr_row else 0
-            if dr_level < 10:
-                conn.rollback(); conn.close()
-                return zlib_resp({"err": 10,
-                    "msg": f"Remote construction requires Drone Research level 10 (you have level {dr_level})"})
-            drone_row = conn.execute(
-                "SELECT qty FROM warehouse WHERE hid=? AND item_id=?", (hid, DRONE_ITEM_ID)).fetchone()
-            if not drone_row or drone_row["qty"] < 1:
-                conn.rollback(); conn.close()
-                return zlib_resp({"err": 8, "msg": "Remote build requires 1× Scan Drone"})
-            _rh = remote_build_hours(conn, hid)
-            if econ.count_events(conn, hid, "remote_build", (datetime.datetime.utcnow() - datetime.timedelta(
-                    hours=_rh)).isoformat()):
-                conn.rollback(); conn.close()
-                return zlib_resp({"err": 12, "msg": f"Remote construction is possible once every {_rh} hours"})
-            d_row = conn.execute(
-                "SELECT qty FROM warehouse WHERE hid=? AND item_id=?", (hid, DIAMOND_ITEM_ID)).fetchone()
-            if not d_row or d_row["qty"] < 1:
-                conn.rollback(); conn.close()
-                return zlib_resp({"err": 8, "msg": "Remote build requires 1× Giant Diamond"})
-
-        # Hex-aware proximity check against ALL mines (all players).
-        # Runs inside BEGIN IMMEDIATE so no concurrent insert can slip through.
-        all_mines = conn.execute("SELECT lat,lng FROM mines").fetchall()
-        for m in all_mines:
-            if haversine_m(lat, lng, m["lat"], m["lng"]) < hex_min_dist(lat, lng, m["lat"], m["lng"]) - 0.1:
-                conn.rollback(); conn.close()
-                return zlib_resp({"err": 6, "msg": "Building failed: this spot overlaps an existing mine — "
-                                                   "move the crosshair to a free hex."})
-
-        # Consume token inside the transaction — token is NOT consumed on any earlier failure.
-        popped = _scan_tokens.pop(prospect_token, None)
-        if popped is None:
-            conn.rollback(); conn.close()
-            return zlib_resp({"err": 9, "msg": "Build token already used (concurrent request). Please scan again."})
-        _player_tokens.pop(hid, None)
-
-        true_quality = resource_quality_at(lat, lng, item_id)
-        final_quality = round(true_quality) if true_quality >= 5.0 else max(5, quality)
-
-        mid = new_id()
-        conn.execute(
-            "INSERT INTO mines(mine_id,owner_hid,lat,lng,item_id,quality,last_coll,created_at) "
-            "VALUES(?,?,?,?,?,?,?,?)",
-            (mid, hid, lat, lng, item_id, final_quality, utcnow_iso(), utcnow_iso()))
-        econ.emit(conn, "mine_built", hid, {"mID": mid, "itemID": item_id}, public=False)
-        conn.execute("UPDATE players SET credits=credits-? WHERE hID=?", (actual_cost, hid))
-        if is_remote:
-            wh_remove(conn, hid, DRONE_ITEM_ID, 1)
-            wh_remove(conn, hid, DIAMOND_ITEM_ID, 1)
-            econ.emit(conn, "remote_build", hid, {"mID": mid}, public=False)
-        award_xp(conn, hid, actual_cost)
-
-        add_proto(conn, hid, "newmine", {"mID": mid, "itemID": item_id, "lat": lat, "lng": lng, "remote": is_remote})
-        conn.commit()
-    except Exception:
-        try: conn.rollback()
-        except Exception: pass
+        with econ.tx(conn):
+            row = get_player(conn, hid)
+            if not row:
+                raise econ.GameError("no_player", "Player not found")
+            if row["level"] < mt["lvl"]:
+                raise econ.GameError("level", f"requires level {mt['lvl']}")
+            check_travel(conn, hid, player_lat, player_lng)
+            dr_level = building_level(conn, hid, 119)
+            dr_idx = max(0, min(dr_level - 1, len(DRONE_SCAN_RANGES) - 1))
+            build_range = DRONE_SCAN_RANGES[dr_idx] if dr_level > 0 else LOCAL_CONSTRUCTION_RANGE_M
+            if dist_to_mine > build_range + GPS_TOLERANCE_M:
+                raise econ.GameError("range", f"Building failed: this spot is {dist_to_mine:.0f} m from you, "
+                                              f"your range is {build_range:.0f} m")
+            mine_count = conn.execute("SELECT COUNT(*) FROM mines WHERE owner_hid=?", (hid,)).fetchone()[0]
+            if mine_count >= MAX_MINES_PER_PLAYER:
+                raise econ.GameError("max_mines", "Maximum amount of mines reached.")
+            if is_remote:
+                if dr_level < 10:
+                    raise econ.GameError("remote", f"Remote construction requires Drone Research level 10 "
+                                                   f"(you have level {dr_level})")
+                rh = remote_build_hours(conn, hid)
+                if econ.count_events(conn, hid, "remote_build", (datetime.datetime.utcnow() - datetime.timedelta(
+                        hours=rh)).isoformat()):
+                    raise econ.GameError("cooldown", f"Remote construction is possible once every {rh} hours")
+            # Hex-aware proximity check against ALL mines (inside the write lock: no concurrent insert)
+            dlat = 40 / 111320.0
+            dlng = dlat / max(0.01, math.cos(math.radians(lat)))
+            for m in conn.execute("SELECT lat,lng FROM mines WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?",
+                                  (lat - dlat, lat + dlat, lng - dlng, lng + dlng)):
+                if haversine_m(lat, lng, m["lat"], m["lng"]) < hex_min_dist(lat, lng, m["lat"], m["lng"]) - 0.1:
+                    raise econ.GameError("overlap", "Building failed: this spot overlaps an existing mine. "
+                                                    "Move the crosshair to a free hex.")
+            actual_cost = mine_scaled_cost(mt["cost"], mine_count)
+            try:
+                econ.debit(conn, hid, actual_cost, "mine_build")
+            except econ.GameError:
+                raise econ.GameError("insufficient_credits", "not enough credits")
+            if is_remote:
+                try:
+                    econ.take(conn, hid, DRONE_ITEM_ID, 1, "remote_build")
+                    econ.take(conn, hid, DIAMOND_ITEM_ID, 1, "remote_build")
+                except econ.GameError:
+                    raise econ.GameError("remote_items", "Remote build requires 1× Scan Drone and 1× Giant Diamond")
+            # consume the token last (a failed build keeps it)
+            if _scan_tokens.pop(prospect_token, None) is None:
+                raise econ.GameError("token", "Build token already used (concurrent request). Please scan again.")
+            _player_tokens.pop(hid, None)
+            mid = new_id()
+            conn.execute(
+                "INSERT INTO mines(mine_id,owner_hid,lat,lng,item_id,quality,last_coll,created_at,paid) "
+                "VALUES(?,?,?,?,?,?,?,?,?)",
+                (mid, hid, lat, lng, item_id, final_quality, utcnow_iso(), utcnow_iso(), actual_cost))
+            econ.emit(conn, "mine_built", hid, {"mID": mid, "itemID": item_id}, public=False)
+            if is_remote:
+                econ.emit(conn, "remote_build", hid, {"mID": mid}, public=False)
+            # XP: the build cost minus what demolishing would give back (+ the drone used remotely)
+            award_sink(conn, hid, credits=actual_cost * (1 - economy.DEMOLISH_REFUND),
+                       res={DRONE_ITEM_ID: 1} if is_remote else None)
+            add_proto(conn, hid, "newmine", {"mID": mid, "itemID": item_id, "lat": lat, "lng": lng, "remote": is_remote})
+    except econ.GameError as e:
         conn.close()
-        raise
+        code = {"level": 4, "range": 11, "max_mines": 7, "remote": 10, "cooldown": 12, "overlap": 6,
+                "insufficient_credits": 5, "remote_items": 8, "token": 9, "no_player": 3}.get(e.code, 1)
+        return legacy_error(e, code)
     conn.close()
-
-    return zlib_resp({"err": 0, "mID": mid, "cost": actual_cost, "remote": is_remote, "diamondUsed": is_remote})
+    return zlib_resp({"err": 0, "mID": mid, "cost": actual_cost, "remote": is_remote, "diamondUsed": is_remote,
+                      "quality": final_quality})
 
 @app.post("/flut23/mineGetData.php")
 async def mine_get_data(request: Request):
@@ -2580,41 +2566,44 @@ async def mine_delete(request: Request):
     hid = hid_from_sid(form.get("sid", ""))
     mine_id = form.get("mID", "")
     with get_db() as conn:
-        mine = conn.execute(
-            "SELECT * FROM mines WHERE mine_id=? AND owner_hid=?", (mine_id, hid)).fetchone()
-        if not mine:
-            return zlib_resp({"err": 1})
-        refund = int(MINE_TYPES.get(mine["item_id"], {}).get("cost", 0) * 0.1)
-        conn.execute("DELETE FROM mines WHERE mine_id=?", (mine_id,))
-        conn.execute("UPDATE players SET credits=credits+? WHERE hID=?", (refund, hid))
-        add_proto(conn, hid, "demolish", {"mID": mine_id, "refund": refund})
-        conn.commit()
+        with econ.tx(conn):
+            mine = conn.execute("SELECT * FROM mines WHERE mine_id=? AND owner_hid=?", (mine_id, hid)).fetchone()
+            if not mine:
+                return zlib_resp({"err": 1})
+            # the DELETE is the guard: only one of two simultaneous requests can remove the row
+            if conn.execute("DELETE FROM mines WHERE mine_id=? AND owner_hid=?", (mine_id, hid)).rowcount != 1:
+                return zlib_resp({"err": 1})
+            refund = demolish_refund(mine)
+            econ.credit(conn, hid, refund, "mine_demolish", mine_id)
+            add_proto(conn, hid, "demolish", {"mID": mine_id, "refund": refund})
     return zlib_resp({"err": 0, "refund": refund})
+
+def demolish_refund(mine) -> int:
+    """10 % of what was paid for the mine (older mines without a record: of the base cost)."""
+    paid = mine["paid"] if "paid" in mine.keys() and mine["paid"] else MINE_TYPES.get(mine["item_id"], {}).get("cost", 0)
+    return int(paid * economy.DEMOLISH_REFUND)
 
 @app.post("/flut23/mineBulkDelete.php")
 async def mine_bulk_delete(request: Request):
     _, form = await read_form(request)
     hid = hid_from_sid(form.get("sid", ""))
-    ids_raw = form.get("mIDs", "")
-    mine_ids = [i.strip() for i in ids_raw.split(",") if i.strip()]
+    mine_ids = list(dict.fromkeys(i.strip() for i in form.get("mIDs", "").split(",") if i.strip()))
     if not mine_ids:
         return zlib_resp({"err": 1, "msg": "No mine IDs"})
     total_refund = 0
     deleted = 0
     with get_db() as conn:
-        for mine_id in mine_ids:
-            mine = conn.execute(
-                "SELECT * FROM mines WHERE mine_id=? AND owner_hid=?", (mine_id, hid)).fetchone()
-            if not mine:
-                continue
-            refund = int(MINE_TYPES.get(mine["item_id"], {}).get("cost", 0) * 0.1)
-            conn.execute("DELETE FROM mines WHERE mine_id=?", (mine_id,))
-            total_refund += refund
-            deleted += 1
-            add_proto(conn, hid, "demolish", {"mID": mine_id, "refund": refund})
-        if deleted > 0:
-            conn.execute("UPDATE players SET credits=credits+? WHERE hID=?", (total_refund, hid))
-        conn.commit()
+        with econ.tx(conn):
+            for mine_id in mine_ids:
+                mine = conn.execute("SELECT * FROM mines WHERE mine_id=? AND owner_hid=?", (mine_id, hid)).fetchone()
+                if not mine or conn.execute("DELETE FROM mines WHERE mine_id=? AND owner_hid=?",
+                                            (mine_id, hid)).rowcount != 1:
+                    continue
+                refund = demolish_refund(mine)
+                total_refund += refund
+                deleted += 1
+                add_proto(conn, hid, "demolish", {"mID": mine_id, "refund": refund})
+            econ.credit(conn, hid, total_refund, "mine_demolish")
     return zlib_resp({"err": 0, "deleted": deleted, "refund": total_refund})
 
 @app.post("/flut23/mineMaintAPay.php")
@@ -2623,31 +2612,29 @@ async def mine_maint_pay(request: Request):
     hid = hid_from_sid(form.get("sid", ""))
     mine_id = form.get("mID", "")
     with get_db() as conn:
-        mine = conn.execute(
-            "SELECT * FROM mines WHERE mine_id=? AND owner_hid=?", (mine_id, hid)).fetchone()
-        if not mine:
-            return zlib_resp({"err": 1})
-        # Eligibility: repair only allowed when condition <= 99.00 (fractional precision).
-        if float(mine["condition"]) > 99.00:
-            return zlib_resp({"err": 3, "msg": "Mine condition is too high to repair"})
-        # Settle pending production at old condition before restoring to 100.
-        _, destroyed = collect_mine(conn, mine)
-        if destroyed:
-            conn.commit()
-            return zlib_resp({"err": 1, "msg": "Mine was destroyed (condition too low)"})
-        mine = conn.execute("SELECT * FROM mines WHERE mine_id=?", (mine_id,)).fetchone()
-        repair_cost = compute_repair_cost(conn, mine)
-        player = get_player(conn, hid)
-        if not player or player["credits"] < repair_cost:
-            conn.commit()
-            return zlib_resp({"err": 2, "msg": "not enough credits", "cost": repair_cost})
-        # Restore condition to exactly 100 and reset decay clock to now.
-        conn.execute("UPDATE mines SET condition=100, last_coll=? WHERE mine_id=?",
-                     (utcnow_iso(), mine_id))
-        conn.execute("UPDATE players SET credits=credits-? WHERE hID=?", (repair_cost, hid))
-        add_proto(conn, hid, "repair", {"mID": mine_id, "cost": repair_cost})
-        econ.emit(conn, "mine_repaired", hid, {"mID": mine_id, "how": "pay"}, public=False)
-        conn.commit()
+        try:
+            with econ.tx(conn):
+                mine = conn.execute("SELECT * FROM mines WHERE mine_id=? AND owner_hid=?", (mine_id, hid)).fetchone()
+                if not mine:
+                    return zlib_resp({"err": 1})
+                if current_condition(mine) > 99.00:
+                    return zlib_resp({"err": 3, "msg": "Mine condition is too high to repair"})
+                # settle pending production at the old condition before restoring to 100
+                _, destroyed = collect_mine(conn, mine)
+                if destroyed:
+                    return zlib_resp({"err": 1, "msg": "Mine was destroyed (condition too low)"})
+                mine = conn.execute("SELECT * FROM mines WHERE mine_id=?", (mine_id,)).fetchone()
+                repair_cost = compute_repair_cost(conn, mine)
+                try:
+                    econ.debit(conn, hid, repair_cost, "mine_repair", mine_id)
+                except econ.GameError:
+                    raise econ.GameError("insufficient_credits", "not enough credits")
+                conn.execute("UPDATE mines SET condition=100, last_coll=? WHERE mine_id=?", (utcnow_iso(), mine_id))
+                award_sink(conn, hid, credits=repair_cost)
+                add_proto(conn, hid, "repair", {"mID": mine_id, "cost": repair_cost})
+                econ.emit(conn, "mine_repaired", hid, {"mID": mine_id, "how": "pay"}, public=False)
+        except econ.GameError as e:
+            return zlib_resp({"err": 2, "msg": e.message, "cost": locals().get("repair_cost")})
     return zlib_resp({"err": 0, "cost": repair_cost})
 
 @app.post("/flut23/mineMaintAKit.php")
@@ -2657,30 +2644,25 @@ async def mine_maint_kit(request: Request):
     mine_id = form.get("mID", "")
     KIT_ITEM_ID = 43
     with get_db() as conn:
-        mine = conn.execute(
-            "SELECT * FROM mines WHERE mine_id=? AND owner_hid=?", (mine_id, hid)).fetchone()
-        if not mine:
-            return zlib_resp({"err": 1})
-        # Eligibility: repair only allowed when condition <= 99.00 (fractional precision).
-        if float(mine["condition"]) > 99.00:
-            return zlib_resp({"err": 3, "msg": "Mine condition is too high to repair"})
-        if not wh_remove(conn, hid, KIT_ITEM_ID, 1):
-            return zlib_resp({"err": 2, "msg": "no maintenance kits"})
-        # Settle pending production at old condition before restoring to 100.
-        _, destroyed = collect_mine(conn, mine)
-        if destroyed:
-            # Kit was already consumed — refund it.
-            p_row = get_player(conn, hid)
-            cap = wh_capacity(p_row["wh_level"]) if p_row else 5000
-            wh_add(conn, hid, KIT_ITEM_ID, 1, cap)
-            conn.commit()
-            return zlib_resp({"err": 1, "msg": "Mine was destroyed (condition too low)"})
-        # Restore condition to exactly 100 and reset decay clock to now.
-        conn.execute("UPDATE mines SET condition=100, last_coll=? WHERE mine_id=?",
-                     (utcnow_iso(), mine_id))
-        add_proto(conn, hid, "repairkit", {"mID": mine_id})
-        econ.emit(conn, "mine_repaired", hid, {"mID": mine_id, "how": "kit"}, public=False)
-        conn.commit()
+        try:
+            with econ.tx(conn):
+                mine = conn.execute("SELECT * FROM mines WHERE mine_id=? AND owner_hid=?", (mine_id, hid)).fetchone()
+                if not mine:
+                    return zlib_resp({"err": 1})
+                if current_condition(mine) > 99.00:
+                    return zlib_resp({"err": 3, "msg": "Mine condition is too high to repair"})
+                if econ.qty_of(conn, hid, KIT_ITEM_ID) < 1:
+                    return zlib_resp({"err": 2, "msg": "no maintenance kits"})
+                _, destroyed = collect_mine(conn, mine)
+                if destroyed:
+                    return zlib_resp({"err": 1, "msg": "Mine was destroyed (condition too low)"})
+                econ.take(conn, hid, KIT_ITEM_ID, 1, "mine_repair_kit", mine_id)
+                conn.execute("UPDATE mines SET condition=100, last_coll=? WHERE mine_id=?", (utcnow_iso(), mine_id))
+                award_sink(conn, hid, res={KIT_ITEM_ID: 1})
+                add_proto(conn, hid, "repairkit", {"mID": mine_id})
+                econ.emit(conn, "mine_repaired", hid, {"mID": mine_id, "how": "kit"}, public=False)
+        except econ.GameError as e:
+            return zlib_resp({"err": 2, "msg": e.message})
     return zlib_resp({"err": 0})
 
 _MINE_SORTS = {"output": _SQL_RATE_HR, "quality": "m.quality", "condition": "m.condition"}
@@ -2766,14 +2748,16 @@ async def mine_bulk_repair(request: Request):
                         break
                     spent += cost
                     done.append((m["mine_id"], cost))
-                conn.execute("UPDATE players SET credits=credits-? WHERE hID=?", (spent, hid))
+                econ.debit(conn, hid, spent, "mine_repair")        # conditional: never below zero
+                award_sink(conn, hid, credits=spent)
             else:
                 kits = conn.execute("SELECT COALESCE(qty,0) FROM warehouse WHERE hid=? AND item_id=?",
                                     (hid, KIT_ITEM_ID)).fetchone()
                 n = min(len(eligible), int(kits[0]) if kits else 0)
                 done = [(m["mine_id"], 0) for m in eligible[:n]]
                 if n:
-                    wh_remove(conn, hid, KIT_ITEM_ID, n)
+                    econ.take(conn, hid, KIT_ITEM_ID, n, "mine_repair_kit")
+                    award_sink(conn, hid, res={KIT_ITEM_ID: n})
             now = utcnow_iso()
             conn.executemany("UPDATE mines SET condition=100, last_coll=? WHERE mine_id=?",
                              [(now, mid) for mid, _ in done])
@@ -2803,30 +2787,29 @@ async def mine_tech_upgrade(request: Request):
     item_id = TECH_ITEMS[level]
     col     = TU_COL[level]
     with get_db() as conn:
-        mine = conn.execute(
-            "SELECT * FROM mines WHERE mine_id=? AND owner_hid=?", (mine_id, hid)).fetchone()
-        if not mine:
-            return zlib_resp({"err": 2, "msg": "mine not found"})
-        current = (mine[col] or 0)
-        if current >= 100:
-            return zlib_resp({"err": 3, "msg": f"TU{level} already full"})
-        # Previous level must be full (TU1 always allowed)
-        if level > 1:
-            prev_col = TU_COL[level - 1]
-            if (mine[prev_col] or 0) < 100:
-                return zlib_resp({"err": 4, "msg": f"must fill TU{level-1} first"})
-        can_add = 100 - current
-        actual  = min(amount, can_add)
-        if not wh_remove(conn, hid, item_id, actual):
-            return zlib_resp({"err": 5, "msg": f"need {actual}× item {item_id}"})
-        conn.execute(f"UPDATE mines SET {col}={col}+? WHERE mine_id=?", (actual, mine_id))
-        econ.emit(conn, "tech_installed", hid, {"mID": mine_id, "level": level, "qty": actual}, public=False)
-        conn.commit()
-        new_val = current + actual
-        # Calculate new total boost for response
-        m2 = conn.execute("SELECT tu1,tu2,tu3,tu4 FROM mines WHERE mine_id=?", (mine_id,)).fetchone()
-        boost_pct = round((m2["tu1"]*1.0 + m2["tu2"]*1.0 + m2["tu3"]*1.5 + m2["tu4"]*1.5))
-    return zlib_resp({"err": 0, f"tu{level}": new_val, "boostPct": int(boost_pct)})
+        try:
+            with econ.tx(conn):
+                mine = conn.execute("SELECT * FROM mines WHERE mine_id=? AND owner_hid=?", (mine_id, hid)).fetchone()
+                if not mine:
+                    return zlib_resp({"err": 2, "msg": "mine not found"})
+                current = (mine[col] or 0)
+                if current >= 100:
+                    return zlib_resp({"err": 3, "msg": f"TU{level} already full"})
+                if level > 1 and (mine[TU_COL[level - 1]] or 0) < 100:
+                    return zlib_resp({"err": 4, "msg": f"must fill TU{level-1} first"})
+                actual = min(amount, 100 - current)
+                try:
+                    econ.take(conn, hid, item_id, actual, "tech_install", mine_id)
+                except econ.GameError:
+                    return zlib_resp({"err": 5, "msg": f"need {actual}× item {item_id}"})
+                conn.execute(f"UPDATE mines SET {col}=MIN(100, COALESCE({col},0)+?) WHERE mine_id=?", (actual, mine_id))
+                award_sink(conn, hid, res={item_id: actual})
+                econ.emit(conn, "tech_installed", hid, {"mID": mine_id, "level": level, "qty": actual}, public=False)
+            m2 = conn.execute("SELECT tu1,tu2,tu3,tu4 FROM mines WHERE mine_id=?", (mine_id,)).fetchone()
+        except econ.GameError as e:
+            return legacy_error(e, 5)
+    boost_pct = round((m2["tu1"] or 0) * 1.0 + (m2["tu2"] or 0) * 1.0 + (m2["tu3"] or 0) * 1.5 + (m2["tu4"] or 0) * 1.5)
+    return zlib_resp({"err": 0, f"tu{level}": min(100, current + actual), "boostPct": int(boost_pct)})
 
 # ── Map markers ─────────────────────────────────────────────────────────────────
 
@@ -2898,148 +2881,129 @@ async def hq_get_markers(request: Request):
 
 @app.post("/flut23/HQNewPosition.php")
 async def hq_new_position(request: Request):
+    """Place or move the HQ. Owner 2026-10-23: checked against the player's GPS (within
+    HQ_PLACE_RANGE_M), placing costs HQ_COST, moving costs HQ_MOVE_COST × level² once a day."""
     _, form = await read_form(request)
     hid = hid_from_sid(form.get("sid", ""))
     try:
         lat = float(form.get("lat", 0))
         lng = float(form.get("lng", 0))
+        cur_lat = float(form.get("cur_lat"))
+        cur_lng = float(form.get("cur_lng"))
     except Exception:
-        return zlib_resp({"err": 1})
+        return zlib_resp({"err": 1, "msg": "Your position is needed to place the HQ"})
     with get_db() as conn:
-        row = get_player(conn, hid)
-        if not row:
-            return zlib_resp({"err": 2})
-        HQ_COST = 5000
-        if row["credits"] < HQ_COST:
-            return zlib_resp({"err": 3, "msg": "not enough credits"})
-        existing = conn.execute("SELECT * FROM hq WHERE hid=?", (hid,)).fetchone()
-        if existing:
-            conn.execute("UPDATE hq SET lat=?,lng=? WHERE hid=?", (lat, lng, hid))
-        else:
-            conn.execute("INSERT INTO hq(hid,lat,lng) VALUES(?,?,?)", (hid, lat, lng))
-            conn.execute("UPDATE players SET credits=credits-? WHERE hID=?", (HQ_COST, hid))
-        add_proto(conn, hid, "hq", {"lat": lat, "lng": lng})
-        conn.commit()
-    return zlib_resp({"err": 0})
+        try:
+            with econ.tx(conn):
+                if not get_player(conn, hid):
+                    return zlib_resp({"err": 2})
+                check_travel(conn, hid, cur_lat, cur_lng)
+                if haversine_m(cur_lat, cur_lng, lat, lng) > HQ_PLACE_RANGE_M + GPS_TOLERANCE_M:
+                    raise econ.GameError("range", f"The HQ must be within {HQ_PLACE_RANGE_M} m of you")
+                existing = conn.execute("SELECT * FROM hq WHERE hid=?", (hid,)).fetchone()
+                now = datetime.datetime.utcnow()
+                if existing:
+                    moved = conn.execute("SELECT hq_moved_at FROM players WHERE hID=?", (hid,)).fetchone()[0]
+                    if moved and now - datetime.datetime.fromisoformat(moved) < datetime.timedelta(hours=HQ_MOVE_HOURS):
+                        raise econ.GameError("cooldown", f"The HQ can be moved once every {HQ_MOVE_HOURS} hours")
+                    cost = HQ_MOVE_COST * existing["level"] ** 2
+                    econ.debit(conn, hid, cost, "hq_move")
+                    conn.execute("UPDATE hq SET lat=?,lng=? WHERE hid=?", (lat, lng, hid))
+                else:
+                    cost = HQ_COST
+                    econ.debit(conn, hid, cost, "hq_place")
+                    conn.execute("INSERT INTO hq(hid,lat,lng) VALUES(?,?,?)", (hid, lat, lng))
+                conn.execute("UPDATE players SET hq_moved_at=? WHERE hID=?", (now.isoformat(), hid))
+                award_sink(conn, hid, credits=cost)
+                add_proto(conn, hid, "hq", {"lat": lat, "lng": lng, "cost": cost})
+        except econ.GameError as e:
+            return legacy_error(e, 3)
+    return zlib_resp({"err": 0, "cost": cost})
+
+HQ_COST = 5000
+HQ_MOVE_COST = 25_000
+HQ_MOVE_HOURS = 24
+HQ_PLACE_RANGE_M = 500
 
 @app.post("/flut23/hqUpgrade.php")
 async def hq_upgrade(request: Request):
     _, form = await read_form(request)
     hid = hid_from_sid(form.get("sid", ""))
     with get_db() as conn:
-        hq_row = conn.execute("SELECT * FROM hq WHERE hid=?", (hid,)).fetchone()
-        if not hq_row:
-            return zlib_resp({"err": 1, "msg": "no HQ placed"})
-        level = hq_row["level"]
-        if level >= 10:
-            return zlib_resp({"err": 2, "msg": "HQ already at max level"})
-        reqs = HQ_UPGRADE_REQS.get(level + 1, {})
-        for item_id, qty in reqs.items():
-            wh_row = conn.execute("SELECT qty FROM warehouse WHERE hid=? AND item_id=?",
-                                  (hid, item_id)).fetchone()
-            if not wh_row or wh_row["qty"] < qty:
-                return zlib_resp({"err": 3, "msg": f"need {qty} × item {item_id}"})
-        for item_id, qty in reqs.items():
-            conn.execute("UPDATE warehouse SET qty=qty-? WHERE hid=? AND item_id=?",
-                         (qty, hid, item_id))
-        new_level = level + 1
-        conn.execute("UPDATE hq SET level=? WHERE hid=?", (new_level, hid))
-        add_proto(conn, hid, "hqupgrade", {"newLvl": new_level})
-        conn.commit()
+        try:
+            with econ.tx(conn):
+                hq_row = conn.execute("SELECT * FROM hq WHERE hid=?", (hid,)).fetchone()
+                if not hq_row:
+                    return zlib_resp({"err": 1, "msg": "no HQ placed"})
+                level = hq_row["level"]
+                if level >= 10:
+                    return zlib_resp({"err": 2, "msg": "HQ already at max level"})
+                reqs = HQ_UPGRADE_REQS.get(level + 1, {})
+                for item_id, qty in reqs.items():
+                    econ.take(conn, hid, item_id, qty, "hq_upgrade")
+                new_level = level + 1
+                if conn.execute("UPDATE hq SET level=? WHERE hid=? AND level=?", (new_level, hid, level)).rowcount != 1:
+                    raise econ.GameError("busy", "HQ changed, try again")
+                award_sink(conn, hid, res=reqs)
+                add_proto(conn, hid, "hqupgrade", {"newLvl": new_level})
+        except econ.GameError as e:
+            return legacy_error(e, 3)
     return zlib_resp({"err": 0, "newLevel": new_level})
 
 @app.post("/flut23/hqDeposit.php")
 async def hq_deposit(request: Request):
-    """Deposit resources toward HQ upgrade. Partial deposits allowed."""
+    """Deposit resources toward the next HQ level (partial deposits allowed, whole units).
+    XP is the system value of what was deposited (owner 2026-10-23)."""
     _, form = await read_form(request)
     hid = hid_from_sid(form.get("sid", ""))
     with get_db() as conn:
-        hq_row = conn.execute("SELECT * FROM hq WHERE hid=?", (hid,)).fetchone()
-        if not hq_row:
-            return zlib_resp({"err": 1, "msg": "no HQ placed"})
-        level = hq_row["level"]
-        if level >= 10:
-            return zlib_resp({"err": 2, "msg": "HQ already at max level"})
-        target_level = level + 1
-        reqs = HQ_UPGRADE_REQS.get(target_level, {})
-
-        # Parse deposit amounts from form: amt_{item_id} = qty
-        deposits_now = {}
-        for item_id in reqs:
-            key = f"amt_{item_id}"
-            try:
-                amt = float(form.get(key, 0))
-            except Exception:
-                amt = 0.0
-            if amt <= 0:
-                continue
-            # Check player has enough
-            wh_row = conn.execute("SELECT qty FROM warehouse WHERE hid=? AND item_id=?",
-                                  (hid, item_id)).fetchone()
-            available = wh_row["qty"] if wh_row else 0.0
-            # Already deposited for this target level
-            dep_row = conn.execute(
-                "SELECT amount FROM hq_deposits WHERE hid=? AND target_level=? AND item_id=?",
-                (hid, target_level, item_id)).fetchone()
-            already = dep_row["amount"] if dep_row else 0.0
-            # Cap at requirement remaining
-            max_dep = max(0.0, reqs[item_id] - already)
-            amt = min(amt, available, max_dep)
-            if amt <= 0:
-                continue
-            deposits_now[item_id] = amt
-
-        if not deposits_now:
-            return zlib_resp({"err": 3, "msg": "nothing to deposit"})
-
-        # Deduct from warehouse and record deposits
-        for item_id, amt in deposits_now.items():
-            conn.execute("UPDATE warehouse SET qty=qty-? WHERE hid=? AND item_id=?",
-                         (amt, hid, item_id))
-            conn.execute("""
-                INSERT INTO hq_deposits(hid, target_level, item_id, amount)
-                VALUES(?, ?, ?, ?)
-                ON CONFLICT(hid, target_level, item_id)
-                DO UPDATE SET amount = amount + excluded.amount
-            """, (hid, target_level, item_id, amt))
-            award_xp(conn, hid, int(amt))  # 1 XP per unit deposited (for now)
-
-        # Check if all requirements are now met → auto-upgrade
-        all_met = True
-        for item_id, req_qty in reqs.items():
-            dep_row = conn.execute(
-                "SELECT amount FROM hq_deposits WHERE hid=? AND target_level=? AND item_id=?",
-                (hid, target_level, item_id)).fetchone()
-            deposited = dep_row["amount"] if dep_row else 0.0
-            if deposited < req_qty:
-                all_met = False
-                break
-
-        upgraded = False
-        new_level = level
-        if all_met:
-            # Remove deposit records and upgrade HQ
-            conn.execute("DELETE FROM hq_deposits WHERE hid=? AND target_level=?",
-                         (hid, target_level))
-            new_level = target_level
-            conn.execute("UPDATE hq SET level=? WHERE hid=?", (new_level, hid))
-            add_proto(conn, hid, "hqupgrade", {"newLvl": new_level})
-            upgraded = True
-
-        # Collect current deposit totals for response
-        dep_rows = conn.execute(
-            "SELECT item_id, amount FROM hq_deposits WHERE hid=? AND target_level=?",
-            (hid, new_level + 1)).fetchall()
-        current_deposits = {str(d["item_id"]): d["amount"] for d in dep_rows}
-        conn.commit()
-
-    return zlib_resp({
-        "err": 0,
-        "deposited": {str(k): v for k, v in deposits_now.items()},
-        "currentDeposits": current_deposits,
-        "upgraded": upgraded,
-        "newLevel": new_level,
-    })
+        try:
+            with econ.tx(conn):
+                hq_row = conn.execute("SELECT * FROM hq WHERE hid=?", (hid,)).fetchone()
+                if not hq_row:
+                    return zlib_resp({"err": 1, "msg": "no HQ placed"})
+                level = hq_row["level"]
+                if level >= 10:
+                    return zlib_resp({"err": 2, "msg": "HQ already at max level"})
+                target_level = level + 1
+                reqs = HQ_UPGRADE_REQS.get(target_level, {})
+                deposits_now = {}
+                for item_id in reqs:
+                    try:
+                        amt = int(float(form.get(f"amt_{item_id}", 0)))
+                    except Exception:
+                        amt = 0
+                    if amt <= 0:
+                        continue
+                    dep_row = conn.execute("SELECT amount FROM hq_deposits WHERE hid=? AND target_level=? AND item_id=?",
+                                           (hid, target_level, item_id)).fetchone()
+                    already = dep_row["amount"] if dep_row else 0.0
+                    amt = int(min(amt, econ.qty_of(conn, hid, item_id), max(0.0, reqs[item_id] - already)))
+                    if amt <= 0:
+                        continue
+                    econ.take(conn, hid, item_id, amt, "hq_deposit")
+                    conn.execute("INSERT INTO hq_deposits(hid, target_level, item_id, amount) VALUES(?, ?, ?, ?) "
+                                 "ON CONFLICT(hid, target_level, item_id) DO UPDATE SET amount = amount + excluded.amount",
+                                 (hid, target_level, item_id, amt))
+                    deposits_now[item_id] = amt
+                if not deposits_now:
+                    return zlib_resp({"err": 3, "msg": "nothing to deposit"})
+                award_sink(conn, hid, res=deposits_now)
+                all_met = all((conn.execute("SELECT amount FROM hq_deposits WHERE hid=? AND target_level=? AND item_id=?",
+                                            (hid, target_level, i)).fetchone() or [0])[0] >= q for i, q in reqs.items())
+                upgraded, new_level = False, level
+                if all_met:
+                    conn.execute("DELETE FROM hq_deposits WHERE hid=? AND target_level=?", (hid, target_level))
+                    new_level = target_level
+                    conn.execute("UPDATE hq SET level=? WHERE hid=?", (new_level, hid))
+                    add_proto(conn, hid, "hqupgrade", {"newLvl": new_level})
+                    upgraded = True
+                current_deposits = {str(d["item_id"]): d["amount"] for d in conn.execute(
+                    "SELECT item_id, amount FROM hq_deposits WHERE hid=? AND target_level=?", (hid, new_level + 1))}
+        except econ.GameError as e:
+            return legacy_error(e, 3)
+    return zlib_resp({"err": 0, "deposited": {str(k): v for k, v in deposits_now.items()},
+                      "currentDeposits": current_deposits, "upgraded": upgraded, "newLevel": new_level})
 
 # ── Warehouse ───────────────────────────────────────────────────────────────────
 
@@ -3069,21 +3033,31 @@ async def lager_get_data(request: Request):
 async def lager_upgrade(request: Request):
     _, form = await read_form(request)
     hid = hid_from_sid(form.get("sid", ""))
+    return zlib_resp(_warehouse_upgrade(hid, 1))
+
+def _warehouse_upgrade(hid: str, levels: int) -> dict:
+    """Upgrade the warehouse by `levels` (1..1000); cost per level economy.wh_upgrade_cost."""
+    levels = max(1, min(1000, levels))
     with get_db() as conn:
-        row = get_player(conn, hid)
-        if not row:
-            return zlib_resp({"err": 1})
-        upgrade_cost = int(12500 * (row["wh_level"] ** 2))
-        if row["credits"] < upgrade_cost:
-            return zlib_resp({"err": 2, "msg": "not enough credits", "cost": upgrade_cost})
-        new_lvl = row["wh_level"] + 1
-        conn.execute("UPDATE players SET wh_level=?,credits=credits-? WHERE hID=?",
-                     (new_lvl, upgrade_cost, hid))
-        award_xp(conn, hid, upgrade_cost)
-        add_proto(conn, hid, "lagerupgrade", {"newLvl": new_lvl, "cost": upgrade_cost})
-        conn.commit()
-        new_cap = int(wh_capacity(new_lvl))
-    return zlib_resp({"err": 0, "newLvl": new_lvl, "newCap": new_cap, "cost": upgrade_cost})
+        try:
+            with econ.tx(conn):
+                row = get_player(conn, hid)
+                if not row:
+                    return {"err": 1}
+                cur = row["wh_level"]
+                total_cost = sum(economy.wh_upgrade_cost(cur + i) for i in range(levels))
+                try:
+                    econ.debit(conn, hid, total_cost, "warehouse_upgrade")
+                except econ.GameError:
+                    return {"err": 2, "msg": "not enough credits", "cost": total_cost}
+                new_lvl = cur + levels
+                if conn.execute("UPDATE players SET wh_level=? WHERE hID=? AND wh_level=?", (new_lvl, hid, cur)).rowcount != 1:
+                    raise econ.GameError("busy", "Warehouse changed, try again")
+                award_sink(conn, hid, credits=total_cost)
+                add_proto(conn, hid, "lagerupgrade", {"newLvl": new_lvl, "cost": total_cost, "levels": levels})
+        except econ.GameError as e:
+            return {"err": 3, "msg": e.message}
+    return {"err": 0, "newLvl": new_lvl, "newCap": int(wh_capacity(new_lvl)), "cost": total_cost}
 
 # ── Factories ───────────────────────────────────────────────────────────────────
 
@@ -3112,10 +3086,12 @@ async def factory_get_data(request: Request):
                 else:
                     upg_credits = 0
                     upg_res = {}
+            elif f["item_id"] in FACTORY_TYPES:      # the real price (owner 2026-10-23: no level cap)
+                up = economy.factory_upgrade(f["item_id"], level)
+                upg_credits = up["credits"]
+                upg_res = {str(k): v for k, v in up["res"].items()}
             else:
-                upg_credits = int(ft.get("cost", 0) * (1.05 ** level))
-                base_res = FACTORY_BUILD_RESOURCES.get(f["item_id"], {})
-                upg_res = {str(k): int(v * (1.5 ** level)) for k, v in base_res.items()}
+                upg_credits, upg_res = 0, {}
             cooldown_until = None
             if f["boost_cooldown_until"]:
                 cu = datetime.datetime.fromisoformat(f["boost_cooldown_until"])
@@ -3133,7 +3109,7 @@ async def factory_get_data(request: Request):
                 if now < bu:
                     booster_until = f["booster_until"]
                     booster_item = f["booster_item"]
-            max_lvl = sb["max_level"] if sb else 5
+            max_lvl = sb["max_level"] if sb else 1_000_000          # factories: no maximum
             factory_list.append({
                 "fID": f["factory_id"], "itemID": f["item_id"], "lvl": level,
                 "isSpecial": sb is not None, "maxLvl": max_lvl,
@@ -3143,13 +3119,14 @@ async def factory_get_data(request: Request):
                 "fireUntil": fire_until,
                 "boosterItem": booster_item, "boosterUntil": booster_until,
                 "upgCredits": upg_credits, "upgRes": upg_res,
+                "strikeAt": f["strike_at"], "strikeCost": f["strike_cost"],
             })
         catalog = []
         for fid, ft in FACTORY_TYPES.items():
             build_res = FACTORY_BUILD_RESOURCES.get(fid, {})
             catalog.append({
                 "itemID": fid, "name": ft["name"], "produces": ft["produces"],
-                "needs": ft["needs"], "out": ft["out"], "hrs": ft["hrs"],
+                "needs": ft["needs"], "out": ft["out"], "hrs": ft["hrs"], "credits": ft.get("credits", 0),
                 "cost": ft["cost"], "minLvl": ft["lvl"],
                 "buildRes": {str(k): v for k, v in build_res.items()},
                 "owned": fid in owned_types,
@@ -3181,101 +3158,91 @@ async def factory_buy(request: Request):
     if not ft:
         return zlib_resp({"err": 2, "msg": "unknown factory type"})
     with get_db() as conn:
-        row = get_player(conn, hid)
-        if not row:
-            return zlib_resp({"err": 3})
-        if row["level"] < ft["lvl"]:
-            return zlib_resp({"err": 4, "msg": f"requires player level {ft['lvl']}"})
-        if row["credits"] < ft["cost"]:
-            return zlib_resp({"err": 5, "msg": "not enough credits"})
-        existing = conn.execute("SELECT factory_id FROM factories WHERE hid=? AND item_id=?",
-                                (hid, item_id)).fetchone()
-        if existing:
-            return zlib_resp({"err": 6, "msg": "you already own this factory"})
-        build_res = FACTORY_BUILD_RESOURCES.get(item_id, {})
-        for res_item, qty in build_res.items():
-            wh_row = conn.execute("SELECT qty FROM warehouse WHERE hid=? AND item_id=?",
-                                  (hid, res_item)).fetchone()
-            if not wh_row or wh_row["qty"] < qty:
-                return zlib_resp({"err": 7, "msg": f"need {qty} × item {res_item}"})
-        for res_item, qty in build_res.items():
-            conn.execute("UPDATE warehouse SET qty=qty-? WHERE hid=? AND item_id=?",
-                         (qty, hid, res_item))
-        fid = new_id()
-        conn.execute("INSERT INTO factories(factory_id,hid,item_id) VALUES(?,?,?)", (fid, hid, item_id))
-        conn.execute("UPDATE players SET credits=credits-? WHERE hID=?", (ft["cost"], hid))
-        award_xp(conn, hid, ft["cost"])
-        add_proto(conn, hid, "buyfactory", {"fID": fid, "itemID": item_id})
-        conn.commit()
+        try:
+            with econ.tx(conn):
+                row = get_player(conn, hid)
+                if not row:
+                    return zlib_resp({"err": 3})
+                if row["level"] < ft["lvl"]:
+                    return zlib_resp({"err": 4, "msg": f"requires player level {ft['lvl']}"})
+                if conn.execute("SELECT 1 FROM factories WHERE hid=? AND item_id=?", (hid, item_id)).fetchone():
+                    return zlib_resp({"err": 6, "msg": "you already own this factory"})
+                build_res = FACTORY_BUILD_RESOURCES.get(item_id, {})
+                try:
+                    econ.debit(conn, hid, ft["cost"], "factory_build", str(item_id))
+                except econ.GameError:
+                    return zlib_resp({"err": 5, "msg": "not enough credits"})
+                for res_item, qty in build_res.items():
+                    try:
+                        econ.take(conn, hid, res_item, qty, "factory_build", str(item_id))
+                    except econ.GameError:
+                        raise econ.GameError("insufficient_items", f"need {qty} × item {res_item}")
+                fid = new_id()
+                conn.execute("INSERT INTO factories(factory_id,hid,item_id,last_active) VALUES(?,?,?,?)",
+                             (fid, hid, item_id, utcnow_iso()))
+                award_sink(conn, hid, credits=ft["cost"], res=build_res)
+                add_proto(conn, hid, "buyfactory", {"fID": fid, "itemID": item_id})
+        except econ.GameError as e:
+            return legacy_error(e, 7)
     return zlib_resp({"err": 0, "fID": fid})
 
 @app.post("/flut23/factoryNewOrder.php")
 async def factory_new_order(request: Request):
+    """Start `batches` batches. Inputs AND the recipe credits (srx.txt) are taken at the start."""
     _, form = await read_form(request)
     hid = hid_from_sid(form.get("sid", ""))
     fid = form.get("fID", "")
     try:
-        batches = max(1, int(form.get("batches", 1)))
+        batches = max(1, min(100_000, int(form.get("batches", 1))))
     except Exception:
         batches = 1
     with get_db() as conn:
-        factory = conn.execute(
-            "SELECT * FROM factories WHERE factory_id=? AND hid=?", (fid, hid)).fetchone()
-        if not factory:
-            return zlib_resp({"err": 1})
-        # Check fire
-        now = datetime.datetime.utcnow()
-        if factory["fire_until"]:
-            fu = datetime.datetime.fromisoformat(factory["fire_until"])
-            if now < fu:
-                return zlib_resp({"err": 5, "msg": "factory is on fire!", "fireUntil": factory["fire_until"]})
-        if factory["prod_item"] is not None:
-            return zlib_resp({"err": 2, "msg": "production already active"})
-        ft = FACTORY_TYPES.get(factory["item_id"])
-        if not ft:
-            return zlib_resp({"err": 3})
-        row = get_player(conn, hid)
-        # Random fire event based on WA
-        wa = row["wa"] if row["wa"] is not None else 80
-        fire_prob = max(0.0, (60 - wa) / 60) * 0.08  # up to 8% when WA=0
-        station = building_level(conn, hid, protection.FIRE_STATION)
-        fire_prob *= protection.fire_factor(station)
-        if random.random() < fire_prob:
-            fire_until = (now + datetime.timedelta(
-                days=FIRE_DURATION_DAYS * protection.fire_duration_factor(station)
-                * protection.law_firm_factor(building_level(conn, hid, protection.LAW_FIRM)))).isoformat()
-            conn.execute("UPDATE factories SET fire_until=? WHERE factory_id=?", (fire_until, fid))
-            add_proto(conn, hid, "factoryfire", {"fID": fid, "until": fire_until})
-            conn.commit()
-            return zlib_resp({"err": 6, "msg": "fire broke out!", "fireUntil": fire_until})
-        # Check and consume ingredients
-        for need_item, need_qty in ft["needs"].items():
-            total_need = need_qty * batches
-            if not wh_remove(conn, hid, need_item, total_need):
-                return zlib_resp({"err": 4, "msg": f"not enough item {need_item}"})
-        level_mult = float(factory["level"])  # official: rate = base_rate * level (so level 5 = 5x throughput)
-        # Apply active WA booster
-        booster_mult = 1.0
-        if factory["booster_until"]:
-            try:
-                bu = datetime.datetime.fromisoformat(factory["booster_until"])
-                if now < bu and factory["booster_item"]:
-                    bdata = WA_BOOSTERS.get(factory["booster_item"])
-                    if bdata:
-                        booster_mult = bdata["boost"]
-            except Exception:
-                pass
-        output = round(ft["out"] * batches * booster_mult, 1)  # output does not scale with level
-        hrs = ft["hrs"] * batches / level_mult  # level reduces time
-        start_time = now.isoformat()
-        end_time = (now + datetime.timedelta(hours=hrs)).isoformat()
-        conn.execute(
-            "UPDATE factories SET prod_item=?,prod_amount=?,prod_start=?,prod_end=? WHERE factory_id=?",
-            (ft["produces"], output, start_time, end_time, fid))
-        econ.emit(conn, "factory_started", hid, {"fID": fid, "item": ft["produces"], "batches": batches},
-                  public=False)
-        conn.commit()
-    return zlib_resp({"err": 0, "prodItem": ft["produces"], "prodAmt": output, "prodStart": start_time, "prodEnd": end_time})
+        try:
+            with econ.tx(conn):
+                factory = conn.execute("SELECT * FROM factories WHERE factory_id=? AND hid=?", (fid, hid)).fetchone()
+                if not factory:
+                    return zlib_resp({"err": 1})
+                now = datetime.datetime.utcnow()
+                if factory["strike_at"]:
+                    return zlib_resp({"err": 7, "msg": "Workers are on strike. Settle the strike first."})
+                if factory["fire_until"] and now < datetime.datetime.fromisoformat(factory["fire_until"]):
+                    return zlib_resp({"err": 5, "msg": "factory is on fire!", "fireUntil": factory["fire_until"]})
+                if factory["prod_item"] is not None:
+                    return zlib_resp({"err": 2, "msg": "production already active"})
+                ft = FACTORY_TYPES.get(factory["item_id"])
+                if not ft:
+                    return zlib_resp({"err": 3})
+                for need_item, need_qty in ft["needs"].items():
+                    try:
+                        econ.take(conn, hid, need_item, need_qty * batches, "factory_input", fid)
+                    except econ.GameError:
+                        return zlib_resp({"err": 4, "msg": f"not enough item {need_item}"})
+                credits = ft.get("credits", 0) * batches
+                try:
+                    econ.debit(conn, hid, credits, "factory_production", fid)
+                except econ.GameError:
+                    return zlib_resp({"err": 4, "msg": f"not enough credits (ꞓ{credits:,} for {batches} batches)"})
+                award_sink(conn, hid, credits=credits)
+                level_mult = float(max(1, factory["level"]))      # srx.txt: production/h = base × level
+                booster_mult = 1.0
+                if factory["booster_until"] and factory["booster_item"]:
+                    try:
+                        if now < datetime.datetime.fromisoformat(factory["booster_until"]):
+                            booster_mult = WA_BOOSTERS.get(factory["booster_item"], {}).get("boost", 1.0)
+                    except ValueError:
+                        pass
+                output = round(ft["out"] * batches * booster_mult, 1)
+                hrs = ft["hrs"] * batches / level_mult
+                start_time, end_time = now.isoformat(), (now + datetime.timedelta(hours=hrs)).isoformat()
+                conn.execute("UPDATE factories SET prod_item=?,prod_amount=?,prod_start=?,prod_end=?,last_active=? "
+                             "WHERE factory_id=? AND prod_item IS NULL",
+                             (ft["produces"], output, start_time, end_time, start_time, fid))
+                econ.emit(conn, "factory_started", hid, {"fID": fid, "item": ft["produces"], "batches": batches},
+                          public=False)
+        except econ.GameError as e:
+            return legacy_error(e, 4)
+    return zlib_resp({"err": 0, "prodItem": ft["produces"], "prodAmt": output, "prodStart": start_time,
+                      "prodEnd": end_time, "credits": credits})
 
 @app.post("/flut23/factoryCollect.php")
 async def factory_collect(request: Request):
@@ -3283,89 +3250,98 @@ async def factory_collect(request: Request):
     hid = hid_from_sid(form.get("sid", ""))
     fid = form.get("fID", "")
     with get_db() as conn:
-        factory = conn.execute(
-            "SELECT * FROM factories WHERE factory_id=? AND hid=?", (fid, hid)).fetchone()
-        if not factory or factory["prod_item"] is None:
-            return zlib_resp({"err": 1})
-        end = datetime.datetime.fromisoformat(factory["prod_end"])
-        if datetime.datetime.utcnow() < end:
-            return zlib_resp({"err": 2, "msg": "production not done yet", "end": factory["prod_end"]})
-        row = get_player(conn, hid)
-        cap = wh_capacity(row["wh_level"])
-        amount = apply_output_hooks(conn, hid, factory["prod_item"], factory["prod_amount"])
-        added = wh_add(conn, hid, factory["prod_item"], amount, cap)
-        conn.execute(
-            "UPDATE factories SET prod_item=NULL,prod_amount=NULL,prod_start=NULL,prod_end=NULL WHERE factory_id=?",
-            (fid,))
-        add_proto(conn, hid, "factcollect", {"fID": fid, "itemID": factory["prod_item"], "qty": added})
-        conn.commit()
+        with econ.tx(conn):
+            factory = conn.execute("SELECT * FROM factories WHERE factory_id=? AND hid=?", (fid, hid)).fetchone()
+            if not factory or factory["prod_item"] is None:
+                return zlib_resp({"err": 1})
+            if factory["strike_at"]:
+                return zlib_resp({"err": 7, "msg": "Workers are on strike. Settle the strike first."})
+            now = utcnow_iso()
+            if now < factory["prod_end"]:
+                return zlib_resp({"err": 2, "msg": "production not done yet", "end": factory["prod_end"]})
+            # clearing the order is the guard: a second simultaneous collect finds nothing
+            if conn.execute("UPDATE factories SET prod_item=NULL,prod_amount=NULL,prod_start=NULL,prod_end=NULL, "
+                            "last_active=? WHERE factory_id=? AND prod_item IS NOT NULL AND prod_end=?",
+                            (now, fid, factory["prod_end"])).rowcount != 1:
+                return zlib_resp({"err": 1})
+            row = get_player(conn, hid)
+            amount = apply_output_hooks(conn, hid, factory["prod_item"], factory["prod_amount"])
+            added = wh_add(conn, hid, factory["prod_item"], amount, wh_capacity(row["wh_level"]))
+            add_proto(conn, hid, "factcollect", {"fID": fid, "itemID": factory["prod_item"], "qty": added})
     return zlib_resp({"err": 0, "collected": added})
 
 @app.post("/flut23/factoryStop.php")
 async def factory_stop(request: Request):
+    """Stop production: the inputs and credits of the part not produced yet are returned."""
     _, form = await read_form(request)
     hid = hid_from_sid(form.get("sid", ""))
     fid = form.get("fID", "")
     with get_db() as conn:
-        factory = conn.execute(
-            "SELECT * FROM factories WHERE factory_id=? AND hid=?", (fid, hid)).fetchone()
-        if not factory or factory["prod_item"] is None:
-            return zlib_resp({"err": 1})
-        ft = FACTORY_TYPES.get(factory["item_id"], {})
-        # Refund all consumed materials (calculated from prod_amount)
-        batches = max(1, round(factory["prod_amount"] / ft["out"])) if ft.get("out", 0) > 0 else 1
-        refunded = {}
-        row = get_player(conn, hid)
-        cap = wh_capacity(row["wh_level"])
-        for need_item, need_qty in ft.get("needs", {}).items():
-            refund_qty = need_qty * batches
-            added = wh_add(conn, hid, need_item, refund_qty, cap)
-            if added > 0:
-                refunded[str(need_item)] = added
-        conn.execute(
-            "UPDATE factories SET prod_item=NULL,prod_amount=NULL,prod_start=NULL,prod_end=NULL WHERE factory_id=?",
-            (fid,))
-        conn.commit()
+        with econ.tx(conn):
+            factory = conn.execute("SELECT * FROM factories WHERE factory_id=? AND hid=?", (fid, hid)).fetchone()
+            if not factory or factory["prod_item"] is None:
+                return zlib_resp({"err": 1})
+            if factory["strike_at"]:
+                return zlib_resp({"err": 7, "msg": "Workers are on strike. Settle the strike first."})
+            if conn.execute("UPDATE factories SET prod_item=NULL,prod_amount=NULL,prod_start=NULL,prod_end=NULL "
+                            "WHERE factory_id=? AND prod_item IS NOT NULL AND prod_end=?",
+                            (fid, factory["prod_end"])).rowcount != 1:
+                return zlib_resp({"err": 1})
+            ft = FACTORY_TYPES.get(factory["item_id"], {})
+            now = datetime.datetime.utcnow()
+            try:
+                start = datetime.datetime.fromisoformat(factory["prod_start"])
+                end = datetime.datetime.fromisoformat(factory["prod_end"])
+                left = max(0.0, min(1.0, (end - now).total_seconds() / max(1.0, (end - start).total_seconds())))
+            except (TypeError, ValueError):
+                left = 0.0
+            batches = (factory["prod_amount"] or 0) / ft["out"] if ft.get("out") else 0
+            refunded = {}
+            for need_item, need_qty in ft.get("needs", {}).items():
+                q = int(need_qty * batches * left)
+                if q > 0:
+                    got = econ.give(conn, hid, need_item, q, "factory_stop_refund", fid, ignore_capacity=True)
+                    refunded[str(need_item)] = got
+            econ.credit(conn, hid, int(ft.get("credits", 0) * batches * left), "factory_stop_refund", fid)
     return zlib_resp({"err": 0, "refunded": refunded})
 
 @app.post("/flut23/factoryUpgrade.php")
 async def factory_upgrade(request: Request):
+    """No maximum level; the cost grows faster than the output (economy.factory_upgrade)."""
     _, form = await read_form(request)
     hid = hid_from_sid(form.get("sid", ""))
     fid = form.get("fID", "")
     with get_db() as conn:
-        factory = conn.execute(
-            "SELECT * FROM factories WHERE factory_id=? AND hid=?", (fid, hid)).fetchone()
-        if not factory:
-            return zlib_resp({"err": 1})
-        if factory["prod_item"] is not None:
-            return zlib_resp({"err": 2, "msg": "stop production before upgrading"})
-        ft = FACTORY_TYPES.get(factory["item_id"])
-        if not ft:
-            return zlib_resp({"err": 3})
-        level = factory["level"]
-        # Official formula: upgrade cost = base_cost * (current_level + 1)^2
-        credit_cost = int(ft["cost"] * (level + 1) ** 2)
-        base_res = FACTORY_BUILD_RESOURCES.get(factory["item_id"], {})
-        res_cost = {k: int(v * (level + 1) ** 2) for k, v in base_res.items()}
-        row = get_player(conn, hid)
-        if not row or row["credits"] < credit_cost:
-            return zlib_resp({"err": 4, "msg": f"need ꞓ{credit_cost} credits"})
-        for item_id, qty in res_cost.items():
-            wh_row = conn.execute("SELECT qty FROM warehouse WHERE hid=? AND item_id=?",
-                                  (hid, item_id)).fetchone()
-            if not wh_row or wh_row["qty"] < qty:
-                return zlib_resp({"err": 5, "msg": f"need {qty} × item {item_id}"})
-        for item_id, qty in res_cost.items():
-            conn.execute("UPDATE warehouse SET qty=qty-? WHERE hid=? AND item_id=?",
-                         (qty, hid, item_id))
-        new_level = level + 1
-        conn.execute("UPDATE players SET credits=credits-? WHERE hID=?", (credit_cost, hid))
-        award_xp(conn, hid, credit_cost)
-        conn.execute("UPDATE factories SET level=? WHERE factory_id=?", (new_level, fid))
-        add_proto(conn, hid, "factoryupgrade", {"fID": fid, "newLvl": new_level, "cost": credit_cost})
-        conn.commit()
-    return zlib_resp({"err": 0, "newLvl": new_level, "cost": credit_cost})
+        try:
+            with econ.tx(conn):
+                factory = conn.execute("SELECT * FROM factories WHERE factory_id=? AND hid=?", (fid, hid)).fetchone()
+                if not factory:
+                    return zlib_resp({"err": 1})
+                if factory["strike_at"]:
+                    return zlib_resp({"err": 7, "msg": "Workers are on strike. Settle the strike first."})
+                if factory["prod_item"] is not None:
+                    return zlib_resp({"err": 2, "msg": "stop production before upgrading"})
+                if factory["item_id"] not in FACTORY_TYPES:
+                    return zlib_resp({"err": 3})
+                level = factory["level"]
+                cost = economy.factory_upgrade(factory["item_id"], level)
+                try:
+                    econ.debit(conn, hid, cost["credits"], "factory_upgrade", fid)
+                except econ.GameError:
+                    return zlib_resp({"err": 4, "msg": f"need ꞓ{cost['credits']:,} credits"})
+                for item_id, qty in cost["res"].items():
+                    try:
+                        econ.take(conn, hid, item_id, qty, "factory_upgrade", fid)
+                    except econ.GameError:
+                        raise econ.GameError("insufficient_items", f"need {qty} × item {item_id}")
+                if conn.execute("UPDATE factories SET level=? WHERE factory_id=? AND level=?",
+                                (level + 1, fid, level)).rowcount != 1:
+                    raise econ.GameError("busy", "Factory changed, try again")
+                award_sink(conn, hid, credits=cost["credits"], res=cost["res"])
+                add_proto(conn, hid, "factoryupgrade", {"fID": fid, "newLvl": level + 1, "cost": cost["credits"]})
+        except econ.GameError as e:
+            return legacy_error(e, 5)
+    return zlib_resp({"err": 0, "newLvl": level + 1, "cost": cost["credits"]})
 
 # ── Special Buildings ────────────────────────────────────────────────────────────
 
@@ -3382,30 +3358,27 @@ async def special_building_buy(request: Request):
         return zlib_resp({"err": 2, "msg": "unknown special building"})
     cost = sb["costs"][0]  # build cost = upgrade to level 1
     with get_db() as conn:
-        row = get_player(conn, hid)
-        if not row:
-            return zlib_resp({"err": 3})
-        existing = conn.execute("SELECT factory_id, level FROM factories WHERE hid=? AND item_id=?",
-                                (hid, item_id)).fetchone()
-        if existing:
-            return zlib_resp({"err": 6, "msg": "already owned — use upgrade"})
-        if row["credits"] < cost["credits"]:
-            return zlib_resp({"err": 5, "msg": f"need ꞓ{cost['credits']:,} credits"})
-        for res_item, qty in cost.get("res", {}).items():
-            wh_row = conn.execute("SELECT qty FROM warehouse WHERE hid=? AND item_id=?",
-                                  (hid, res_item)).fetchone()
-            if not wh_row or wh_row["qty"] < qty:
-                return zlib_resp({"err": 7, "msg": f"need {qty} × item {res_item}"})
-        for res_item, qty in cost.get("res", {}).items():
-            conn.execute("UPDATE warehouse SET qty=qty-? WHERE hid=? AND item_id=?",
-                         (qty, hid, res_item))
-        fid = new_id()
-        conn.execute("INSERT INTO factories(factory_id,hid,item_id,level) VALUES(?,?,?,1)",
-                     (fid, hid, item_id))
-        conn.execute("UPDATE players SET credits=credits-? WHERE hID=?", (cost["credits"], hid))
-        award_xp(conn, hid, cost["credits"])
-        add_proto(conn, hid, "buyspecial", {"fID": fid, "itemID": item_id})
-        conn.commit()
+        try:
+            with econ.tx(conn):
+                if not get_player(conn, hid):
+                    return zlib_resp({"err": 3})
+                if conn.execute("SELECT 1 FROM factories WHERE hid=? AND item_id=?", (hid, item_id)).fetchone():
+                    return zlib_resp({"err": 6, "msg": "already owned. Use upgrade"})
+                try:
+                    econ.debit(conn, hid, cost["credits"], "special_build", str(item_id))
+                except econ.GameError:
+                    return zlib_resp({"err": 5, "msg": f"need ꞓ{cost['credits']:,} credits"})
+                for res_item, qty in cost.get("res", {}).items():
+                    try:
+                        econ.take(conn, hid, res_item, qty, "special_build", str(item_id))
+                    except econ.GameError:
+                        raise econ.GameError("insufficient_items", f"need {qty} × item {res_item}")
+                fid = new_id()
+                conn.execute("INSERT INTO factories(factory_id,hid,item_id,level) VALUES(?,?,?,1)", (fid, hid, item_id))
+                award_sink(conn, hid, credits=cost["credits"], res=cost.get("res"))
+                add_proto(conn, hid, "buyspecial", {"fID": fid, "itemID": item_id})
+        except econ.GameError as e:
+            return legacy_error(e, 7)
     return zlib_resp({"err": 0, "fID": fid})
 
 @app.post("/flut23/specialBuildingUpgrade.php")
@@ -3414,85 +3387,87 @@ async def special_building_upgrade(request: Request):
     hid = hid_from_sid(form.get("sid", ""))
     fid = form.get("fID", "")
     with get_db() as conn:
-        factory = conn.execute(
-            "SELECT * FROM factories WHERE factory_id=? AND hid=?", (fid, hid)).fetchone()
-        if not factory:
-            return zlib_resp({"err": 1})
-        sb = SPECIAL_BUILDINGS.get(factory["item_id"])
-        if not sb:
-            return zlib_resp({"err": 2, "msg": "not a special building"})
-        current_level = factory["level"]
-        if current_level >= sb["max_level"]:
-            return zlib_resp({"err": 8, "msg": "already at max level"})
-        cost = sb["costs"][current_level]  # costs[level] = upgrade to level+1
-        row = get_player(conn, hid)
-        if not row or row["credits"] < cost["credits"]:
-            return zlib_resp({"err": 4, "msg": f"need ꞓ{cost['credits']:,} credits"})
-        for res_item, qty in cost.get("res", {}).items():
-            wh_row = conn.execute("SELECT qty FROM warehouse WHERE hid=? AND item_id=?",
-                                  (hid, res_item)).fetchone()
-            if not wh_row or wh_row["qty"] < qty:
-                return zlib_resp({"err": 5, "msg": f"need {qty} × item {res_item}"})
-        for res_item, qty in cost.get("res", {}).items():
-            conn.execute("UPDATE warehouse SET qty=qty-? WHERE hid=? AND item_id=?",
-                         (qty, hid, res_item))
-        new_level = current_level + 1
-        conn.execute("UPDATE players SET credits=credits-? WHERE hID=?", (cost["credits"], hid))
-        award_xp(conn, hid, cost["credits"])
-        conn.execute("UPDATE factories SET level=? WHERE factory_id=?", (new_level, fid))
-        add_proto(conn, hid, "upgradespecial", {"fID": fid, "newLvl": new_level})
-        conn.commit()
-    return zlib_resp({"err": 0, "newLvl": new_level})
+        try:
+            with econ.tx(conn):
+                factory = conn.execute("SELECT * FROM factories WHERE factory_id=? AND hid=?", (fid, hid)).fetchone()
+                if not factory:
+                    return zlib_resp({"err": 1})
+                sb = SPECIAL_BUILDINGS.get(factory["item_id"])
+                if not sb:
+                    return zlib_resp({"err": 2, "msg": "not a special building"})
+                current_level = factory["level"]
+                if current_level >= sb["max_level"]:
+                    return zlib_resp({"err": 8, "msg": "already at max level"})
+                cost = sb["costs"][current_level]  # costs[level] = upgrade to level+1
+                try:
+                    econ.debit(conn, hid, cost["credits"], "special_upgrade", fid)
+                except econ.GameError:
+                    return zlib_resp({"err": 4, "msg": f"need ꞓ{cost['credits']:,} credits"})
+                for res_item, qty in cost.get("res", {}).items():
+                    try:
+                        econ.take(conn, hid, res_item, qty, "special_upgrade", fid)
+                    except econ.GameError:
+                        raise econ.GameError("insufficient_items", f"need {qty} × item {res_item}")
+                if conn.execute("UPDATE factories SET level=? WHERE factory_id=? AND level=?",
+                                (current_level + 1, fid, current_level)).rowcount != 1:
+                    raise econ.GameError("busy", "Building changed, try again")
+                award_sink(conn, hid, credits=cost["credits"], res=cost.get("res"))
+                add_proto(conn, hid, "upgradespecial", {"fID": fid, "newLvl": current_level + 1})
+        except econ.GameError as e:
+            return legacy_error(e, 5)
+    return zlib_resp({"err": 0, "newLvl": current_level + 1})
 
 @app.post("/flut23/factoryBoost.php")
 async def factory_boost(request: Request):
+    """Instant production: up to 7 days of output now, for 1 Giant Diamond (as the app says),
+    then a cooldown of 5 days (Thor's Crucible: shorter)."""
     _, form = await read_form(request)
     hid = hid_from_sid(form.get("sid", ""))
     fid = form.get("fID", "")
     with get_db() as conn:
-        factory = conn.execute(
-            "SELECT * FROM factories WHERE factory_id=? AND hid=?", (fid, hid)).fetchone()
-        if not factory:
-            return zlib_resp({"err": 1})
-        now = datetime.datetime.utcnow()
-        if factory["boost_cooldown_until"]:
-            cd = datetime.datetime.fromisoformat(factory["boost_cooldown_until"])
-            if now < cd:
-                remaining = int((cd - now).total_seconds())
-                return zlib_resp({"err": 2, "msg": "boost on cooldown", "remainingSecs": remaining})
-        if factory["prod_item"] is None or factory["prod_end"] is None:
-            return zlib_resp({"err": 3, "msg": "factory not producing"})
-        ft = FACTORY_TYPES.get(factory["item_id"])
-        if not ft:
-            return zlib_resp({"err": 4})
-        player_row = get_player(conn, hid)
-        cap = wh_capacity(player_row["wh_level"]) if player_row else 5000
-        prod_end = datetime.datetime.fromisoformat(factory["prod_end"])
-        remaining_hrs = max(0.0, (prod_end - now).total_seconds() / 3600)
-        apply_hrs = min(7 * 24, remaining_hrs)
-        level = factory["level"]
-        level_mult = 1 + (level - 1) * 0.25
-        out_per_hr = ft["out"] * level_mult / ft["hrs"]
-        instant_output = round(out_per_hr * apply_hrs, 1)
-        added = wh_add(conn, hid, ft["produces"], instant_output, cap)
-        add_proto(conn, hid, "factoryboost", {"fID": fid, "item": ft["produces"], "qty": added})
-        if apply_hrs >= remaining_hrs:
-            conn.execute(
-                "UPDATE factories SET prod_item=NULL, prod_amount=NULL, prod_end=NULL WHERE factory_id=?",
-                (fid,))
-            new_prod_end = None
-        else:
-            new_prod_end = (prod_end - datetime.timedelta(hours=7 * 24)).isoformat()
-            new_amount = max(0.0, round((factory["prod_amount"] or 0) - instant_output, 1))
-            conn.execute(
-                "UPDATE factories SET prod_end=?, prod_amount=? WHERE factory_id=?",
-                (new_prod_end, new_amount, fid))
-        # Thor's Crucible shortens the instant-production cooldown by 15/20/30 %
-        cooldown_until = (now + datetime.timedelta(days=5 * (1 - artifact_effect(conn, hid, 175) / 100))).isoformat()
-        conn.execute(
-            "UPDATE factories SET boost_cooldown_until=? WHERE factory_id=?",
-            (cooldown_until, fid))
-        conn.commit()
+        try:
+            with econ.tx(conn):
+                factory = conn.execute("SELECT * FROM factories WHERE factory_id=? AND hid=?", (fid, hid)).fetchone()
+                if not factory:
+                    return zlib_resp({"err": 1})
+                if factory["strike_at"]:
+                    return zlib_resp({"err": 7, "msg": "Workers are on strike. Settle the strike first."})
+                now = datetime.datetime.utcnow()
+                if factory["boost_cooldown_until"]:
+                    cd = datetime.datetime.fromisoformat(factory["boost_cooldown_until"])
+                    if now < cd:
+                        return zlib_resp({"err": 2, "msg": "boost on cooldown", "remainingSecs": int((cd - now).total_seconds())})
+                if factory["prod_item"] is None or factory["prod_end"] is None:
+                    return zlib_resp({"err": 3, "msg": "factory not producing"})
+                ft = FACTORY_TYPES.get(factory["item_id"])
+                if not ft:
+                    return zlib_resp({"err": 4})
+                try:
+                    econ.take(conn, hid, 42, 1, "factory_boost", fid)
+                except econ.GameError:
+                    return zlib_resp({"err": 5, "msg": "You need 1 Giant Diamond"})
+                player_row = get_player(conn, hid)
+                prod_end = datetime.datetime.fromisoformat(factory["prod_end"])
+                remaining_hrs = max(0.0, (prod_end - now).total_seconds() / 3600)
+                apply_hrs = min(7 * 24, remaining_hrs)
+                out_per_hr = ft["out"] * max(1, factory["level"]) / ft["hrs"]      # same as production
+                instant_output = min(float(factory["prod_amount"] or 0), round(out_per_hr * apply_hrs, 1))
+                added = wh_add(conn, hid, ft["produces"], instant_output, wh_capacity(player_row["wh_level"]))
+                add_proto(conn, hid, "factoryboost", {"fID": fid, "item": ft["produces"], "qty": added})
+                if apply_hrs >= remaining_hrs:
+                    conn.execute("UPDATE factories SET prod_item=NULL, prod_amount=NULL, prod_start=NULL, prod_end=NULL "
+                                 "WHERE factory_id=?", (fid,))
+                    new_prod_end = None
+                else:
+                    new_prod_end = (prod_end - datetime.timedelta(hours=7 * 24)).isoformat()
+                    new_amount = max(0.0, round((factory["prod_amount"] or 0) - instant_output, 1))
+                    conn.execute("UPDATE factories SET prod_end=?, prod_amount=? WHERE factory_id=?",
+                                 (new_prod_end, new_amount, fid))
+                cooldown_until = (now + datetime.timedelta(days=5 * (1 - artifact_effect(conn, hid, 175) / 100))).isoformat()
+                conn.execute("UPDATE factories SET boost_cooldown_until=?, last_active=? WHERE factory_id=?",
+                             (cooldown_until, now.isoformat(), fid))
+        except econ.GameError as e:
+            return legacy_error(e, 5)
     return zlib_resp({"err": 0, "qty": added, "newProdEnd": new_prod_end})
 
 @app.post("/flut23/factoryUseBooster.php")
@@ -3508,28 +3483,26 @@ async def factory_use_booster(request: Request):
     if not booster:
         return zlib_resp({"err": 2, "msg": "not a booster item"})
     with get_db() as conn:
-        factory = conn.execute(
-            "SELECT * FROM factories WHERE factory_id=? AND hid=?", (fid, hid)).fetchone()
-        if not factory:
-            return zlib_resp({"err": 3})
-        row = get_player(conn, hid)
-        if not row:
-            return zlib_resp({"err": 4})
-        # Check player has the booster item in warehouse
-        if not wh_remove(conn, hid, item_id, 1):
-            return zlib_resp({"err": 5, "msg": f"you need 1x {booster['name']}"})
-        # Apply booster to factory
-        booster_until = (datetime.datetime.utcnow() +
-                         datetime.timedelta(hours=booster["hours"])).isoformat()
-        conn.execute(
-            "UPDATE factories SET booster_item=?, booster_until=? WHERE factory_id=?",
-            (item_id, booster_until, fid))
-        # Update player WA
-        wa = row["wa"] if row["wa"] is not None else 80
-        new_wa = max(0, min(100, wa + booster["wa_delta"]))
-        conn.execute("UPDATE players SET wa=? WHERE hID=?", (new_wa, hid))
-        add_proto(conn, hid, "booster", {"fID": fid, "item": item_id, "wa": new_wa})
-        conn.commit()
+        try:
+            with econ.tx(conn):
+                factory = conn.execute("SELECT * FROM factories WHERE factory_id=? AND hid=?", (fid, hid)).fetchone()
+                if not factory:
+                    return zlib_resp({"err": 3})
+                row = get_player(conn, hid)
+                if not row:
+                    return zlib_resp({"err": 4})
+                try:
+                    econ.take(conn, hid, item_id, 1, "booster", fid)
+                except econ.GameError:
+                    return zlib_resp({"err": 5, "msg": f"you need 1x {booster['name']}"})
+                booster_until = (datetime.datetime.utcnow() + datetime.timedelta(hours=booster["hours"])).isoformat()
+                conn.execute("UPDATE factories SET booster_item=?, booster_until=? WHERE factory_id=?",
+                             (item_id, booster_until, fid))
+                new_wa = change_wa(conn, hid, booster["wa_delta"], "booster")
+                award_sink(conn, hid, res={item_id: 1})
+                add_proto(conn, hid, "booster", {"fID": fid, "item": item_id, "wa": new_wa})
+        except econ.GameError as e:
+            return legacy_error(e, 5)
     return zlib_resp({"err": 0, "boostMult": booster["boost"], "boosterUntil": booster_until,
                       "waNew": new_wa, "waDelta": booster["wa_delta"]})
 
@@ -3538,136 +3511,32 @@ async def lager_upgrade_multi(request: Request):
     _, form = await read_form(request)
     hid = hid_from_sid(form.get("sid", ""))
     try:
-        levels = max(1, int(form.get("levels", 1)))
+        levels = int(form.get("levels", 1))
     except Exception:
         levels = 1
-    with get_db() as conn:
-        row = get_player(conn, hid)
-        if not row:
-            return zlib_resp({"err": 1})
-        cur = row["wh_level"]
-        total_cost = sum(int(12500 * ((cur + i) ** 2)) for i in range(levels))
-        if row["credits"] < total_cost:
-            return zlib_resp({"err": 2, "msg": "not enough credits", "cost": total_cost})
-        new_lvl = cur + levels
-        conn.execute("UPDATE players SET wh_level=?, credits=credits-? WHERE hID=?",
-                     (new_lvl, total_cost, hid))
-        award_xp(conn, hid, total_cost)
-        add_proto(conn, hid, "lagerupgrade", {"newLvl": new_lvl, "cost": total_cost, "levels": levels})
-        conn.commit()
-        new_cap = int(wh_capacity(new_lvl))
-    return zlib_resp({"err": 0, "newLvl": new_lvl, "newCap": new_cap, "cost": total_cost})
+    return zlib_resp(_warehouse_upgrade(hid, levels))
 
 # ── Market ───────────────────────────────────────────────────────────────────────
 
 @app.post("/flut23/marketGetData.php")
 async def market_get_data(request: Request):
-    _, form = await read_form(request)
-    hid = hid_from_sid(form.get("sid", ""))
-    try:
-        item_id = int(form.get("itemID", 0))
-    except Exception:
-        item_id = 0
-    with get_db() as conn:
-        if item_id:
-            reqs = conn.execute(
-                "SELECT r.*,p.company_name FROM market_req r JOIN players p ON r.seller_hid=p.hID "
-                "WHERE r.item_id=? AND r.active=1 AND r.expires_at > ? ORDER BY r.price_unit ASC",
-                (item_id, utcnow_iso())).fetchall()
-        else:
-            reqs = conn.execute(
-                "SELECT r.*,p.company_name FROM market_req r JOIN players p ON r.seller_hid=p.hID "
-                "WHERE r.active=1 AND r.expires_at > ? ORDER BY r.created_at DESC LIMIT 50",
-                (utcnow_iso(),)).fetchall()
-        refs = public_refs(conn, {r["seller_hid"] for r in reqs}, hid)
-    return zlib_resp([{
-        "reqID": r["req_id"], "sellerHID": refs[r["seller_hid"]], "sellerName": r["company_name"],
-        "itemID": r["item_id"], "qty": r["qty"], "priceUnit": r["price_unit"],
-        "total": round(r["qty"] * r["price_unit"]),
-        "expiresAt": r["expires_at"], "isMine": r["seller_hid"] == hid,
-    } for r in reqs])
+    """The first market (no price limits, no tax) was removed (audit C2); see systems/market.py."""
+    return zlib_resp({"err": 9, "msg": "This market was replaced. Please update the app."})
 
 @app.post("/flut23/marketNewReq.php")
 async def market_new_req(request: Request):
-    _, form = await read_form(request)
-    hid = hid_from_sid(form.get("sid", ""))
-    try:
-        item_id   = int(form.get("itemID", 0))
-        qty       = float(form.get("qty", 0))
-        price     = float(form.get("priceUnit", 0))
-    except Exception:
-        return zlib_resp({"err": 1})
-    if qty <= 0 or price <= 0:
-        return zlib_resp({"err": 2})
-    with get_db() as conn:
-        if not wh_remove(conn, hid, item_id, qty):
-            return zlib_resp({"err": 3, "msg": "not enough in warehouse"})
-        rid = new_id()
-        expires = (datetime.datetime.utcnow() + datetime.timedelta(days=3)).isoformat()
-        conn.execute(
-            "INSERT INTO market_req(req_id,seller_hid,item_id,qty,price_unit,expires_at) "
-            "VALUES(?,?,?,?,?,?)", (rid, hid, item_id, qty, price, expires))
-        add_proto(conn, hid, "marketsell", {"reqID": rid, "itemID": item_id, "qty": qty, "price": price})
-        conn.commit()
-    return zlib_resp({"err": 0, "reqID": rid})
+    """The first market (no price limits, no tax) was removed (audit C2); see systems/market.py."""
+    return zlib_resp({"err": 9, "msg": "This market was replaced. Please update the app."})
 
 @app.post("/flut23/marketDealReq.php")
 async def market_deal_req(request: Request):
-    _, form = await read_form(request)
-    hid = hid_from_sid(form.get("sid", ""))
-    req_id = form.get("reqID", "")
-    try:
-        buy_qty = float(form.get("qty", 0))
-    except Exception:
-        return zlib_resp({"err": 1})
-    with get_db() as conn:
-        req = conn.execute(
-            "SELECT * FROM market_req WHERE req_id=? AND active=1", (req_id,)).fetchone()
-        if not req or req["seller_hid"] == hid:
-            return zlib_resp({"err": 2})
-        buy_qty = min(buy_qty, req["qty"])
-        total_cost = round(buy_qty * req["price_unit"])
-        buyer = get_player(conn, hid)
-        if not buyer or buyer["credits"] < total_cost:
-            return zlib_resp({"err": 3, "msg": "not enough credits"})
-        cap = wh_capacity(buyer["wh_level"])
-        added = wh_add(conn, hid, req["item_id"], buy_qty, cap)
-        if added <= 0:
-            return zlib_resp({"err": 4, "msg": "warehouse full"})
-        # Charge only for what actually fit in the warehouse (was: always the full quantity).
-        total_cost = round(added * req["price_unit"])
-        conn.execute("UPDATE players SET credits=credits-? WHERE hID=?", (total_cost, hid))
-        award_xp(conn, hid, int(total_cost))
-        econ.credit(conn, req["seller_hid"], total_cost, "market_sell_legacy", req_id)
-        new_qty = req["qty"] - added
-        if new_qty <= 0.01:
-            conn.execute("UPDATE market_req SET active=0 WHERE req_id=?", (req_id,))
-        else:
-            conn.execute("UPDATE market_req SET qty=? WHERE req_id=?", (new_qty, req_id))
-        add_proto(conn, hid, "marketbuy",
-                  {"reqID": req_id, "itemID": req["item_id"], "qty": added, "cost": total_cost})
-        add_proto(conn, req["seller_hid"], "marketsold",
-                  {"reqID": req_id, "buyerHID": hid, "qty": added, "earned": total_cost})
-        conn.commit()
-    return zlib_resp({"err": 0, "bought": added, "cost": total_cost})
+    """The first market (no price limits, no tax) was removed (audit C2); see systems/market.py."""
+    return zlib_resp({"err": 9, "msg": "This market was replaced. Please update the app."})
 
 @app.post("/flut23/marketCancelReq.php")
 async def market_cancel_req(request: Request):
-    _, form = await read_form(request)
-    hid = hid_from_sid(form.get("sid", ""))
-    req_id = form.get("reqID", "")
-    with get_db() as conn:
-        req = conn.execute(
-            "SELECT * FROM market_req WHERE req_id=? AND seller_hid=? AND active=1",
-            (req_id, hid)).fetchone()
-        if not req:
-            return zlib_resp({"err": 1})
-        row = get_player(conn, hid)
-        cap = wh_capacity(row["wh_level"])
-        returned = wh_add(conn, hid, req["item_id"], req["qty"], cap)
-        conn.execute("UPDATE market_req SET active=0 WHERE req_id=?", (req_id,))
-        conn.commit()
-    return zlib_resp({"err": 0, "returned": returned})
+    """The first market (no price limits, no tax) was removed (audit C2); see systems/market.py."""
+    return zlib_resp({"err": 9, "msg": "This market was replaced. Please update the app."})
 
 # ── Activity log ─────────────────────────────────────────────────────────────────
 
@@ -3753,6 +3622,8 @@ SYSTEM_PRICES = {
     # artifacts (rarer = dearer)
     172: 3333, 173: 10000, 174: 5000, 175: 6667, 176: 20000, 177: 5000,
 }
+# economy revamp (owner 2026-10-23): derived prices replace the placeholders above
+SYSTEM_PRICES = economy.system_prices()
 
 @app.post("/flut23/itemsGetKurse.php")
 async def items_get_kurse(request: Request):
@@ -3763,28 +3634,8 @@ async def items_get_kurse(request: Request):
 
 @app.post("/flut23/mineUpgrade.php")
 async def mine_upgrade(request: Request):
-    _, form = await read_form(request)
-    hid = hid_from_sid(form.get("sid", ""))
-    mine_id = form.get("mID", "")
-    with get_db() as conn:
-        mine = conn.execute(
-            "SELECT * FROM mines WHERE mine_id=? AND owner_hid=?", (mine_id, hid)).fetchone()
-        if not mine:
-            return zlib_resp({"err": 1, "msg": "mine not found"})
-        current_level = mine["level"]
-        if current_level >= MAX_MINE_LEVEL:
-            return zlib_resp({"err": 2, "msg": "already at max level"})
-        next_level = current_level + 1
-        cost = MINE_UPGRADE_COSTS.get(next_level, 999999)
-        row = get_player(conn, hid)
-        if not row or row["credits"] < cost:
-            return zlib_resp({"err": 3, "msg": f"need ꞓ{cost}"})
-        conn.execute("UPDATE mines SET level=? WHERE mine_id=?", (next_level, mine_id))
-        conn.execute("UPDATE players SET credits=credits-? WHERE hID=?", (cost, hid))
-        award_xp(conn, hid, cost)
-        add_proto(conn, hid, "mineupgrade", {"mID": mine_id, "newLvl": next_level, "cost": cost})
-        conn.commit()
-    return zlib_resp({"err": 0, "newLvl": next_level, "cost": cost})
+    """Mines have no levels (owner 2026-10-23); output grows with quality, tech and the HQ."""
+    return zlib_resp({"err": 2, "msg": "Mines have no levels. Use tech upgrades and your HQ to boost output."})
 
 # ── Leaderboard & Profile ─────────────────────────────────────────────────────────
 
@@ -4381,31 +4232,25 @@ async def casino_use_diamond(request: Request):
     with get_db() as conn:
         if _get_casino_level(conn, hid) < 1:
             return zlib_resp({"err": 2, "msg": "build Casino first"})
-        state = _get_casino_state(conn, hid)
-        state = _maybe_reset(conn, hid, state)
-        if state["spins_left"] > 0:
-            return zlib_resp({"err": 3, "msg": "use your remaining spins first"})
-        if state["gd_packs_used"] >= _CASINO_GD_PACKS_MAX:
-            return zlib_resp({"err": 4, "msg": "max GD packs used this cycle"})
-        qty = conn.execute(
-            "SELECT qty FROM warehouse WHERE hid=? AND item_id=?",
-            (hid, _CASINO_GD_ITEM)).fetchone()
-        if not qty or qty["qty"] < 1:
-            return zlib_resp({"err": 5, "msg": "no Giant Diamond"})
-        wh_remove(conn, hid, _CASINO_GD_ITEM, 1)
-        new_packs = state["gd_packs_used"] + 1
-        conn.execute(
-            "UPDATE casino_state SET spins_left=500, gd_packs_used=? WHERE hid=?",
-            (new_packs, hid))
-        conn.commit()
+        _maybe_reset(conn, hid, _get_casino_state(conn, hid))      # (may commit: before the transaction)
+        try:
+            with econ.tx(conn):
+                state = conn.execute("SELECT * FROM casino_state WHERE hid=?", (hid,)).fetchone()
+                if state["spins_left"] > 0:
+                    return zlib_resp({"err": 3, "msg": "use your remaining spins first"})
+                if state["gd_packs_used"] >= _CASINO_GD_PACKS_MAX:
+                    return zlib_resp({"err": 4, "msg": "max GD packs used this cycle"})
+                try:
+                    econ.take(conn, hid, _CASINO_GD_ITEM, 1, "casino_pack")
+                except econ.GameError:
+                    return zlib_resp({"err": 5, "msg": "no Giant Diamond"})
+                new_packs = state["gd_packs_used"] + 1
+                conn.execute("UPDATE casino_state SET spins_left=?, gd_packs_used=? WHERE hid=? AND gd_packs_used=?",
+                             (_CASINO_FREE_SPINS, new_packs, hid, state["gd_packs_used"]))
+        except econ.GameError as e:
+            return legacy_error(e, 5)
         jackpot = _get_jackpot(conn)
-    return zlib_resp({
-        "err": 0,
-        "spins_left":    500,
-        "gd_packs_used": new_packs,
-        "jackpot":       jackpot,
-    })
-
+    return zlib_resp({"err": 0, "spins_left": _CASINO_FREE_SPINS, "gd_packs_used": new_packs, "jackpot": jackpot})
 
 # ── Game systems (server/systems/*) ───────────────────────────────────────────────
 
@@ -4470,9 +4315,25 @@ def _realtime_decay_start_once() -> None:
 
 _realtime_decay_start_once()
 
+def _economy_revamp_once() -> None:
+    """One-time (2026-10-23, economy revamp): mines have no levels any more (all set to 1) and the
+    player level follows the new curve (economy.py). Levels are recomputed in both directions; no
+    level-up rewards are paid for this."""
+    with get_db() as c:
+        with econ.tx(c):
+            if c.execute("SELECT 1 FROM scheduler WHERE name='economy_revamp_2026_10_23'").fetchone():
+                return
+            c.execute("UPDATE mines SET level=1 WHERE level IS NULL OR level<>1")
+            for r in c.execute("SELECT hID, xp FROM players").fetchall():
+                c.execute("UPDATE players SET level=? WHERE hID=?", (level_from_xp(r["xp"] or 0), r["hID"]))
+            c.execute("INSERT INTO scheduler(name, last_run) VALUES('economy_revamp_2026_10_23', ?)", (utcnow_iso(),))
+
+_economy_revamp_once()
+
 SYSTEM_HELPERS = _types.SimpleNamespace(
     get_db=get_db, hid_from_sid=hid_from_sid, read_form=read_form, zlib_resp=zlib_resp,
     get_player=get_player, wh_capacity=wh_capacity, building_level=building_level,
+    award_sink=award_sink, change_wa=change_wa, check_travel=check_travel, economy=economy,
     mine_rate_hr=mine_rate_hr, collect_mine=collect_mine, current_condition=current_condition, compute_repair_cost=compute_repair_cost, collect_mines_bulk=collect_mines_bulk,
     award_xp=award_xp, add_proto=add_proto, level_from_xp=level_from_xp, push=_push_to_player,
     mine_stats=mine_stats, mine_rows=mine_rows,

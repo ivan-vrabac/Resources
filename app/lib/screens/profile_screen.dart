@@ -170,7 +170,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ]),
             Row(children: [
               _stat('Rank by points', '#${p['rankPoints']}'),
-              _stat('Rank by luxury points', '#${p['rankLuxury']}'),
+              _stat('Rank by luxury points', p['rankLuxury'] == null ? '—' : '#${p['rankLuxury']}'),
               _stat('Rank by mines', '#${p['rankMines']}'),
             ]),
             if (p['combat'] is Map)
@@ -205,12 +205,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: ListTile(
                 leading: const Icon(Icons.star, color: Colors.amber),
                 title: Text('Achievements: ${p['stars'] ?? ach.length} out of ${p['maxStars'] ?? 54} stars'),
-                trailing: isMe
-                    ? FilledButton.tonal(
-                        onPressed: () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const AchievementsScreen())),
-                        child: const Text('View'))
-                    : null,
+                trailing: FilledButton.tonal(
+                    onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => AchievementsScreen(pid: isMe ? null : p['pid'] as String?,
+                            name: isMe ? null : p['name'] as String?))),
+                    child: const Text('View')),
               ),
             ),
           ]),
