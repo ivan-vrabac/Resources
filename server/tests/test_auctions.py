@@ -197,3 +197,29 @@ def test_bids_use_the_offered_steps_and_a_new_lot_follows_every_end():
         nxt = call(R, a_sid)["active"]
         assert len(nxt) == 1 and nxt[0]["id"] != cur["id"]
 
+
+def test_simultaneous_bids_are_atomic():
+    """Many players clicking "Place bid" at the same moment: every accepted bid is a valid raise,
+    only the final leader's resources stay reserved, nothing is created or lost."""
+    import threading
+    bidders = [_bidder(f"aux{i}") for i in range(8)]
+    lot = _lot(bidders[0][1])
+    res = lot["resID"]
+    stock = lot["minBid"] * 50
+    for hid, _ in bidders:
+        give(hid, res, stock)
+    out = []
+    ts = [threading.Thread(target=lambda sid=sid: out.append(call(R + "/bid", sid, auctionID=lot["id"])))
+          for _, sid in bidders]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    ok = [r for r in out if r["err"] == 0]
+    assert ok
+    final = call(R, bidders[0][1])["active"][0]
+    leader = [hid for hid, _ in bidders if qty(hid, res) < stock]
+    assert len(leader) == 1                                              # only one bid is held
+    assert stock - qty(leader[0], res) == final["topBid"]
+    assert sum(qty(hid, res) for hid, _ in bidders) == 8 * stock - final["topBid"]
+

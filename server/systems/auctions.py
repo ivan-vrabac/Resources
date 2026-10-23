@@ -286,7 +286,7 @@ def install(api) -> None:
                 pushes = sweep(conn, h, now)
         for hid, title, body in pushes:
             try:
-                h.push(conn, hid, title, body)
+                h.notify(hid, "auction_won", title, body)
             except Exception:
                 pass
 
@@ -309,7 +309,7 @@ def install(api) -> None:
                             pushes = sweep(conn, h, now)
                         for hid, title, body in pushes:
                             try:
-                                h.push(conn, hid, title, body)
+                                h.notify(hid, "auction_won", title, body)
                             except Exception:
                                 pass
                         wait = 1.0
@@ -391,7 +391,9 @@ def install(api) -> None:
                 raise econ.GameError("limit", f"You can own at most {MAX_OWN} of each luxury item")
             # the amount is set by the server from the chosen step (or must be exactly one of the steps)
             steps = bid_steps(a)
-            if form.get("step") not in (None, ""):
+            if form.get("step") in (None, "") and form.get("amount") in (None, ""):
+                amount = min_bid(a)                  # owner 2026-10-23: just "Place bid", the server does the maths
+            elif form.get("step") not in (None, ""):
                 i = int_arg(form, "step", 0, 0, len(steps) - 1)
                 seen = form.get("seenMin")
                 if seen not in (None, "") and int_arg(form, "seenMin", 0, 0) != min_bid(a):
@@ -425,7 +427,7 @@ def install(api) -> None:
             out = {"err": 0, "auction": view(conn, a, hid), "luxuryPoints": points_of(conn, hid)}
         if outbid:
             try:
-                h.push(conn, outbid, "Outbid", "Someone outbid you at the luxury auction. Your resources were returned.")
+                h.notify(outbid, "outbid", "Outbid", "Someone outbid you at the luxury auction. Your resources were returned.")
             except Exception:
                 pass
         return out

@@ -120,6 +120,11 @@ def install(api) -> None:
         conn.execute("INSERT INTO incidents(ts, hid, kind, target, penalty, wa_after, data) VALUES(?,?,?,?,?,?,?)",
                      (econ.utcnow_iso(), hid, kind, target, amount, new_wa, json.dumps(data or {})))
         h.add_proto(conn, hid, "accident", {"kind": kind, "target": target, "penalty": amount, **(data or {})})
+        if getattr(h, "notify", None):
+            what = {"fire": "A fire broke out in one of your factories", "strike": "Workers went on strike in one of "
+                    "your factories. It is frozen until you settle it", "disease": "A disease broke out at one of your "
+                    "mines", "earthquake": "An earthquake damaged your mines"}.get(kind, "An accident happened")
+            h.notify(hid, "accident", "Accident", f"{what}." + (f" It cost ꞓ{amount:,}." if amount else ""))
         return amount
 
     def one_day(conn, hid, day: datetime.date, rng: random.Random, pending: list) -> None:
@@ -159,8 +164,7 @@ def install(api) -> None:
                 conn.execute("UPDATE factories SET strike_at=?, strike_cost=? WHERE factory_id=?",
                              (econ.utcnow_iso(), cost, f["factory_id"]))
                 penalty(conn, hid, "strike", f["factory_id"], {"itemID": f["item_id"]})
-                pending.append(("Strike!", f"Workers at your {h.FACTORY_TYPES.get(f['item_id'], {}).get('name', 'factory')} "
-                                           "went on strike. The factory is frozen until you settle it."))
+                pass                                  # (notified as an accident in penalty())
             elif rng.random() < p * fire_f:
                 until = (datetime.datetime.utcnow() + datetime.timedelta(
                     days=h.FIRE_DURATION_DAYS * protection.fire_duration_factor(station) * law)).isoformat()

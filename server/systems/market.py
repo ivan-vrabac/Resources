@@ -150,6 +150,9 @@ def install(api) -> None:
         if new_open <= 1e-6:
             econ.credit(conn, o["hid"], max(0, round(new_escrow)), "market_escrow_rest", o["id"])
             conn.execute("UPDATE mkt_orders SET qty_open=0, escrow=0, status='filled' WHERE id=?", (o["id"],))
+            if getattr(h, "notify", None):
+                h.notify(o["hid"], "order_filled", "Buy order fulfilled",
+                         f"Your buy order for {int(o['qty_total']):,} units was fully filled.")
         else:
             conn.execute("UPDATE mkt_orders SET qty_open=?, escrow=? WHERE id=?", (new_open, new_escrow, o["id"]))
         record(conn, "player", o["item_id"], qty, o["price"], o["hid"], seller_hid, tax, o["hid"], buy_order=o["id"])

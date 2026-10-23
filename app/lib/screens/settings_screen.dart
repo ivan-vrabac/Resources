@@ -1023,10 +1023,30 @@ class _NotificationsPage extends StatefulWidget {
 
 class _NotificationsPageState extends State<_NotificationsPage> {
   late bool _enabled, _mineWarning, _mineDestroyed, _whFull;
+  // server-side kinds with a daily maximum (systems/notify.py); 0 = unlimited
+  List<Map<String, dynamic>> _kinds = [];
+  List<int> _choices = const [1, 3, 5, 10, 20, 50, 0];
+
+  Future<void> _loadKinds() async {
+    final r = await GameApi.call('/api/v1/notify/prefs', context.read<PlayerProvider>().sid);
+    if (!mounted || !r.ok) return;
+    setState(() {
+      _kinds = (r.data['kinds'] as List).cast<Map<String, dynamic>>();
+      _choices = (r.data['choices'] as List).map((e) => (e as num).toInt()).toList();
+    });
+  }
+
+  Future<void> _setKind(String kind, bool enabled, int maxPerDay) async {
+    final r = await GameApi.call('/api/v1/notify/set', context.read<PlayerProvider>().sid,
+        {'kind': kind, 'enabled': enabled ? 1 : 0, 'maxPerDay': maxPerDay});
+    if (!mounted) return;
+    if (r.ok) setState(() => _kinds = (r.data['kinds'] as List).cast<Map<String, dynamic>>());
+  }
 
   @override
   void initState() {
     super.initState();
+    _loadKinds();
     _enabled      = kNotifEnabled;
     _mineWarning  = kNotifMineWarning;
     _mineDestroyed = kNotifMineDestroyed;
@@ -1092,6 +1112,26 @@ class _NotificationsPageState extends State<_NotificationsPage> {
             await _set('notif_wh_full', v);
           } : null,
         ),
+        for (final k in _kinds)
+          ListTile(
+            dense: true,
+            title: Text(k['label'] as String),
+            subtitle: Row(children: [
+              Text('Per day: ', style: TextStyle(fontSize: 11, color: AppColors.t54)),
+              DropdownButton<int>(
+                isDense: true,
+                value: (k['maxPerDay'] as num).toInt(),
+                items: [for (final c in _choices) DropdownMenuItem(value: c, child: Text(c == 0 ? 'Unlimited' : '$c',
+                    style: const TextStyle(fontSize: 12)))],
+                onChanged: !_enabled || k['enabled'] != true ? null
+                    : (v) => _setKind(k['kind'] as String, true, v ?? 0),
+              ),
+            ]),
+            trailing: Switch(
+              value: _enabled && k['enabled'] == true,
+              onChanged: _enabled ? (v) => _setKind(k['kind'] as String, v, (k['maxPerDay'] as num).toInt()) : null,
+            ),
+          ),
         const SizedBox(height: 16),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),

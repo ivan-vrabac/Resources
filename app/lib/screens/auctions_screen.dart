@@ -55,52 +55,39 @@ class _AuctionsScreenState extends State<AuctionsScreen> {
     return '${d.inMinutes}m ${d.inSeconds % 60}s';
   }
 
-  /// Bids are set automatically (owner 2026-10-23): pick how far above the minimum, the server
-  /// computes the exact amount.
+  /// "Place bid": the server bids the current minimum itself (owner 2026-10-23, automatic maths).
   Future<void> _bid(Map<String, dynamic> a) async {
     final res = (a['resID'] as num).toInt();
-    final steps = (a['bidSteps'] as List? ?? const []).cast<Map<String, dynamic>>();
     final have = (a['youHave'] as num? ?? 0).toDouble();
-    if (steps.isEmpty) return;
-    var pick = 0;
+    final amount = (a['minBid'] as num).toDouble();
     final ok = await showAppDialog<bool>(
       context: context,
-      builder: (ctx) => StatefulBuilder(builder: (ctx, set) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: Text('Bid on ${itemName((a['itemID'] as num).toInt())}'),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             ItemIcon(res, size: 28),
             const SizedBox(width: 8),
-            Expanded(child: Text('Paid in ${itemName(res)} · you have ${fmtQty(have)}')),
+            Expanded(child: Text('About ${fmtQty(amount)} ${itemName(res)} · you have ${fmtQty(have)}')),
           ]),
-          const SizedBox(height: 10),
-          for (var i = 0; i < steps.length; i++)
-            RadioListTile<int>(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              value: i,
-              groupValue: pick,
-              onChanged: (steps[i]['amount'] as num) > have ? null : (v) => set(() => pick = v ?? 0),
-              title: Text('${i == 0 ? 'Minimum' : '+${steps[i]['pct']}%'}: ${fmtQty(steps[i]['amount'] as num)}'),
-              subtitle: Text('+${steps[i]['points']} luxury points while you lead',
-                  style: const TextStyle(fontSize: 11, color: Colors.amberAccent)),
-            ),
-          const SizedBox(height: 6),
-          Text('Winning gives about +${a['winPoints']} points. The resources leave your warehouse now and come '
-              'back if someone outbids you. A bid in the last 30 seconds sets the clock to 60 seconds.',
+          const SizedBox(height: 8),
+          Text('The server places the lowest winning bid for you (at least 5% above the current one). '
+              'The resources leave your warehouse now and come back if someone outbids you. '
+              'A bid in the last 30 seconds sets the clock to 60 seconds.',
               style: TextStyle(fontSize: 12, color: AppColors.t54)),
+          const SizedBox(height: 6),
+          Text('While you lead: +${a['minBidPoints']} luxury points · winning: about +${a['winPoints']}',
+              style: const TextStyle(fontSize: 12, color: Colors.amberAccent)),
         ]),
         actions: [
           TextButton(onPressed: () => popIfCurrent(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: (steps[pick]['amount'] as num) > have ? null : () => popIfCurrent(ctx, true),
-              child: const Text('Bid')),
+          FilledButton(onPressed: amount > have ? null : () => popIfCurrent(ctx, true), child: const Text('Place bid')),
         ],
-      )),
+      ),
     );
     if (ok != true || _busy) return;
     setState(() => _busy = true);
-    final r = await GameApi.call('/api/v1/auctions/bid', _sid,
-        {'auctionID': a['id'], 'step': pick, 'seenMin': a['minBid']});
+    final r = await GameApi.call('/api/v1/auctions/bid', _sid, {'auctionID': a['id']});
     if (!mounted) return;
     setState(() => _busy = false);
     AppNotify.show(context, r.ok ? 'You are the highest bidder' : (r.message ?? 'Bid failed'), isError: !r.ok);

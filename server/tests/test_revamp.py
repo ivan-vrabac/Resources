@@ -266,3 +266,17 @@ def test_accidents_need_level_50_and_buildings_cut_their_impact():
             protected = main.SYSTEM_HELPERS.PENALTY(conn, hid, "disease", "m", {})
     assert protected < plain * 0.4
 
+
+def test_notification_kinds_defaults_and_limits():
+    hid, sid, _ = new_player("rvq")
+    r = call("/api/v1/notify/prefs", sid)
+    by = {k["kind"]: k for k in r["kinds"]}
+    assert set(by) == {"outbid", "auction_won", "order_filled", "factory_done", "accident"}
+    assert by["outbid"]["maxPerDay"] == 0 and by["auction_won"]["maxPerDay"] == 0          # auctions: unlimited
+    assert by["accident"]["maxPerDay"] > 0
+    r = call("/api/v1/notify/set", sid, kind="accident", enabled=1, maxPerDay=0)            # unlimited allowed
+    assert {k["kind"]: k for k in r["kinds"]}["accident"]["maxPerDay"] == 0
+    assert call("/api/v1/notify/set", sid, kind="accident", maxPerDay=7)["code"] == "bad_input"
+    r = call("/api/v1/notify/set", sid, kind="factory_done", enabled=0, maxPerDay=10)
+    assert {k["kind"]: k for k in r["kinds"]}["factory_done"]["enabled"] is False
+
