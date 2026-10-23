@@ -144,6 +144,17 @@ def public_profile(conn, h, viewer_hid: str, target_hid: str) -> dict:
     return out
 
 
+MESSAGE_KEEP_DAYS = 7     # owner 2026-10-20: chat and private messages are kept one week
+
+
+def purge_old_messages(conn) -> None:
+    """Delete chat and private messages older than MESSAGE_KEEP_DAYS (inside the caller's tx)."""
+    cutoff = (econ.utcnow() - datetime.timedelta(days=MESSAGE_KEEP_DAYS)).isoformat()
+    conn.execute("DELETE FROM chat_messages WHERE ts < ?", (cutoff,))
+    if _has_table(conn, "private_messages"):
+        conn.execute("DELETE FROM private_messages WHERE ts < ?", (cutoff,))
+
+
 def _has_table(conn, name) -> bool:
     return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
 
@@ -186,10 +197,14 @@ def install(api) -> None:
     @api.endpoint("/api/v1/social/contacts", feature="SOCIAL")
     def contacts(conn, hid, form):
         out = {k: [] for k in CONTACT_KINDS}
+        unread = {}
+        if _has_table(conn, "private_messages"):
+            unread = dict(conn.execute("SELECT from_hid, COUNT(*) FROM private_messages WHERE to_hid=? "
+                                       "AND read_at IS NULL GROUP BY from_hid", (hid,)).fetchall())
         for r in conn.execute("SELECT target_hid, kind, created_at FROM contacts WHERE owner_hid=? "
                               "ORDER BY created_at DESC", (hid,)):
             if conn.execute("SELECT 1 FROM players WHERE hID=?", (r[0],)).fetchone():
-                out[r[1]].append({**_summary(conn, r[0]), "since": r[2]})
+                out[r[1]].append({**_summary(conn, r[0]), "since": r[2], "unread": int(unread.get(r[0], 0))})
         return {"err": 0, "contacts": out}
 
     @api.endpoint("/api/v1/social/contact", feature="SOCIAL")
@@ -278,6 +293,7 @@ def install(api) -> None:
                                (hid, name, msg, econ.utcnow_iso()))
             new_id = cur.lastrowid
             conn.execute("DELETE FROM chat_messages WHERE id <= ?", (new_id - 5000,))
+            purge_old_messages(conn)
         return {"err": 0, "id": new_id}
 
     # ── private messages (owner 2026-10-19) ──────────────────────────────────
@@ -314,6 +330,7 @@ def install(api) -> None:
         with econ.tx(conn):
             cur = conn.execute("INSERT INTO private_messages(from_hid, to_hid, msg, ts) VALUES(?,?,?,?)",
                                (hid, target, msg, econ.utcnow_iso()))
+            purge_old_messages(conn)
         try:
             with h.get_db() as c2:
                 name = c2.execute("SELECT company_name FROM players WHERE hID=?", (hid,)).fetchone()[0]

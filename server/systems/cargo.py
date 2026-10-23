@@ -19,7 +19,10 @@ Documented assumptions (values are configurable constants below):
 - * Contents are regular found objects only — no Giant Diamonds, Tech Upgrades or production
   boosters (owner's rule) — and always whole units.
 - * Trucks (Haulage Firm ≥ 5): one tap collects every crate in truck range (the Haulage Firm boss
-  range, 100 m + 10 m/level) — TRUCK_CAPACITY crates or one stack per truck; trucks aren't used up.
+  range, 100 m + 10 m/level) — one truck per crate (a stack of N crates needs N trucks); trucks
+  aren't used up. A drone collects a stack remotely and uses one drone per crate.
+- * Stacked Cargo Rain (owner 2026-10-20): drop any number of crates in steps of 100, split over at
+  most MAX_STACKS_PER_DROP stacks; every stack records how many crates it holds.
 - Stacked Cargo Rain (one map object = 100 crates' contents) unlocks at Haulage Firm level
   STACK_HF_LEVEL. Stacks can only be collected by truck (needs ≥1 Trucks item, 124, not used up;
   within the hand collection range) or by drone (uses 1 Scan Drone, 117; needs Drone Research ≥ 5
@@ -52,14 +55,14 @@ STACK_SIZE = 100
 STACK_HF_LEVEL = 5
 DRONE_DR_LEVEL = 5
 MAX_DROP = 100
-MAX_STACKS_PER_DROP = 10
+MAX_STACKS_PER_DROP = 5
 DROP_SCATTER_M = 40.0
 CRATE_HOURS = 24
 GONE_AFTER_FIRST_S = 15 * 60
-TRUCK_CAPACITY = 10          # normal crates per truck per run (a stack needs one truck)
+TRUCK_CAPACITY = 1           # crates per truck (owner: one truck per crate)
 TRUCK_HF_LEVEL = 5
 LOCAL_RANGE_BASE_M = 50.0
-LOCAL_RANGE_PER_MUSEUM_M = 15.0
+LOCAL_RANGE_PER_MUSEUM_M = 25.0     # 300 m at Museum level 10 (owner 2026-10-20)
 MUSEUM_QTY_BONUS = 0.05
 
 # sfo.txt found objects: item_id → (name, drop chance %, museum level)
@@ -105,6 +108,7 @@ def ensure_schema(conn) -> None:
             qty          REAL NOT NULL,
             museum_level INTEGER NOT NULL,
             stacked      INTEGER NOT NULL DEFAULT 0,
+            crates       INTEGER NOT NULL DEFAULT 1,       -- crates in this object (stacks: many)
             created_at   TEXT NOT NULL,
             expires_at   TEXT NOT NULL,
             collected_by TEXT,
@@ -119,6 +123,10 @@ def ensure_schema(conn) -> None:
             PRIMARY KEY (crate_id, hid)
         );
     """)
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(cargo_crates)")]
+    if "crates" not in cols:
+        conn.execute("ALTER TABLE cargo_crates ADD COLUMN crates INTEGER NOT NULL DEFAULT 1")
+        conn.execute("UPDATE cargo_crates SET crates=? WHERE stacked=1", (STACK_SIZE,))
     # crates of earlier builds that hold items no longer allowed in cargo: drop them
     conn.execute("DELETE FROM cargo_crates WHERE item_id IN (42, 44, 45, 46, 48, 158, 159, 160, 161) "
                  "AND collected_by IS NULL")
@@ -170,15 +178,29 @@ def collect_range(museum_level: int) -> float:
     return LOCAL_RANGE_BASE_M + LOCAL_RANGE_PER_MUSEUM_M * max(0, min(10, museum_level))
 
 
-def roll(rng: random.Random, stacked: bool = False):
-    """Roll one crate's content: (item_id, qty, museum level). A stack holds STACK_SIZE crates of
-    the same rolled item."""
+def roll(rng: random.Random, stacked: bool = False, crates: int = 1):
+    """Roll a crate's content: (item_id, qty, museum level). A stack holds `crates` crates of the
+    same rolled item (exact sum of rolls up to 2000 crates, the expected value beyond)."""
     items = list(LOOT)
     item = rng.choices(items, weights=[LOOT[i][1] for i in items])[0]
     lo, hi = QTY[item]
-    n = STACK_SIZE if stacked else 1
-    q = sum(rng.randint(lo, hi) for _ in range(n)) if hi > lo else lo * n
+    n = max(1, crates) if stacked else 1
+    if hi <= lo:
+        q = lo * n
+    elif n <= 2000:
+        q = sum(rng.randint(lo, hi) for _ in range(n))
+    else:
+        q = int(round(n * (lo + hi) / 2))
     return item, q, LOOT[item][2]
+
+
+def split_stacks(total: int, stacks: int) -> list:
+    """Split `total` crates (a multiple of STACK_SIZE) into `stacks` stacks, each a multiple of
+    STACK_SIZE, as evenly as possible."""
+    units = total // STACK_SIZE
+    stacks = max(1, min(stacks, units))
+    base, extra = divmod(units, stacks)
+    return [(base + (1 if i < extra else 0)) * STACK_SIZE for i in range(stacks)]
 
 
 def install(api) -> None:
@@ -214,7 +236,7 @@ def install(api) -> None:
                      "collected_at=COALESCE(collected_at, ?) WHERE id=?", (hid, now, c["id"]))
         amount = int(round(c["qty"] * (1 + MUSEUM_QTY_BONUS * museum)))
         got = int(econ.give(conn, hid, c["item_id"], amount, "cargo_collect", c["id"], strict=strict))
-        econ.emit(conn, "cargo_collected", hid, {"crates": STACK_SIZE if c["stacked"] else 1,
+        econ.emit(conn, "cargo_collected", hid, {"crates": int(c["crates"] or 1),
                                                   "itemID": c["item_id"], "qty": got}, public=False)
         return got
 
@@ -230,16 +252,25 @@ def install(api) -> None:
                 "collectRange": collect_range(lv["museum"]),
                 "droneRange": drone_range(lv["droneResearch"]),
                 "stackUnlocked": lv["haulage"] >= STACK_HF_LEVEL, "stackSize": STACK_SIZE,
+                "maxStacks": MAX_STACKS_PER_DROP,
                 "stackHaulageLevel": STACK_HF_LEVEL, "maxDrop": MAX_DROP,
                 "trucks": econ.qty_of(conn, hid, TRUCKS), "drones": econ.qty_of(conn, hid, SCAN_DRONE)}
 
     @api.endpoint("/api/v1/cargo/drop", feature="CARGO")
     def drop(conn, hid, form):
-        """Drop crates around the player's position: count=1..100 normal crates, or stacks=1..10
-        stacked crates (100 each, Haulage Firm level ≥ 5)."""
+        """Drop crates around the player's position: count=1..100 normal crates, or stacked=1 with
+        count = any multiple of 100 split over stacks=1..5 stacks (Haulage Firm level ≥ 5)."""
         lat, lng = econ.parse_pos(form)
-        stacks = int_arg(form, "stacks", 0, 0, MAX_STACKS_PER_DROP)
-        count = 0 if stacks else int_arg(form, "count", None, 1, MAX_DROP)
+        stacked = form.get("stacked") == "1" or int_arg(form, "stacks", 0, 0, 10**6) > 0
+        if stacked:
+            stacks = int_arg(form, "stacks", 1, 1, MAX_STACKS_PER_DROP) if form.get("stacked") == "1" else \
+                min(MAX_STACKS_PER_DROP, int_arg(form, "stacks", 1, 1, 10**6))
+            count = int_arg(form, "count", stacks * STACK_SIZE, STACK_SIZE, 10**9)
+            if count % STACK_SIZE:
+                raise econ.GameError("bad_input", f"Stacked Cargo Rain goes in steps of {STACK_SIZE} crates")
+        else:
+            stacks = 0
+            count = int_arg(form, "count", None, 1, MAX_DROP)
         rid = (form.get("rid") or "").strip()[:64]
         with econ.tx(conn):
             if rid:
@@ -248,25 +279,25 @@ def install(api) -> None:
                     return prev
             if stacks and h.building_level(conn, hid, HAULAGE_FIRM) < STACK_HF_LEVEL:
                 raise econ.GameError("locked", f"Stacked Cargo Rain needs Haulage Firm level {STACK_HF_LEVEL}")
-            spend(conn, hid, stacks * STACK_SIZE if stacks else count, "drop")
+            spend(conn, hid, count, "drop")
             rng = random.Random()
             now = econ.utcnow()
             exp = (now + datetime.timedelta(hours=CRATE_HOURS)).isoformat()
-            n_objects = stacks or count
-            for _ in range(n_objects):
+            sizes = split_stacks(count, stacks) if stacked else [1] * count
+            for size in sizes:
                 r = DROP_SCATTER_M * math.sqrt(rng.random())
                 a = rng.random() * 2 * math.pi
                 clat = lat + r * math.cos(a) / 111320.0
                 clng = lng + r * math.sin(a) / (111320.0 * max(0.01, math.cos(math.radians(lat))))
-                item, q, mus = roll(rng, stacked=bool(stacks))
+                item, q, mus = roll(rng, stacked=stacked, crates=size)
                 conn.execute("INSERT INTO cargo_crates(id, dropper_hid, lat, lng, item_id, qty, museum_level, stacked, "
-                             "created_at, expires_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                             (uuid.uuid4().hex, hid, clat, clng, item, q, mus, 1 if stacks else 0,
+                             "crates, created_at, expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                             (uuid.uuid4().hex, hid, clat, clng, item, q, mus, 1 if stacked else 0, size,
                               now.isoformat(), exp))
-            econ.emit(conn, "cargo_rain", hid, {"crates": stacks * STACK_SIZE if stacks else count,
-                                                "stacked": bool(stacks)},
+            econ.emit(conn, "cargo_rain", hid, {"crates": count, "stacked": stacked},
                       lat=round(lat, 2), lng=round(lng, 2))
-            out = {"err": 0, "dropped": n_objects, "stacked": bool(stacks), "left": stock(conn, hid)}
+            out = {"err": 0, "dropped": len(sizes), "crates": count, "stacks": sizes if stacked else [],
+                   "stacked": stacked, "left": stock(conn, hid)}
             if rid:
                 econ.once_put(conn, "cargo_drop", hid, rid, out)
         return out
@@ -285,7 +316,8 @@ def install(api) -> None:
         rows = conn.execute(OPEN_SQL + " AND c.museum_level <= ? AND c.lat BETWEEN ? AND ? AND c.lng BETWEEN ? AND ? "
                             "LIMIT 2000", open_args(hid) + (museum, lat1, lat2, lng1, lng2)).fetchall()
         return {"err": 0, "crates": [{"id": r["id"], "lat": r["lat"], "lng": r["lng"], "itemID": r["item_id"],
-                                      "stacked": bool(r["stacked"]), "expiresAt": gone_at(r)} for r in rows]}
+                                      "stacked": bool(r["stacked"]), "count": r["crates"],
+                                      "expiresAt": gone_at(r)} for r in rows]}
 
     @api.endpoint("/api/v1/cargo/collect", feature="CARGO")
     def collect(conn, hid, form):
@@ -303,16 +335,19 @@ def install(api) -> None:
                 raise econ.GameError("not_visible", "Your Museum level is too low for this crate")
             d = econ.dist_m(lat, lng, c["lat"], c["lng"])
             if c["stacked"]:
-                if method == "truck":
-                    if econ.qty_of(conn, hid, TRUCKS) < 1:
-                        raise econ.GameError("no_vehicle", "You need a Truck to collect stacked cargo")
-                    econ.require_within(lat, lng, c["lat"], c["lng"], collect_range(lv["museum"]), "stack")
-                elif method == "drone":
+                n = int(c["crates"] or STACK_SIZE)
+                if method == "truck":                 # one truck per crate, trucks aren't used up
+                    have = int(econ.qty_of(conn, hid, TRUCKS))
+                    if have < n:
+                        raise econ.GameError("no_vehicle", f"This stack holds {n:,} crates — you need {n:,} trucks "
+                                                           f"(you have {have:,})")
+                    econ.require_within(lat, lng, c["lat"], c["lng"], truck_range(lv["haulage"]), "stack")
+                elif method == "drone":               # one drone per crate, used up
                     rng_m = drone_range(lv["droneResearch"])
                     if rng_m <= 0:
                         raise econ.GameError("locked", f"Drone pick-up needs Drone Research level {DRONE_DR_LEVEL}")
                     econ.require_within(lat, lng, c["lat"], c["lng"], rng_m, "stack")
-                    econ.take(conn, hid, SCAN_DRONE, 1, "cargo_drone", c["id"])
+                    econ.take(conn, hid, SCAN_DRONE, n, "cargo_drone", c["id"])
                 else:
                     raise econ.GameError("needs_vehicle", "Stacked cargo can only be collected by truck or drone")
             else:
@@ -341,16 +376,21 @@ def install(api) -> None:
                     if econ.dist_m(lat, lng, c["lat"], c["lng"]) <= rng_m]
             normal = [c for c in rows if not c["stacked"]]
             stacks = [c for c in rows if c["stacked"]]
-            needed = math.ceil(len(normal) / TRUCK_CAPACITY) + len(stacks)
+            stack_crates = sum(int(c["crates"] or STACK_SIZE) for c in stacks)
+            needed = len(normal) + stack_crates                     # one truck per crate
             if preview or not rows:
-                return {"err": 0, "crates": len(normal), "stacks": len(stacks), "trucksNeeded": needed,
-                        "trucks": trucks, "range": rng_m}
+                return {"err": 0, "crates": len(normal) + stack_crates, "loose": len(normal), "stacks": len(stacks),
+                        "stackCrates": stack_crates, "trucksNeeded": needed, "trucks": trucks, "range": rng_m}
             if trucks < 1:
                 raise econ.GameError("no_vehicle", "You have no Trucks")
-            # fill the trucks: normal crates first (TRUCK_CAPACITY per truck), then one stack per truck
-            loads = min(len(normal), trucks * TRUCK_CAPACITY)
-            free = trucks - math.ceil(loads / TRUCK_CAPACITY)
-            chosen = normal[:loads] + stacks[:max(0, free)]
+            # fill the trucks: loose crates first, then whole stacks that still fit
+            chosen = normal[:trucks]
+            free = trucks - len(chosen)
+            for c in stacks:
+                n = int(c["crates"] or STACK_SIZE)
+                if n <= free:
+                    chosen.append(c)
+                    free -= n
             got = {}
             for c in chosen:
                 try:
@@ -359,9 +399,10 @@ def install(api) -> None:
                     continue
                 if q > 0:
                     got[c["item_id"]] = got.get(c["item_id"], 0) + q
-            used = math.ceil(loads / TRUCK_CAPACITY) + min(len(stacks), max(0, free))
-        return {"err": 0, "trucksUsed": used, "trucks": trucks, "collected": len(chosen),
-                "left": len(rows) - len(chosen),
+            used = trucks - free
+            collected = sum(int(c["crates"] or 1) for c in chosen)
+        return {"err": 0, "trucksUsed": used, "trucks": trucks, "collected": collected,
+                "left": len(normal) + stack_crates - collected,
                 "items": [{"itemID": k, "qty": v} for k, v in sorted(got.items(), key=lambda x: -x[1])]}
 
     @api.endpoint("/api/v1/cargo/recycle", feature="RECYCLING")
@@ -391,8 +432,11 @@ def install(api) -> None:
     def recycling_info(conn, hid, form):
         """What can be recycled, into what, and your yield."""
         level = h.building_level(conn, hid, RECYCLING_PLANT)
-        y = (0.5 + 0.05 * min(10, level)) * (1 + archaeology.effect(conn, hid, 174) / 100) if level else 0
-        return {"err": 0, "plantLevel": level, "yield": round(y, 3), "recipes": [
+        base = (0.5 + 0.05 * min(10, level)) if level else 0
+        obelisk = archaeology.effect(conn, hid, 174)
+        y = base * (1 + obelisk / 100)
+        return {"err": 0, "plantLevel": level, "yield": round(y, 3), "plantYield": round(base, 3),
+                "obeliskBonus": obelisk, "recipes": [
             {"itemID": i, "owned": int(econ.qty_of(conn, hid, i)),
              "outputs": [{"itemID": t, "perUnit": round(u * y / len(outs), 4)} for t, u in outs]}
             for i, outs in RECYCLE.items()]}

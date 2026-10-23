@@ -359,6 +359,7 @@ def install(api) -> None:
                     with econ.tx(conn):
                         digest_events(conn)
                         daily_awards(conn, h, econ.utcnow())
+                        social.purge_old_messages(conn)
                     if econ.feature("EARTHQUAKES"):
                         run_quake(conn, h, econ.utcnow())
             except Exception:

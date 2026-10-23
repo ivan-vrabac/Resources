@@ -359,7 +359,8 @@ SPECIAL_BUILDINGS = {
 }
 
 # Drone scan range in metres per Drone Research level (levels 1–10)
-DRONE_SCAN_RANGES = [500, 1000, 2000, 5000, 10000, 20000, 30000, 50000, 75000, 100000]
+# Drone scan / remote build range by Drone Research level (owner 2026-10-20: at most 10 km)
+DRONE_SCAN_RANGES = [500, 1000, 1500, 2000, 3000, 4000, 5000, 6500, 8000, 10000]
 
 # ── Tech Center configuration (single source of truth) ─────────────────────────
 # radius = scan area radius metres; accuracy = prediction fidelity %;
@@ -2100,6 +2101,7 @@ async def player_get_data(request: Request):
 # ── Scanner ─────────────────────────────────────────────────────────────────────
 
 LOCAL_CONSTRUCTION_RANGE_M = 100   # metres from player position to hex center for local build
+GPS_TOLERANCE_M = 15               # allowance for GPS jitter between the app's check and the request
 DRONE_RANGE_M              = 5000  # maximum remote construction range
 
 @app.post("/flut23/scannerPayscan.php")
@@ -2136,6 +2138,10 @@ async def scanner_payscan(request: Request):
         scan_cost = max(5000 // SCAN_COST_DIVISOR, int(round(raw_cost / 500) * 500))
 
         drone_range = None
+        scan_dist = haversine_m(player_lat, player_lng, lat, lng)
+        if not is_drone and scan_dist > LOCAL_CONSTRUCTION_RANGE_M + GPS_TOLERANCE_M:
+            return zlib_resp({"err": 6, "msg": f"Scan spot is {scan_dist:.0f} m away — local scans reach "
+                                                f"{LOCAL_CONSTRUCTION_RANGE_M} m. Use a drone scan."})
         if is_drone:
             if not DRONE_OVERRIDE:
                 drone_row = conn.execute(
@@ -2147,6 +2153,9 @@ async def scanner_payscan(request: Request):
             dr_level = dr_row["level"] if dr_row else 0
             dr_idx = max(0, min(dr_level - 1, len(DRONE_SCAN_RANGES) - 1))
             drone_range = DRONE_SCAN_RANGES[dr_idx] if dr_level > 0 else DRONE_SCAN_RANGES[0]
+            if scan_dist > drone_range + GPS_TOLERANCE_M:
+                return zlib_resp({"err": 7, "msg": f"Scan spot is {scan_dist / 1000:.1f} km away — your drones "
+                                                    f"reach {drone_range / 1000:.1f} km."})
 
         # Drone scans cost only 1 Scan Drone (item 117), no credits.
         if not is_drone:
@@ -2259,8 +2268,9 @@ async def mine_new(request: Request):
     _dr_idx = max(0, min(_dr_level - 1, len(DRONE_SCAN_RANGES) - 1))
     drone_build_range = DRONE_SCAN_RANGES[_dr_idx] if _dr_level > 0 else LOCAL_CONSTRUCTION_RANGE_M
 
-    if dist_to_mine > drone_build_range:
-        return zlib_resp({"err": 11, "msg": "Building failed: Construction zone is out of range"})
+    if dist_to_mine > drone_build_range + GPS_TOLERANCE_M:
+        return zlib_resp({"err": 11, "msg": f"Building failed: this spot is {dist_to_mine:.0f} m from you, "
+                                             f"your range is {drone_build_range:.0f} m"})
 
     if is_remote:
         if _dr_level < 10:
@@ -2306,7 +2316,7 @@ async def mine_new(request: Request):
         mine_count = conn.execute("SELECT COUNT(*) as cnt FROM mines WHERE owner_hid=?", (hid,)).fetchone()["cnt"]
         if mine_count >= MAX_MINES_PER_PLAYER:
             conn.rollback(); conn.close()
-            return zlib_resp({"err": 7, "msg": f"max {MAX_MINES_PER_PLAYER} mines per player"})
+            return zlib_resp({"err": 7, "msg": "Maximum amount of mines reached."})
 
         actual_cost = mine_scaled_cost(mt["cost"], mine_count)
         if row["credits"] < actual_cost:
@@ -2343,7 +2353,8 @@ async def mine_new(request: Request):
         for m in all_mines:
             if haversine_m(lat, lng, m["lat"], m["lng"]) < hex_min_dist(lat, lng, m["lat"], m["lng"]) - 0.1:
                 conn.rollback(); conn.close()
-                return zlib_resp({"err": 6, "msg": "Building failed: Overlapping with an existing mine."})
+                return zlib_resp({"err": 6, "msg": "Building failed: this spot overlaps an existing mine — "
+                                                   "move the crosshair to a free hex."})
 
         # Consume token inside the transaction — token is NOT consumed on any earlier failure.
         popped = _scan_tokens.pop(prospect_token, None)
@@ -4100,6 +4111,8 @@ async def chat_send(request: Request):
             "INSERT INTO chat_messages (hid, name, msg, ts) VALUES (?,?,?,?)",
             (hid, name, msg, utcnow_iso())
         )
+        conn.execute("DELETE FROM chat_messages WHERE ts < ?",      # keep one week (owner 2026-10-20)
+                     ((datetime.datetime.utcnow() - datetime.timedelta(days=7)).isoformat(),))
         conn.commit()
         conn.execute(
             "DELETE FROM chat_messages WHERE id NOT IN "

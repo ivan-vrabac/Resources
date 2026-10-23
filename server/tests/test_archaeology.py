@@ -27,7 +27,7 @@ def test_sites_are_deterministic():
 def test_detect_requires_center_and_detector_and_hides_position():
     site = _a_site()
     hid, sid, _ = new_player("ar1")
-    far_lat = site["lat"] - 0.009                             # ~1 km south
+    far_lat = site["lat"] - 0.0025                            # ~280 m south (detect 320 m at level 1)
     assert call(R + "detect", sid, lat=far_lat, lng=site["lng"])["code"] == "locked"
     set_building(hid, 164, 1)
     assert call(R + "detect", sid, lat=far_lat, lng=site["lng"])["code"] == "no_detector"
@@ -78,3 +78,8 @@ def test_forged_site_id_rejected():
 def test_ranges_and_archaeologists_by_level():
     assert A.reveal_range(1) == 100 and A.reveal_range(10) == 300
     assert A.archaeologists_needed(1) == 100 and A.archaeologists_needed(10) == 70
+
+
+def test_detect_and_pickup_ranges_capped():
+    assert A.detect_range(1) == 320 and A.detect_range(10) == 500
+    assert A.pickup_range(0) == 50 and A.pickup_range(10) == 300

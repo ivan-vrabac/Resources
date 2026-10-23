@@ -31,7 +31,7 @@ def _cond(mid):
 def test_calibration_matches_eva_examples():
     assert C.attack_values(5) == (7.2, 72.2, 144.4)
     assert C.defence_values(10) == (10.0, 100.0, 200.0)
-    assert C.attack_range(10) == 400 and C.helper_range(10) == 200
+    assert C.attack_range(1) == 100 and C.attack_range(10) == 500 and C.helper_range(10) == 200
 
 
 def test_battle_is_conserving_and_decisive():

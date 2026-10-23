@@ -138,3 +138,12 @@ def test_cancel_open_request():
     loan = call(R + "request", sid, principal=50_000, termDays=20)["loan"]
     assert call(R + "cancel", sid, loanID=loan["id"])["err"] == 0
     assert call(R + "cancel", sid, loanID=loan["id"])["code"] == "gone"
+
+
+def test_buying_and_selling_back_does_not_raise_the_limit():
+    hid, sid, _ = new_player("lnw", credits=0)
+    _age(hid, 30)
+    _income(hid, 100_000_000)                       # sold for 100M …
+    _income(hid, -100_000_000, kind="system_buy")   # … after buying the same goods for 100M
+    st = call(R + "status", sid)
+    assert st["income30d"] == 0 and not st["eligible"]

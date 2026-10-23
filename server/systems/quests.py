@@ -11,7 +11,7 @@ Lifecycle (documented assumptions):
   Reward: QUEST_CRATES Cargo Rain crates (eva.txt: 15 per mission) + credits = 2000 × player level.
 - Streak: a "qualifying day" is a UTC day whose whole quest set was claimed (within the 48 h
   window). The streak is the run of consecutive qualifying days. Every qualifying day pays Tech
-  Upgrades I (day 1: 5, days 2–10: 10, from day 11: 50 — see DAILY_TU). Milestones (relative to the
+  Upgrades IV: 5 × the streak day, capped at 50 from day 10 (daily_tu). Milestones (relative to the
   streak's first day, paid once per streak):
     · every 7 consecutive days  → 5 Giant Diamonds
     · every 30 consecutive days → 10 Giant Diamonds  (30-day milestones, NOT calendar months;
@@ -31,18 +31,16 @@ QUEST_HOURS = 48
 GIANT_DIAMOND = 42
 CREDITS_PER_LEVEL = 2000
 STREAK_MILESTONES = ((7, 5), (30, 10))     # (every N days, giant diamonds)
-# Daily streak reward (owner 2026-10-19): Tech Upgrades I for every qualifying day of the streak:
-# day 1 → 5, days 2–10 → 10 each, from day 11 → 50 each.
-TECH_UPGRADE = 44
-DAILY_TU = ((1, 1, 5), (2, 10, 10), (11, None, 50))       # (from day, to day, tech upgrades)
+# Daily streak reward (owner 2026-10-20): Tech Upgrades IV for every qualifying day of the streak:
+# 5 × the streak day (day 1 → 5, day 2 → 10, …), capped at 50 from day 10 on.
+TECH_UPGRADE = 48
+DAILY_TU_STEP = 5
+DAILY_TU_CAP = 50
 ARCH_CENTER = 164
 
 
 def daily_tu(day_of_streak: int) -> int:
-    for lo, hi, n in DAILY_TU:
-        if day_of_streak >= lo and (hi is None or day_of_streak <= hi):
-            return n
-    return 0
+    return min(DAILY_TU_CAP, DAILY_TU_STEP * max(0, day_of_streak))
 
 
 # code: (title, event type, target) — target (lo, hi) varies per player and day
@@ -222,7 +220,8 @@ def install(api) -> None:
                 "rewardPlan": {
                     "perQuest": [{"itemID": 1, "qty": int(round(CREDITS_PER_LEVEL * level * bonus))},
                                  {"cargo": True, "qty": int(round(cargo.QUEST_CRATES * bonus))}],
-                    "daily": [{"from": lo, "to": hi, "itemID": TECH_UPGRADE, "qty": n} for lo, hi, n in DAILY_TU],
+                    "daily": [{"from": d, "to": d, "itemID": TECH_UPGRADE, "qty": daily_tu(d)} for d in range(1, 10)]
+                             + [{"from": 10, "to": None, "itemID": TECH_UPGRADE, "qty": DAILY_TU_CAP}],
                     "milestones": [{"every": e, "itemID": GIANT_DIAMOND, "qty": d} for e, d in STREAK_MILESTONES],
                     "aeonBonus": round(bonus - 1, 2)}}
 

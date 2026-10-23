@@ -23,7 +23,7 @@ defence — 95 Watch Dogs, 97 Security Staff, 98 Elite Force.
 - Failure: 10 % of the attacker's lost units desert to the defending mine.
 - Intel: below Mafia HQ 10 the target's defence is an estimate (±10 % per missing level, stable per
   attacker/mine/day); at Mafia HQ 10 it is exact.
-- Limits: attack range 40 m × Mafia HQ level; a mine can be attacked once per 24 h; no own mines.
+- Limits: attack range 100 m (Mafia HQ 1) … 500 m (level 10); a mine can be attacked once per 24 h.
 - External maintenance (Service Center 121): repair another player's mine for free when it is
   within the helper's range (100 m + 10 m × Haulage Firm level, max 200 m), at ≤ 96 % condition, and
   its owner was active within 120 days. Helper reward: Service Center level × 1 h of the mine's
@@ -54,6 +54,8 @@ DEFAULT_DEFENCE = (200, 5, 1)
 MAX_UNITS = 100_000
 ATTACK_COOLDOWN_S = 24 * 3600
 STRENGTH_FULL = 100_000.0       # attack strength for maximum damage
+# owner 2026-10-20: a won attack can also bring special items: (item, chance, min, max)
+SPECIAL_LOOT = ((43, 0.30, 1, 3), (44, 0.10, 1, 2), (45, 0.05, 1, 2), (46, 0.02, 1, 1), (48, 0.005, 1, 1))
 LOOT_HOURS_PER_LEVEL = 10
 REPAIR_COOLDOWN_S = 24 * 3600
 REPAIR_DAILY_LIMIT = 20
@@ -89,7 +91,10 @@ def defence_values(camp_level: int):
 
 
 def attack_range(mafia_level: int) -> float:
-    return 40.0 * max(0, min(10, mafia_level))
+    """100 m at Mafia HQ level 1 … 500 m at level 10 (owner 2026-10-20)."""
+    if mafia_level < 1:
+        return 0.0
+    return round(100.0 + (min(10, mafia_level) - 1) * 400.0 / 9, 1)
 
 
 def helper_range(haulage_level: int) -> float:
@@ -194,7 +199,10 @@ def install(api) -> None:
             own = m["owner_hid"] == hid
             shown, exact = (list(total), True) if own else estimate(
                 total, mafia, f"{hid}:{mine_id}:{econ.utcnow().strftime('%Y-%m-%d')}")
+            next_at = (datetime.datetime.fromisoformat(last) + datetime.timedelta(seconds=ATTACK_COOLDOWN_S)
+                       ).isoformat() if last else None
             out["target"] = {"mineID": mine_id, "isMine": own, "defence": shown, "defenceExact": exact,
+                             "nextAttackAt": next_at if next_at and next_at > econ.utcnow_iso() else None,
                              "stationed": stationed if own else None, "defenceValues": defence_values(camp),
                              "inHqArea": in_hq_area(conn, m), "condition": m["condition"],
                              "lastAttack": last,
@@ -298,7 +306,15 @@ def install(api) -> None:
                 if not destroyed:
                     conn.execute("INSERT INTO mine_defence(mine_id, default_down) VALUES(?,1) ON CONFLICT(mine_id) "
                                  "DO UPDATE SET dogs=0, staff=0, elite=0, default_down=1", (mine_id,))
-                result.update(lootItem=res, loot=loot, lootHalvings=wins)
+                specials = []
+                srng = random.Random(seed + 7)
+                for item, chance, lo, hi in SPECIAL_LOOT:
+                    if srng.random() < chance:
+                        got = econ.give(conn, hid, item, srng.randint(lo, hi), "attack_special", attack_id,
+                                        strict=False)
+                        if got:
+                            specials.append({"itemID": item, "qty": int(got)})
+                result.update(lootItem=res, loot=loot, lootHalvings=wins, specials=specials)
             elif not destroyed:
                 lost = [s - l for s, l in zip(att, a_left)]
                 deserters = [int(x * 0.10) for x in lost]

@@ -31,6 +31,10 @@ import econ
 from . import int_arg, social
 
 INCOME_KINDS = ("market_sell", "market_sell_legacy", "system_sell", "quest_reward")
+# owner 2026-10-20: count NET earnings — what was spent buying is subtracted, so buying and selling
+# back and forth (or between own accounts) can't make a company look richer than it is
+SPEND_KINDS = ("system_buy", "market_buy", "market_order_escrow")
+REFUND_KINDS = ("market_cancelled", "market_expired", "market_escrow_rest", "market_edit_refund")
 MIN_AGE_DAYS = 7
 INCOME_WINDOW_DAYS = 30
 LIMIT_SHARE = 0.5
@@ -82,12 +86,19 @@ def init_schema(conn) -> None:
     conn.commit()
 
 
-def income_30d(conn, hid, now) -> float:
-    since = (now - datetime.timedelta(days=INCOME_WINDOW_DAYS)).isoformat()
-    q = ",".join("?" * len(INCOME_KINDS))
-    r = conn.execute(f"SELECT COALESCE(SUM(credits),0) FROM ledger WHERE hid=? AND ts>=? AND credits>0 "
-                     f"AND kind IN ({q})", (hid, since, *INCOME_KINDS)).fetchone()
+def _sum(conn, hid, since, kinds, sign) -> float:
+    q = ",".join("?" * len(kinds))
+    r = conn.execute(f"SELECT COALESCE(SUM(credits),0) FROM ledger WHERE hid=? AND ts>=? AND credits{sign}0 "
+                     f"AND kind IN ({q})", (hid, since, *kinds)).fetchone()
     return float(r[0] or 0)
+
+
+def income_30d(conn, hid, now) -> float:
+    """Net money earned in the window: sales + quest rewards − purchases (never below 0)."""
+    since = (now - datetime.timedelta(days=INCOME_WINDOW_DAYS)).isoformat()
+    earned = _sum(conn, hid, since, INCOME_KINDS, ">")
+    spent = -_sum(conn, hid, since, SPEND_KINDS, "<") - _sum(conn, hid, since, REFUND_KINDS, ">")
+    return max(0.0, earned - max(0.0, spent))
 
 
 def account_age_days(conn, hid, now) -> float:
@@ -257,8 +268,9 @@ def install(api) -> None:
         d["total"] = total_due(loan)
         d["outstanding"] = 0 if loan["status"] in ("forgiven", "repaid") else max(0, d["total"] - int(loan["repaid"]))
         d["risk"] = RISK.get(loan["rating"], "")
-        d["borrower"] = social.public_ref(conn, loan["borrower"])
-        d["lender"] = social.public_ref(conn, loan["lender"]) if loan["lender"] else None
+        # anonymous (owner 2026-10-20): nobody sees who borrowed or who lent — only rating and amounts
+        d["borrower"] = None
+        d["lender"] = None
         d["isBorrower"] = loan["borrower"] == viewer
         d["isLender"] = loan["lender"] == viewer
         d["schedule"] = [{"due": loan["due_at"], "amount": d["total"]}] if loan["due_at"] else []

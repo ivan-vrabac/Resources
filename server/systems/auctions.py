@@ -62,7 +62,7 @@ BID_RESOURCE = {
     152: 24,   # Private Mansion ← Bricks
     153: 92,   # Private Helicopter ← Lithium
     154: 79,   # Gold Sculpture ← Gold
-    155: 14,   # Gold Food ← Gold Ore
+    155: 14,   # Gold Foot ← Gold Ore
     156: 70,   # Oldtimer ← Scrap Metal
     157: 2,    # Wine Cellar ← Clay
     163: 84,   # Necklace ← Jewellery

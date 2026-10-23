@@ -108,7 +108,8 @@ def test_seven_and_thirty_day_streak_milestones_paid_once():
     assert sorted((m["days"], m["diamonds"]) for m in paid if "diamonds" in m) == \
         [(7, 5), (14, 5), (21, 5), (28, 5), (30, 10)]
     assert qty(hid, 42) == 30
-    assert [m["qty"] for m in paid if m.get("daily")] == [50]          # day 30 of the streak: 50 Tech Upgrades I
+    assert [m["qty"] for m in paid if m.get("daily")] == [50]          # day 30 of the streak: 50 Tech Upgrades IV
+    assert qty(hid, 48) == 50
     with main.get_db() as conn:
         assert quests.pay_milestones(conn, hid, today.isoformat()) == []   # never twice
         assert quests.current_streak(conn, hid) == 30
@@ -147,7 +148,7 @@ def test_level_up_grants_cargo():
 
 
 def test_daily_tech_upgrade_tiers_and_variable_targets():
-    assert [quests.daily_tu(d) for d in (1, 2, 10, 11, 40)] == [5, 10, 10, 50, 50]
+    assert [quests.daily_tu(d) for d in (1, 2, 3, 9, 10, 11, 40)] == [5, 10, 15, 45, 50, 50, 50]
     t = {quests.target_of("cargo", f"h{i}", "2026-01-01") for i in range(200)}
     assert min(t) >= 5 and max(t) <= 20 and len(t) > 5
     assert all(1 <= quests.target_of("artifacts", f"h{i}", "2026-01-02") <= 3 for i in range(50))

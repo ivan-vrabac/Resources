@@ -117,35 +117,39 @@ def test_truck_collects_everything_nearby():
     assert call(C + "truck", sid, lat=lat0, lng=lng0, preview=1)["code"] == "locked"
     set_building(hid, 123, 5)                                                      # range 150 m
     p = call(C + "truck", sid, lat=lat0, lng=lng0, preview=1)
-    assert p["crates"] == 12 and p["trucksNeeded"] == 2 and p["trucks"] == 0
+    assert p["crates"] == 12 and p["trucksNeeded"] == 12 and p["trucks"] == 0     # one truck per crate
     assert call(C + "truck", sid, lat=lat0, lng=lng0)["code"] == "no_vehicle"
-    give(hid, 124, 1)
+    give(hid, 124, 5)
     r = call(C + "truck", sid, lat=lat0, lng=lng0)
-    assert r["collected"] == 10 and r["left"] == 2 and r["items"] == [{"itemID": 41, "qty": 30}]
-    assert qty(hid, 124) == 1                                                      # trucks are not used up
+    assert r["collected"] == 5 and r["left"] == 7 and r["items"] == [{"itemID": 41, "qty": 15}]
+    assert qty(hid, 124) == 5                                                      # trucks are not used up
 
 
-def test_stacked_cargo_needs_haulage_and_vehicle():
-    hid, sid, _ = new_player("cs", wh_level=10)
+def test_stacked_cargo_split_and_one_vehicle_per_crate():
+    hid, sid, _ = new_player("cs", wh_level=60)
     set_building(hid, 65, 10)                     # museum 10: every rolled content is visible
-    _grant(hid, 300)
-    assert call(C + "drop", sid, stacks=2, lat=LAT, lng=LNG)["code"] == "locked"
+    _grant(hid, 1000)
+    assert call(C + "drop", sid, stacked=1, count=300, stacks=2, lat=LAT, lng=LNG)["code"] == "locked"
     set_building(hid, 123, 5)
-    r = call(C + "drop", sid, stacks=2, lat=LAT, lng=LNG)
-    assert r["dropped"] == 2 and r["stacked"] and call(C + "stock", sid)["crates"] == 100
-    stack = _crates(hid)[0]
-    assert call(C + "collect", sid, id=stack["id"], lat=LAT, lng=LNG)["code"] == "needs_vehicle"
-    assert call(C + "collect", sid, id=stack["id"], lat=LAT, lng=LNG, method="truck")["code"] == "no_vehicle"
-    give(hid, 124, 1)
-    r = call(C + "collect", sid, id=stack["id"], lat=LAT, lng=LNG, method="truck")
-    assert r["err"] == 0 and qty(hid, 124) == 1                                   # truck not used up
-    other = _crates(hid)[0]
-    far_lat = other["lat"] + 0.02                                                  # ~2 km away
-    assert call(C + "collect", sid, id=other["id"], lat=far_lat, lng=LNG, method="drone")["code"] == "locked"
-    set_building(hid, 119, 5)                                                      # drone range 10 km
+    assert call(C + "drop", sid, stacked=1, count=250, stacks=2, lat=LAT, lng=LNG)["code"] == "bad_input"   # steps of 100
+    assert call(C + "drop", sid, stacked=1, count=300, stacks=6, lat=LAT, lng=LNG)["code"] == "bad_input"   # max 5 stacks
+    r = call(C + "drop", sid, stacked=1, count=300, stacks=2, lat=LAT, lng=LNG)
+    assert r["dropped"] == 2 and sorted(r["stacks"]) == [100, 200] and call(C + "stock", sid)["crates"] == 700
+    stacks = sorted(_crates(hid), key=lambda c: c["crates"])
+    small, big = stacks[0], stacks[1]
+    assert (small["crates"], big["crates"]) == (100, 200)
+    assert call(C + "collect", sid, id=big["id"], lat=LAT, lng=LNG)["code"] == "needs_vehicle"
+    give(hid, 124, 150)
+    assert call(C + "collect", sid, id=big["id"], lat=LAT, lng=LNG, method="truck")["code"] == "no_vehicle"  # 200 needed
+    r = call(C + "collect", sid, id=small["id"], lat=LAT, lng=LNG, method="truck")
+    assert r["err"] == 0 and qty(hid, 124) == 150                                 # trucks are not used up
+    far_lat = big["lat"] + 0.02                                                    # ~2 km away
+    set_building(hid, 119, 5)
+    give(hid, 117, 199)
+    assert call(C + "collect", sid, id=big["id"], lat=far_lat, lng=LNG, method="drone")["code"] == "insufficient_items"
     give(hid, 117, 1)
-    r = call(C + "collect", sid, id=other["id"], lat=far_lat, lng=LNG, method="drone")
-    assert r["err"] == 0 and qty(hid, 117) == 0                                    # drone consumed
+    r = call(C + "collect", sid, id=big["id"], lat=far_lat, lng=LNG, method="drone")
+    assert r["err"] == 0 and qty(hid, 117) == 0                                    # one drone per crate, used up
 
 
 def test_cargo_collected_counts_for_quests():

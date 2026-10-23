@@ -40,7 +40,7 @@ const Map<int, String> kItemNames = {
   146: 'Coin Collection', 147: 'Luxury Ranch', 148: 'Vineyard',
   149: 'Private Satellite', 150: 'Weapons Collection', 151: 'Bunker',
   152: 'Private Mansion', 153: 'Private Helicopter', 154: 'Gold Sculpture',
-  155: 'Gold Food', 156: 'Oldtimer', 157: 'Wine Cellar',
+  155: 'Gold Foot', 156: 'Oldtimer', 157: 'Wine Cellar',
   158: 'Night Shift', 159: 'Overtime', 160: 'Guestworkers',
   161: 'Wage Subsidy', 163: 'Necklace', 164: 'Archeology Center',
   165: 'Detector Factory', 166: 'Artifact Detector', 167: 'Archeologists',
@@ -142,7 +142,8 @@ const List<int> kTcMaxQuality = [26, 34, 42, 49, 56, 63, 71, 79, 85, 93, 100];
 const List<int> kTcScanRadius = [150, 200, 250, 300, 350, 400, 500, 600, 750, 900, 1125];
 
 // Drone scan range in metres per Drone Research level (item 119), levels 1–10
-const List<int> kDroneScanRanges = [500, 1000, 2000, 5000, 10000, 20000, 30000, 50000, 75000, 100000];
+// same as the server (DRONE_SCAN_RANGES): at most 10 km
+const List<int> kDroneScanRanges = [500, 1000, 1500, 2000, 3000, 4000, 5000, 6500, 8000, 10000];
 
 // Image ID overrides for special buildings (building item_id → display image id)
 const Map<int, int> kSpecialBuildingImageId = {

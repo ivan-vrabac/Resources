@@ -10,9 +10,10 @@ Rules (owner's rules 2026-10-19 marked *, the rest a documented proposal):
 - * Several players can recover the same artifact (each once). After the first recovery the
   site disappears 15 minutes later (GONE_AFTER_FIRST_S); otherwise it lasts its 24 hours.
 - * Every detector scan uses up one Artifact Detector (166). Needs Archaeological Center ≥ 1.
-  Detection range 1000 m + 500 m × level; the scan reports a bearing and a distance band.
+  Detection range 300 m + 20 m × level (500 m at level 10); the scan reports a bearing and a band.
 - * Reveal range: 100 m at Center level 1 → 300 m at level 10 (linear).
-- Recovery: within the Museum pick-up range (50 m + 15 m × Museum level, same as Cargo Rain);
+- Recovery: within the Museum pick-up range (50 m + 25 m × Museum level, 300 m at level 10, same as
+  Cargo Rain);
   * uses 100 Archaeologists at Center level 1 → 70 at level 10 (linear).
 """
 from __future__ import annotations
@@ -49,7 +50,8 @@ GONE_AFTER_FIRST_S = 15 * 60
 
 
 def detect_range(level: int) -> float:
-    return 0.0 if level < 1 else 1000.0 + 500.0 * min(10, level)
+    """320 m at Center level 1 … 500 m at level 10 (owner 2026-10-20: at most 500 m)."""
+    return 0.0 if level < 1 else 300.0 + 20.0 * min(10, level)
 
 
 def reveal_range(level: int) -> float:
@@ -57,7 +59,8 @@ def reveal_range(level: int) -> float:
 
 
 def pickup_range(museum_level: int) -> float:
-    return 50.0 + 15.0 * max(0, min(10, museum_level))
+    """50 m without a Museum … 300 m at Museum level 10 (owner 2026-10-20: at most 300 m)."""
+    return 50.0 + 25.0 * max(0, min(10, museum_level))
 
 
 def archaeologists_needed(level: int) -> int:

@@ -190,10 +190,10 @@ def install(api) -> None:
             raise econ.GameError("price_too_high",
                                  f"Bid at most 25% above the best bid ({top['price'] * MAX_BID_OVER_TOP:.2f})")
         sp = prices.get(item_id)
-        if sp and price > sp * SYSTEM_BUY_MARKUP:
-            raise econ.GameError("price_too_high", "Buying from the system is cheaper")
-        if sp and price < sp:      # the system's buying price is the floor
-            raise econ.GameError("price_too_low", f"Bid at least the system price ({sp:g})")
+        if sp and price > sp * SYSTEM_BUY_MARKUP + 1e-9:
+            raise econ.GameError("price_too_high", "Above the system ASK price.")
+        if sp and price < sp - 1e-9:      # the system's buying price is the floor
+            raise econ.GameError("price_too_low", "Below the system BID price.")
 
     # ── read endpoints ──────────────────────────────────────────────────────
 
