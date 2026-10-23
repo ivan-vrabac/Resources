@@ -103,7 +103,8 @@ def test_resources_reserved_refunded_points_and_settlement():
     assert _points(b) == A.points_for(lot["itemID"], nxt) + A.win_points(lot["itemID"], nxt)
     assert A.win_points(lot["itemID"], nxt) > 10 * A.points_for(lot["itemID"], nxt)
     h = call(R + "/item", a_sid, itemID=lot["itemID"])
-    assert len(h["bids"]) >= 2 and h["lastSale"]["price"] == nxt and b not in json.dumps(h)
+    assert "bids" not in h and h["lastSale"]["price"] == nxt and b not in json.dumps(h)     # no bid history
+    assert h["sales"][-1]["price"] == nxt
 
 
 def test_ownership_limit_counts_owned_and_leading():
@@ -165,3 +166,18 @@ def test_casino_roll_still_works_atomically():
     r = json.loads(zlib.decompress(client.post("/flut23/casinoNewRoll.php",
                                                data={"sid": sid, "bet": "1000000", "count": "500"}).content))
     assert r["err"] == 5
+
+
+def test_bid_in_last_30_seconds_sets_the_clock_to_60():
+    import datetime
+    a, a_sid = _bidder("au9")
+    lot = _lot(a_sid)
+    give(a, lot["resID"], lot["minBid"] * 3)
+    soon = (datetime.datetime.utcnow() + datetime.timedelta(seconds=20)).isoformat()
+    with main.get_db() as conn:
+        conn.execute("UPDATE auctions SET ends_at=? WHERE id=?", (soon, lot["id"]))
+        conn.commit()
+    r = call(R + "/bid", a_sid, auctionID=lot["id"], amount=lot["minBid"])
+    left = (datetime.datetime.fromisoformat(r["auction"]["endsAt"]) - datetime.datetime.utcnow()).total_seconds()
+    assert 55 <= left <= 61
+

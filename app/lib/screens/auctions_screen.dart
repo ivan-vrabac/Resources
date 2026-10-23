@@ -288,16 +288,6 @@ class _ItemHistorySheetState extends State<_ItemHistorySheet> {
                 Text('Bought with ${itemName((d['resID'] as num).toInt())} · you own ${d['owned']}',
                     style: TextStyle(color: AppColors.t70)),
                 const SizedBox(height: 12),
-                Text('Recent bids', style: TextStyle(color: AppColors.t54, fontSize: 12)),
-                SizedBox(
-                  height: 160,
-                  width: double.infinity,
-                  child: (d['bids'] as List).isEmpty
-                      ? const Center(child: Text('No bids yet'))
-                      : CustomPaint(painter: _BidChart((d['bids'] as List)
-                          .map((b) => ((b as Map)['amount'] as num).toDouble()).toList())),
-                ),
-                const SizedBox(height: 12),
                 // owner 2026-10-23: sales of the last 365 days under the graph, newest first
                 if ((d['sales'] as List? ?? const []).isEmpty)
                   Text('Never sold yet.', style: TextStyle(color: AppColors.t54))
@@ -314,12 +304,6 @@ class _ItemHistorySheetState extends State<_ItemHistorySheet> {
                       for (final x in (d['sales'] as List).reversed.cast<Map<String, dynamic>>()) _playerTile(x, d),
                     ]),
                   ),
-                ],
-                if ((d['bids'] as List).isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text('Latest bidders', style: TextStyle(color: AppColors.t54, fontSize: 12)),
-                  for (final b in (d['bids'] as List).reversed.take(5).cast<Map<String, dynamic>>())
-                    _playerTile({'player': b['player'], 'price': b['amount'], 'ts': b['ts']}, d),
                 ],
               ])),
       ),
@@ -340,38 +324,3 @@ class _ItemHistorySheetState extends State<_ItemHistorySheet> {
   }
 }
 
-class _BidChart extends CustomPainter {
-  final List<double> v;
-  _BidChart(this.v);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final hi = v.reduce(max), lo = v.reduce(min);
-    final span = (hi - lo).abs() < 1e-9 ? 1.0 : hi - lo;
-    final grid = Paint()..color = Colors.white12..strokeWidth = 1;
-    for (var i = 0; i <= 3; i++) {
-      final y = size.height * i / 3;
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
-    }
-    final path = Path();
-    for (var i = 0; i < v.length; i++) {
-      final x = v.length == 1 ? size.width / 2 : size.width * i / (v.length - 1);
-      final y = size.height - (v[i] - lo) / span * (size.height - 16) - 8;
-      i == 0 ? path.moveTo(x, y) : path.lineTo(x, y);
-      canvas.drawCircle(Offset(x, y), 2.5, Paint()..color = Colors.amberAccent);
-    }
-    canvas.drawPath(path, Paint()
-      ..color = Colors.amberAccent
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2);
-    final tp = TextPainter(textDirection: TextDirection.ltr);
-    for (final (val, y) in [(hi, 0.0), (lo, size.height - 12)]) {
-      tp.text = TextSpan(text: fmtQty(val), style: TextStyle(color: AppColors.t54, fontSize: 10));
-      tp.layout();
-      tp.paint(canvas, Offset(0, y));
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _BidChart old) => old.v != v;
-}

@@ -77,7 +77,8 @@ LOT_HOURS = 24                 # (old fixed length, kept for reference)
 LOT_HOURS_MIN, LOT_HOURS_MAX = 10, 16   # owner 2026-10-23: each lot runs a random 10-16 h
 START_VALUE = 1_000_000_000    # HQ 10 companies are rich (HQ 10 alone needs ~15 T of resources)
 MIN_RAISE = 0.05
-EXTEND_S = 300
+EXTEND_S = 300                 # (old rule, unused)
+SNIPE_WINDOW_S, SNIPE_RESET_S = 30, 60
 SWEEP_S = 30
 BID_POINTS_PER = 100_000
 WIN_POINTS_BASE = 1_000
@@ -321,14 +322,9 @@ def install(api) -> None:
         item = int_arg(form, "itemID", None, 0, 10**6)
         if item not in BID_RESOURCE:
             raise econ.GameError("bad_input", "Not a luxury item")
-        bids = conn.execute("SELECT b.ts, b.amount, b.hid, a.id AS aid FROM auction_bids b JOIN auctions a ON a.id=b.auction_id "
-                            "WHERE a.item_id=? ORDER BY b.id DESC LIMIT 60", (item,)).fetchall()
         last = conn.execute("SELECT * FROM auctions WHERE item_id=? AND status='sold' ORDER BY settled_at DESC LIMIT 1",
                             (item,)).fetchone()
-        refs = {b["hid"]: social.public_ref(conn, b["hid"]) for b in bids}
         return {"err": 0, "itemID": item, "resID": BID_RESOURCE[item], "owned": owned(conn, hid, item),
-                "bids": [{"ts": b["ts"], "amount": b["amount"], "player": refs[b["hid"]], "auctionID": b["aid"]}
-                         for b in reversed(bids)],
                 "lastSale": {"ts": last["settled_at"], "price": last["top_bid"],
                              "player": social.public_ref(conn, last["top_hid"])} if last else None,
                 # owner 2026-10-23: sale prices (resource units) of up to the last 365 days, for a graph
@@ -367,13 +363,14 @@ def install(api) -> None:
                 outbid = a["top_hid"]
                 h.add_proto(conn, outbid, "auctionoutbid", {"itemID": a["item_id"], "bid": amount, "resID": res})
             ends = datetime.datetime.fromisoformat(a["ends_at"])
-            if (ends - now).total_seconds() < EXTEND_S:
-                ends = now + datetime.timedelta(seconds=EXTEND_S)
+            # owner 2026-10-23: a bid in the last 30 s sets the clock to 60 s (no sniping)
+            if (ends - now).total_seconds() < SNIPE_WINDOW_S:
+                ends = now + datetime.timedelta(seconds=SNIPE_RESET_S)
             cur = conn.execute("UPDATE auctions SET top_bid=?, top_hid=?, bids=bids+1, ends_at=? "
                                "WHERE id=? AND status='open' AND top_bid=?",
                                (amount, hid, ends.isoformat(), aid, a["top_bid"]))
             if cur.rowcount != 1:
-                raise econ.GameError("conflict", "Someone else bid first — try again")
+                raise econ.GameError("conflict", "Someone else bid first. Try again.")
             conn.execute("INSERT INTO auction_bids(auction_id, hid, amount, ts) VALUES(?,?,?,?)",
                          (aid, hid, amount, now.isoformat()))
             a = conn.execute("SELECT * FROM auctions WHERE id=?", (aid,)).fetchone()
