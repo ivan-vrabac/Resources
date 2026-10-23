@@ -153,7 +153,8 @@ const Map<int, int> kSpecialBuildingImageId = {
 
 // Special buildings: item_id → config
 // res keys MUST be strings (e.g. '24') to match lager map string keys
-const Map<int, Map<String, dynamic>> kSpecialBuildings = {
+// not const: the costs are replaced by the server's (rebalanced) costs at runtime
+final Map<int, Map<String, dynamic>> kSpecialBuildings = {
   116: {
     'name': 'Tech Center',
     'desc': 'Your scanning base. It decides how far your scans reach and how good the resources are that they can reveal.',

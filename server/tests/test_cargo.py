@@ -117,15 +117,15 @@ def test_truck_collects_everything_nearby():
     assert call(C + "truck", sid, lat=lat0, lng=lng0, preview=1)["code"] == "locked"
     set_building(hid, 123, 5)                                                      # range 150 m
     p = call(C + "truck", sid, lat=lat0, lng=lng0, preview=1)
-    assert p["crates"] == 12 and p["trucksNeeded"] == 12 and p["trucks"] == 0     # one truck per crate
+    assert p["crates"] == 12 and p["trucksNeeded"] == 1 and p["trucks"] == 0      # one truck carries 100 crates
     assert call(C + "truck", sid, lat=lat0, lng=lng0)["code"] == "no_vehicle"
-    give(hid, 124, 5)
+    give(hid, 124, 1)
     r = call(C + "truck", sid, lat=lat0, lng=lng0)
-    assert r["collected"] == 5 and r["left"] == 7 and r["items"] == [{"itemID": 41, "qty": 15}]
-    assert qty(hid, 124) == 5                                                      # trucks are not used up
+    assert r["collected"] == 12 and r["left"] == 0 and r["items"] == [{"itemID": 41, "qty": 36}]
+    assert qty(hid, 124) == 1                                                      # trucks are not used up
 
 
-def test_stacked_cargo_split_and_one_vehicle_per_crate():
+def test_stacked_cargo_split_and_one_vehicle_per_100_crates():
     hid, sid, _ = new_player("cs", wh_level=60)
     _grant(hid, 1000)
     assert call(C + "drop", sid, stacked=1, count=300, lat=LAT, lng=LNG)["code"] == "locked"
@@ -142,16 +142,17 @@ def test_stacked_cargo_split_and_one_vehicle_per_crate():
     assert big["id"] in seen                                             # Museum 0 still sees stacks
     n = big["crates"]
     assert call(C + "collect", sid, id=big["id"], lat=LAT, lng=LNG)["code"] == "needs_vehicle"
-    give(hid, 124, n - 1)
+    need = cargo.vehicles_for(n)                                          # one truck per 100 crates
+    give(hid, 124, need - 1)
     assert call(C + "collect", sid, id=big["id"], lat=LAT, lng=LNG, method="truck")["code"] == "no_vehicle"
     give(hid, 124, 1)
     r = call(C + "collect", sid, id=big["id"], lat=LAT, lng=LNG, method="truck")
-    assert r["err"] == 0 and qty(hid, 124) == n and r["items"]                # trucks are not used up
+    assert r["err"] == 0 and qty(hid, 124) == need and r["items"]             # trucks are not used up
     allowed = {i for i, v in cargo.BOX_LOOT.items() if v[2] == 0}           # Museum 0: only level-0 objects (boxes too)
     assert {x["itemID"] for x in r["items"]} <= allowed
 
 
-def test_drone_collects_stack_one_drone_per_crate():
+def test_drone_collects_stack_drones_are_kept():
     hid, sid, _ = new_player("cdr", wh_level=60)
     _grant(hid, 100)
     set_building(hid, 123, 5)
@@ -159,11 +160,10 @@ def test_drone_collects_stack_one_drone_per_crate():
     call(C + "drop", sid, stacked=1, count=100, lat=LAT + 0.3, lng=LNG)
     st = _crates(hid)[0]
     far_lat = st["lat"] + 0.02                                              # ~2 km away
-    give(hid, 117, 99)
     assert call(C + "collect", sid, id=st["id"], lat=far_lat, lng=LNG, method="drone")["code"] == "insufficient_items"
-    give(hid, 117, 1)
+    give(hid, 117, 1)                                                       # 100 crates: one drone
     assert call(C + "collect", sid, id=st["id"], lat=far_lat, lng=LNG, method="drone")["err"] == 0
-    assert qty(hid, 117) == 0
+    assert qty(hid, 117) == 1                                               # the drone is kept
 
 
 def test_boxes_can_hold_specials_containers_cannot():

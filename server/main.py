@@ -370,6 +370,11 @@ SPECIAL_BUILDINGS = {
     },
 }
 
+# rebalance 2026-10-23: special building costs come from economy.special_costs (the tables above are
+# the original values, kept for reference)
+for _sid in SPECIAL_BUILDINGS:
+    SPECIAL_BUILDINGS[_sid]["costs"] = economy.special_costs(_sid)
+
 # Drone scan range in metres per Drone Research level (levels 1–10)
 # Drone scan / remote build range by Drone Research level (owner 2026-10-20: at most 10 km)
 DRONE_SCAN_RANGES = [500, 1000, 1500, 2000, 3000, 4000, 5000, 6500, 8000, 10000]
@@ -1016,6 +1021,7 @@ def apply_output_hooks(conn, hid, item_id, qty):
 CASINO_FIVE_HOOKS = []   # fn(conn, symbol, spinner_hid) -> dict | None, inside the roll transaction
 
 SCAN_COST_DIVISOR = 10      # (pre-revamp scan formula, unused)
+DRONE_SCAN_MULT = 5         # a drone scan costs 5 local scans (the drone itself is kept)
 # Owner 2026-10-23: start with enough for about six clay pits; scans are free below level 5
 # (economy.FREE_SCAN_LEVEL), so a new company can always get going.
 STARTING_CREDITS = 250000
@@ -2235,12 +2241,15 @@ async def scanner_payscan(request: Request):
                     if scan_dist > drone_range + GPS_TOLERANCE_M:
                         raise econ.GameError("out_of_range", f"Scan spot is {scan_dist / 1000:.1f} km away. Your "
                                                              f"drones reach {drone_range / 1000:.1f} km.")
-                    if not DRONE_OVERRIDE:
-                        try:
-                            econ.take(conn, hid, 117, 1, "drone_scan")      # atomic: one drone per scan
-                        except econ.GameError:
-                            raise econ.GameError("no_drone", "No Scan Drones in inventory")
-                        award_sink(conn, hid, res={117: 1})
+                    # rebalance 2026-10-23: the drone is kept; a drone scan costs DRONE_SCAN_MULT × a local scan
+                    if not DRONE_OVERRIDE and econ.qty_of(conn, hid, 117) < 1:
+                        raise econ.GameError("no_drone", "You need a Scan Drone")
+                    scan_cost = scan_cost * DRONE_SCAN_MULT
+                    try:
+                        econ.debit(conn, hid, scan_cost, "drone_scan")
+                    except econ.GameError:
+                        raise econ.GameError("insufficient_credits", f"Not enough credits (need ꞓ{scan_cost:,})")
+                    award_sink(conn, hid, credits=scan_cost)
                 else:
                     try:
                         econ.debit(conn, hid, scan_cost, "scan")
@@ -2277,7 +2286,7 @@ async def scanner_payscan(request: Request):
         "err": 0,
         "lat": lat,
         "lng": lng,
-        "cost": 0 if is_drone else scan_cost,
+        "cost": scan_cost,
         "tcLevel": tc_level,
         "scanRadius": TC_CONFIG[min(tc_level, 10)]["radius"],
         "results": results,

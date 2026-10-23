@@ -19,8 +19,8 @@ Documented assumptions (values are configurable constants below):
 - * Contents are regular found objects only — no Giant Diamonds, Tech Upgrades or production
   boosters (owner's rule) — and always whole units.
 - * Trucks (Haulage Firm ≥ 5): one tap collects every crate in truck range (the Haulage Firm boss
-  range, 100 m + 10 m/level) — one truck per crate (a stack of N crates needs N trucks); trucks
-  aren't used up. A drone collects a stack remotely and uses one drone per crate.
+  range, 100 m + 10 m/level). Owner 2026-10-23 (rebalance): one truck or drone carries
+  CRATES_PER_VEHICLE (100) crates; trucks and drones are equipment you keep (not used up).
 - * Stacked Cargo Rain (owner 2026-10-20): drop any number of crates in steps of 100, split over at
   most MAX_STACKS_PER_DROP stacks; every stack records how many crates it holds.
 - Stacked Cargo Rain (one map object = 100 crates' contents) unlocks at Haulage Firm level
@@ -59,7 +59,12 @@ MAX_STACKS_PER_DROP = 5
 DROP_SCATTER_M = 40.0
 CRATE_HOURS = 24
 GONE_AFTER_FIRST_S = 15 * 60
-TRUCK_CAPACITY = 1           # crates per truck (owner: one truck per crate)
+TRUCK_CAPACITY = 100         # crates per truck (rebalance 2026-10-23; was 1)
+CRATES_PER_VEHICLE = 100     # a truck or a drone carries this many crates (neither is used up)
+
+
+def vehicles_for(crates: int) -> int:
+    return -(-int(crates) // CRATES_PER_VEHICLE)
 TRUCK_HF_LEVEL = 5
 LOCAL_RANGE_BASE_M = 50.0
 LOCAL_RANGE_PER_MUSEUM_M = 25.0     # 300 m at Museum level 10 (owner 2026-10-20)
@@ -449,19 +454,22 @@ def install(api) -> None:
             d = econ.dist_m(lat, lng, c["lat"], c["lng"])
             if c["stacked"]:
                 n = int(c["crates"] or STACK_SIZE)
-                if method == "truck":                 # one truck per crate, trucks aren't used up
+                need = vehicles_for(n)
+                if method == "truck":                 # one truck per 100 crates, not used up
                     have = int(econ.qty_of(conn, hid, TRUCKS))
-                    if have < n:
-                        raise econ.GameError("no_vehicle", f"This stack holds {n:,} crates, so you need {n:,} trucks "
+                    if have < need:
+                        raise econ.GameError("no_vehicle", f"This stack holds {n:,} crates, so you need {need:,} trucks "
                                                            f"(you have {have:,})")
                     econ.require_within(lat, lng, c["lat"], c["lng"], truck_range(lv["haulage"]), "stack")
-                elif method == "drone":               # one drone per crate, used up
+                elif method == "drone":               # one drone per 100 crates, not used up
                     rng_m = drone_range(lv["droneResearch"])
                     if rng_m <= 0:
                         raise econ.GameError("locked", f"Drone pick-up needs Drone Research level {DRONE_DR_LEVEL}")
                     econ.require_within(lat, lng, c["lat"], c["lng"], rng_m, "stack")
-                    econ.take(conn, hid, SCAN_DRONE, n, "cargo_drone", c["id"])
-                    h.award_sink(conn, hid, res={SCAN_DRONE: n})       # used drones: permanent sink
+                    have = int(econ.qty_of(conn, hid, SCAN_DRONE))
+                    if have < need:
+                        raise econ.GameError("insufficient_items", f"This stack holds {n:,} crates, so you need "
+                                                                   f"{need:,} Scan Drones (you have {have:,})")
                 else:
                     raise econ.GameError("needs_vehicle", "Stacked cargo can only be collected by truck or drone")
             else:
@@ -495,15 +503,16 @@ def install(api) -> None:
             normal = [c for c in rows if not c["stacked"]]
             stacks = [c for c in rows if c["stacked"]]
             stack_crates = sum(int(c["crates"] or STACK_SIZE) for c in stacks)
-            needed = len(normal) + stack_crates                     # one truck per crate
+            needed = vehicles_for(len(normal) + stack_crates)         # one truck per 100 crates
             if preview or not rows:
                 return {"err": 0, "crates": len(normal) + stack_crates, "loose": len(normal), "stacks": len(stacks),
                         "stackCrates": stack_crates, "trucksNeeded": needed, "trucks": trucks, "range": rng_m}
             if trucks < 1:
                 raise econ.GameError("no_vehicle", "You have no Trucks")
-            # fill the trucks: loose crates first, then whole stacks that still fit
-            chosen = normal[:trucks]
-            free = trucks - len(chosen)
+            # fill the trucks (100 crates each): loose crates first, then whole stacks that still fit
+            capacity = trucks * CRATES_PER_VEHICLE
+            chosen = normal[:capacity]
+            free = capacity - len(chosen)
             for c in stacks:
                 n = int(c["crates"] or STACK_SIZE)
                 if n <= free:
@@ -518,8 +527,8 @@ def install(api) -> None:
                 for k, v in (q.items() if isinstance(q, dict) else ((c["item_id"], q),)):
                     if v > 0:
                         got[k] = got.get(k, 0) + v
-            used = trucks - free
             collected = sum(int(c["crates"] or 1) for c in chosen)
+            used = vehicles_for(collected)
         return {"err": 0, "trucksUsed": used, "trucks": trucks, "collected": collected,
                 "left": len(normal) + stack_crates - collected,
                 "items": by_rarity(got)}

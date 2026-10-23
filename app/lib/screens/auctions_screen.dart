@@ -272,7 +272,7 @@ class _ItemHistorySheetState extends State<_ItemHistorySheet> {
         padding: const EdgeInsets.all(16),
         child: d == null
             ? SizedBox(height: 160, child: Center(child: _error != null ? Text(_error!) : const CircularProgressIndicator()))
-            : Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            : SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
                   ItemIcon(widget.itemId, size: 48),
                   const SizedBox(width: 12),
@@ -293,16 +293,25 @@ class _ItemHistorySheetState extends State<_ItemHistorySheet> {
                           .map((b) => ((b as Map)['amount'] as num).toDouble()).toList())),
                 ),
                 const SizedBox(height: 12),
-                if (d['lastSale'] != null) ...[
-                  Text('Last sold to', style: TextStyle(color: AppColors.t54, fontSize: 12)),
-                  _playerTile((d['lastSale'] as Map).cast<String, dynamic>(), d),
-                ] else
-                  Text('Never sold yet.', style: TextStyle(color: AppColors.t54)),
-                if ((d['sales'] as List? ?? const []).isNotEmpty) ...[
-                  const SizedBox(height: 8),
+                // owner 2026-10-23: sales of the last 365 days under the graph, newest first
+                if ((d['sales'] as List? ?? const []).isEmpty)
+                  Text('Never sold yet.', style: TextStyle(color: AppColors.t54))
+                else ...[
                   Text('Sale prices (${itemName((d['resID'] as num).toInt())}, up to 365 days)',
                       style: TextStyle(color: AppColors.t54, fontSize: 12)),
                   SalesDotsChart(sales: (d['sales'] as List).cast<Map<String, dynamic>>()),
+                  const SizedBox(height: 8),
+                  Text('Last sold', style: TextStyle(color: AppColors.t54, fontSize: 12)),
+                  _playerTile((d['sales'] as List).last as Map<String, dynamic>, d),
+                  const SizedBox(height: 4),
+                  Text('Recently sold (past 365 days)', style: TextStyle(color: AppColors.t54, fontSize: 12)),
+                  // five rows on screen, scroll for the rest
+                  SizedBox(
+                    height: 5 * 56.0,
+                    child: ListView(children: [
+                      for (final x in (d['sales'] as List).reversed.cast<Map<String, dynamic>>()) _playerTile(x, d),
+                    ]),
+                  ),
                 ],
                 if ((d['bids'] as List).isNotEmpty) ...[
                   const SizedBox(height: 8),
@@ -310,20 +319,20 @@ class _ItemHistorySheetState extends State<_ItemHistorySheet> {
                   for (final b in (d['bids'] as List).reversed.take(5).cast<Map<String, dynamic>>())
                     _playerTile({'player': b['player'], 'price': b['amount'], 'ts': b['ts']}, d),
                 ],
-              ]),
+              ])),
       ),
     );
   }
 
   Widget _playerTile(Map<String, dynamic> s, Map<String, dynamic> d) {
     final p = (s['player'] as Map?)?.cast<String, dynamic>() ?? {};
+    final ts = (s['ts'] as String? ?? '').replaceFirst('T', ' ');
     return ListTile(
       dense: true,
       contentPadding: EdgeInsets.zero,
-      leading: const Icon(Icons.business, size: 20),
       title: Text(p['name'] as String? ?? '?', style: const TextStyle(color: Colors.lightBlueAccent)),
       subtitle: Text('${fmtQty(s['price'] as num)} ${itemName((d['resID'] as num).toInt())} · '
-          '${(s['ts'] as String? ?? '').replaceFirst('T', ' ').substring(0, min(16, (s['ts'] as String? ?? '').length))}'),
+          '${ts.substring(0, min(16, ts.length))} UTC'),
       onTap: p['pid'] == null ? null : () => ProfileScreen.open(context, p['pid'] as String),
     );
   }

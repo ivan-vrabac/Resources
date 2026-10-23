@@ -138,18 +138,18 @@ class CargoController extends ChangeNotifier {
         context: context,
         builder: (sheet) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
           ListTile(title: Text('Stacked cargo (${fmtNum((crate['count'] as num? ?? 100).toInt())} crates)'),
-              subtitle: const Text('Needs one truck per crate (in range, not used up) or one drone per crate (remote, used up).')),
+              subtitle: const Text('One truck (in range) or one drone (remote) carries 100 crates. Neither is used up.')),
           ListTile(
             leading: const ItemIcon(124),
             title: Text('Truck (you have ${fmtQty(info['trucks'] as num? ?? 0)})'),
-            subtitle: Text('Within ${collectRange.round()} m · truck is not used up'),
+            subtitle: Text('Within ${collectRange.round()} m · ${((crate['count'] as num? ?? 100) / 100).ceil()} trucks needed, kept'),
             onTap: () => popIfCurrent(sheet, 'truck'),
           ),
           ListTile(
             leading: const ItemIcon(117),
             title: Text('Scan drone (you have ${fmtQty(info['drones'] as num? ?? 0)})'),
             subtitle: Text((info['droneRange'] as num? ?? 0) > 0
-                ? 'Within ${((info['droneRange'] as num) / 1000).toStringAsFixed(1)} km · uses 1 drone'
+                ? 'Within ${((info['droneRange'] as num) / 1000).toStringAsFixed(1)} km · ${((crate['count'] as num? ?? 100) / 100).ceil()} drones needed, kept'
                 : 'Needs Drone Research level 5'),
             onTap: () => popIfCurrent(sheet, 'drone'),
           ),
@@ -210,7 +210,7 @@ class CargoController extends ChangeNotifier {
         content: Text('Use ${fmtNum(min(need, have))}/${fmtNum(have)} trucks to collect cargo nearby?\n\n'
             '${fmtNum(loose)} crate${loose == 1 ? '' : 's'}'
             '${st > 0 ? ' and $st stack${st == 1 ? '' : 's'} (${fmtNum(inStacks)} crates)' : ''} within '
-            '${(p.data['range'] as num).round()} m · one truck per crate'
+            '${(p.data['range'] as num).round()} m · one truck carries 100 crates'
             '${need > have ? '\nYou need ${fmtNum(need)} trucks to take everything at once.' : ''}'),
         actions: [
           TextButton(onPressed: () => popIfCurrent(ctx, false), child: const Text('Cancel')),

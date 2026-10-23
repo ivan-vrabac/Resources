@@ -34,9 +34,27 @@ class _SpecialBuildingsScreenState extends State<SpecialBuildingsScreen> {
   List<int> _order = [];
   Set<String> _open = {};
 
+  /// Costs come from the server (rebalanced there); the built-in table is only the fallback.
+  Future<void> _loadCosts() async {
+    final r = await GameApi.call('/api/v1/buildings/info', context.read<PlayerProvider>().sid);
+    if (!mounted || !r.ok) return;
+    for (final b in (r.data['buildings'] as List).cast<Map<String, dynamic>>()) {
+      final id = (b['itemID'] as num).toInt();
+      final cfg = kSpecialBuildings[id];
+      if (cfg == null) continue;
+      cfg['costs'] = [
+        for (final l in (b['levels'] as List).cast<Map<String, dynamic>>())
+          {'credits': (l['credits'] as num).toInt(),
+           'res': {for (final e in (l['res'] as Map).entries) int.parse(e.key as String): (e.value as num).toInt()}},
+      ];
+    }
+    setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
+    _loadCosts();
     SharedPreferences.getInstance().then((p) {
       if (!mounted) return;
       setState(() {

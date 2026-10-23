@@ -72,9 +72,11 @@ FACTORIES = {
     80:  ("Gold Refinery", 79, 45, 240, {14: 20}, 20000, 3, 1_000_000_000, {7: 20000, 30: 20000, 59: 20000}),
     85:  ("Goldsmith", 84, 50, 100, {81: 1000, 79: 1, 35: 1}, 50000, 2, 500_000_000, {7: 20000, 24: 90000, 59: 20000}),
     170: ("Tungsten Smelter", 171, 50, 200, {169: 40, 38: 5, 20: 20}, 20000, 5, 3_000_000_000, {7: 30000, 30: 10000, 51: 10000}),
-    125: ("Truck Plant", 124, 55, 100, {30: 100, 93: 25, 35: 50}, 2_500_000, 50, 2_000_000_000, {24: 500000, 66: 90000, 35: 50000}),
-    118: ("Drone Shipyard", 117, 60, 1, {66: 25, 51: 50, 93: 250}, 25_000_000, 1, 2_000_000_000, {7: 80000, 57: 120000, 59: 40000}),
-    165: ("Detector Factory", 166, 60, 5, {93: 50, 66: 30, 171: 50}, 50_000_000, 1, 2_000_000_000, {7: 40000, 93: 1000, 59: 40000}),
+    # trucks, drones and detectors: lighter recipes than srx.txt (owner 2026-10-23: rebalance, no need to
+    # follow the original) so they cost ~0.1 M / ~10 M / ~20 M; trucks and drones are equipment you keep
+    125: ("Truck Plant", 124, 55, 100, {30: 100, 93: 25, 35: 50}, 250_000, 50, 2_000_000_000, {24: 500000, 66: 90000, 35: 50000}),
+    118: ("Drone Shipyard", 117, 60, 1, {66: 10, 51: 20, 93: 50}, 1_000_000, 1, 2_000_000_000, {7: 80000, 57: 120000, 59: 40000}),
+    165: ("Detector Factory", 166, 60, 5, {93: 50, 66: 30, 171: 50}, 5_000_000, 1, 2_000_000_000, {7: 40000, 93: 1000, 59: 40000}),
 }
 # owner 2026-10-23: drones, detectors and trucks are priced like every product (and stay on the market)
 FIXED_PRICES: dict = {}
@@ -249,11 +251,57 @@ OTHER_PRICES = {
     # units: watch dogs, security staff, elite force / attack dogs, gangsters, private army
     95: 1_500, 97: 15_000, 98: 40_000, 102: 2_000, 103: 20_000, 104: 50_000,
     # archaeologists, artifacts (rarer = dearer)
-    # artifacts: dearer than the detector used to find them (≈ 88 M), rarer = dearer
-    167: 10_000, 172: 200_000_000, 173: 600_000_000, 174: 300_000_000, 175: 400_000_000, 176: 1_200_000_000,
-    177: 300_000_000,
+    # artifacts: about 3 detectors' worth (a detector ≈ 21 M is used up per scan), rarer = dearer
+    167: 10_000, 172: 60_000_000, 173: 180_000_000, 174: 90_000_000, 175: 120_000_000, 176: 360_000_000,
+    177: 90_000_000,
 }
 
 
 def system_prices() -> dict:
     return {**PRICES, **OTHER_PRICES}
+
+
+# ── special buildings (owner 2026-10-23: rebalanced for this economy) ─────────
+# Each level costs base × 2.2^(level−1) in value (level 10 ≈ 1 200 × level 1): half credits, half
+# products. The products follow the building's theme and what a player can make at that stage:
+# levels 1–3 early products, 4–6 middle, 7–10 late ones (drones, trucks, detectors only late).
+SPECIAL_GROWTH = 2.2
+SPECIAL_CREDIT_SHARE = 0.5
+SPECIAL_PLAN = {
+    # building: (level-1 value, early items, middle items, late items)
+    116: (200_000,   (24, 7),   (59, 36),  (66, 93)),     # Tech Center
+    123: (200_000,   (24, 7),   (30, 32),  (124, 93)),    # Haulage Firm
+    58:  (300_000,   (24, 30),  (32, 57),  (66, 51)),     # Recycling Plant
+    65:  (500_000,   (24, 7),   (59, 40),  (79, 35)),     # Museum
+    71:  (800_000,   (24, 7),   (57, 59),  (75, 66)),     # Hospital
+    72:  (800_000,   (24, 7),   (59, 57),  (79, 35)),     # Law Firm
+    121: (800_000,   (7, 30),   (36, 93),  (93, 66)),     # Service Center
+    122: (800_000,   (24, 7),   (59, 57),  (75, 66)),     # HR Department
+    119: (1_500_000, (30, 24),  (32, 57),  (66, 117)),    # Drone Research
+    127: (1_500_000, (7, 30),   (36, 59),  (66, 93)),     # Seismology Centre
+    126: (1_500_000, (7, 30),   (32, 59),  (124, 93)),    # Fire Station
+    86:  (2_000_000, (24, 30),  (87, 32),  (87, 79)),     # Mafia HQ
+    164: (3_000_000, (167, 24), (59, 93),  (166, 66)),    # Archaeological Center
+    61:  (3_000_000, (24, 7),   (59, 36),  (79, 84)),     # Casino
+}
+
+
+def _nice(q: float) -> int:
+    """Round to two significant digits (1 234 → 1 200)."""
+    if q < 10:
+        return max(1, int(round(q)))
+    d = 10 ** (int(math.log10(q)) - 1)
+    return int(round(q / d) * d)
+
+
+def special_costs(sid: int) -> list:
+    base, early, mid, late = SPECIAL_PLAN[sid]
+    prices = system_prices()
+    out = []
+    for lvl in range(1, 11):
+        value = base * SPECIAL_GROWTH ** (lvl - 1)
+        items = early if lvl <= 3 else mid if lvl <= 6 else late
+        share = value * (1 - SPECIAL_CREDIT_SHARE) / len(items)
+        out.append({"credits": _nice(value * SPECIAL_CREDIT_SHARE),
+                    "res": {i: _nice(share / prices[i]) for i in items}})
+    return out

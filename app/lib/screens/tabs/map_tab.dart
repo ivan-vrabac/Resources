@@ -2118,7 +2118,7 @@ class _MapTabState extends State<MapTab> {
                   final costLine = (!inLocalRange && !inDroneRange)
                       ? null
                       : (inDroneRange && !inLocalRange)
-                          ? 'Drone count: $droneCount'
+                          ? (droneCount < 1 ? 'Needs a Scan Drone' : 'ꞓ${fmtNum(scanCost * 5)} · drone kept')
                           : (scanCost == 0 ? 'Free' : 'ꞓ${fmtNum(scanCost)}');
                   return SizedBox(
                     height: 66,
