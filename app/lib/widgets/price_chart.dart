@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../app_colors.dart';
 import 'async_view.dart' show fmtQty;
+import '../constants.dart' show kAskColor, kBidColor;
 import '../models/player_provider.dart';
 import '../services/game_api.dart';
 
@@ -73,9 +74,10 @@ class _PriceHistoryChartState extends State<PriceHistoryChart> {
       ),
       const SizedBox(height: 4),
       Wrap(spacing: 12, children: [
-        _legend(Colors.greenAccent, 'System sells at'),
-        _legend(Colors.amberAccent, 'Players paid (daily average)'),
-        _legend(Colors.redAccent, 'System buys at'),
+        // colours follow Settings › Numbers (ASK/BID colours)
+        _legend(kBidColor, 'System buys at (BID)'),
+        _legend(kAskColor, 'System sells at (ASK)'),
+        _legend(Colors.amberAccent, 'Players paid (daily average, dashed)'),
       ]),
     ]);
   }
@@ -106,22 +108,34 @@ class _LinesPainter extends CustomPainter {
       final gy = 6 + (size.height - 12) * i / 3;
       canvas.drawLine(Offset(40, gy), Offset(size.width, gy), grid);
     }
-    void line(List<double?> s, Color c, {bool dots = false}) {
-      final path = Path();
-      var started = false;
+    // thin lines; the players' average is dashed and drawn last, so where it lies on a system price
+    // both colours stay visible (owner 2026-10-23)
+    void line(List<double?> s, Color c, {bool dots = false, bool dashed = false}) {
+      final paint = Paint()..color = c..style = PaintingStyle.stroke..strokeWidth = 1.6;
+      Offset? prev;
       for (var i = 0; i < n; i++) {
         final val = s[i];
-        if (val == null) continue;
+        if (val == null) { prev = null; continue; }
         final p = Offset(x(i), y(val));
-        started ? path.lineTo(p.dx, p.dy) : path.moveTo(p.dx, p.dy);
-        started = true;
+        if (prev != null) {
+          if (!dashed) {
+            canvas.drawLine(prev, p, paint);
+          } else {
+            final d = p - prev;
+            final len = d.distance;
+            for (var t = 0.0; t < len; t += 9) {
+              final a = prev + d * (t / len), b = prev + d * (min(t + 5, len) / len);
+              canvas.drawLine(a, b, paint);
+            }
+          }
+        }
         if (dots && traded[i]) canvas.drawCircle(p, 3, Paint()..color = c);
+        prev = p;
       }
-      canvas.drawPath(path, Paint()..color = c..style = PaintingStyle.stroke..strokeWidth = 2);
     }
-    line(buy, Colors.greenAccent);
-    line(sell, Colors.redAccent);
-    line(avg, Colors.amberAccent, dots: true);
+    line(buy, kAskColor);              // what the system sells at (ASK)
+    line(sell, kBidColor);             // what the system buys at (BID)
+    line(avg, Colors.amberAccent, dots: true, dashed: true);
     final tp = TextPainter(textDirection: TextDirection.ltr);
     for (final (val, yy) in [(hi, 0.0), (lo, size.height - 12)]) {
       tp.text = TextSpan(text: fmtQty(val), style: TextStyle(color: AppColors.t54, fontSize: 10));
