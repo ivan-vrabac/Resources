@@ -11,6 +11,7 @@ import 'profile_screen.dart';
 
 import '../app_colors.dart';
 import '../widgets/popups.dart';
+import '../widgets/price_chart.dart';
 /// The luxury auction: one item at a time, bid with that item's resource (HQ level 10, max 10 of
 /// each item). Bids give luxury points, wins give many more. Tap an item for its bid history.
 class AuctionsScreen extends StatefulWidget {
@@ -297,6 +298,12 @@ class _ItemHistorySheetState extends State<_ItemHistorySheet> {
                   _playerTile((d['lastSale'] as Map).cast<String, dynamic>(), d),
                 ] else
                   Text('Never sold yet.', style: TextStyle(color: AppColors.t54)),
+                if ((d['sales'] as List? ?? const []).isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text('Sale prices (${itemName((d['resID'] as num).toInt())}, up to 365 days)',
+                      style: TextStyle(color: AppColors.t54, fontSize: 12)),
+                  SalesDotsChart(sales: (d['sales'] as List).cast<Map<String, dynamic>>()),
+                ],
                 if ((d['bids'] as List).isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text('Latest bidders', style: TextStyle(color: AppColors.t54, fontSize: 12)),

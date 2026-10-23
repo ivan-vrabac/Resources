@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 import '../constants.dart';
 import '../models/player_provider.dart';
@@ -44,63 +45,93 @@ class _Reel extends StatefulWidget {
   _ReelState createState() => _ReelState();
 }
 
-class _ReelState extends State<_Reel> {
+/// A real reel (owner 2026-10-23): a strip of symbols scrolling down while it spins; on stop it
+/// slows down and lands the result in the middle with a small overshoot.
+class _ReelState extends State<_Reel> with TickerProviderStateMixin {
+  static const double _cell = 56;          // height of one symbol on the strip
+  static const double _spinSpeed = 16;     // symbols per second while spinning
   final _rng = math.Random();
-  int _display = 0;
-  Timer? _timer;
+  late List<int> _strip;
+  double _pos = 0;                         // strip position in symbols (fractional)
+  late final Ticker _ticker;
+  Duration _last = Duration.zero;
+  AnimationController? _stopCtrl;
 
   @override
   void initState() {
     super.initState();
-    _display = widget.finalSymbol;
+    _strip = List.generate(32, (_) => _rng.nextInt(32));
+    _strip[0] = widget.finalSymbol;
+    _ticker = createTicker((elapsed) {
+      final dt = (elapsed - _last).inMicroseconds / 1e6;
+      _last = elapsed;
+      setState(() => _pos += _spinSpeed * dt * (1 + 0.08 * widget.reelIndex));
+    });
   }
 
   @override
   void didUpdateWidget(_Reel old) {
     super.didUpdateWidget(old);
     if (widget.spinning && !old.spinning) {
-      _timer?.cancel();
-      _timer = Timer.periodic(const Duration(milliseconds: 70), (_) {
-        if (mounted) setState(() => _display = _rng.nextInt(32));
-      });
+      _stopCtrl?.stop();
+      _last = Duration.zero;
+      _ticker.start();
     } else if (!widget.spinning && old.spinning) {
-      _timer?.cancel();
-      if (mounted) setState(() => _display = widget.finalSymbol);
+      _ticker.stop();
+      // land the result a few symbols ahead and decelerate onto it
+      final target = _pos.floorToDouble() + 4;
+      _strip[target.toInt() % _strip.length] = widget.finalSymbol;
+      final from = _pos;
+      _stopCtrl?.dispose();
+      _stopCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 520));
+      final curve = CurvedAnimation(parent: _stopCtrl!, curve: Curves.easeOutBack);
+      curve.addListener(() => setState(() => _pos = from + (target - from) * curve.value));
+      _stopCtrl!.forward();
     }
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _ticker.dispose();
+    _stopCtrl?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final isJackpot = _display == 31;
+    final base = _pos.floor();
+    final frac = _pos - base;
+    final center = _strip[((_pos.round()) % _strip.length + _strip.length) % _strip.length];
+    final isJackpot = !widget.spinning && center == 31 && (_stopCtrl?.isCompleted ?? true);
+    const h = 96.0;
     return Container(
       width: 62,
-      height: 78,
+      height: h,
       decoration: BoxDecoration(
-        color: isJackpot
-            ? Colors.amber.withValues(alpha: 0.15)
-            : const Color(0xFF1A1A2E),
-        border: Border.all(
-          color: isJackpot ? Colors.amber : Colors.white24,
-          width: isJackpot ? 1.5 : 1,
-        ),
+        color: isJackpot ? Colors.amber.withValues(alpha: 0.15) : Theme.of(context).colorScheme.surfaceContainerHigh,
+        border: Border.all(color: isJackpot ? Colors.amber : AppColors.fg.withValues(alpha: 0.25),
+            width: isJackpot ? 1.5 : 1),
         borderRadius: BorderRadius.circular(6),
       ),
-      child: Center(
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 55),
-          child: SizedBox(
-            key: ValueKey(_display),
-            width: 50,
-            height: 50,
-            child: _symbolWidget(_display, size: 50),
-          ),
-        ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Stack(children: [
+          for (var r = -2; r <= 2; r++)
+            Positioned(
+              left: 6,
+              // strip moves down: symbol at row r sits r cells below the centre, shifted by the fraction
+              top: h / 2 - 25 + (frac - r) * _cell,
+              child: SizedBox(width: 50, height: 50,
+                  child: _symbolWidget(_strip[((base + r) % _strip.length + _strip.length) % _strip.length], size: 50)),
+            ),
+          // shading top and bottom so it reads as a drum
+          IgnorePointer(child: Container(decoration: BoxDecoration(gradient: LinearGradient(
+            begin: Alignment.topCenter, end: Alignment.bottomCenter,
+            colors: [Colors.black.withValues(alpha: 0.55), Colors.transparent, Colors.transparent,
+                     Colors.black.withValues(alpha: 0.55)],
+            stops: const [0, 0.28, 0.72, 1],
+          )))),
+        ]),
       ),
     );
   }
@@ -248,7 +279,7 @@ class _CasinoScreenState extends State<CasinoScreen> {
 
       // Stop reels one by one
       for (int i = 0; i < 5; i++) {
-        await Future.delayed(Duration(milliseconds: 350 + i * 220));
+        await Future.delayed(Duration(milliseconds: i == 0 ? 700 : 300));
         if (!mounted) return;
         setState(() {
           _reelSymbols[i]  = reels[i];

@@ -39,6 +39,7 @@ MIN_AGE_DAYS = 7
 INCOME_WINDOW_DAYS = 30
 LIMIT_SHARE = 0.5
 MIN_PRINCIPAL = 10_000
+WAREHOUSE_SHARE = 0.2      # part of the warehouse value that counts towards the credit limit
 MIN_TERM, MAX_TERM = 10, 30
 REQUEST_HOURS = 72
 GRACE_DAYS = 30
@@ -247,9 +248,16 @@ def install(api) -> None:
         outstanding = conn.execute(
             "SELECT COALESCE(SUM(principal),0) FROM loans WHERE borrower=? AND status IN ('open','active','overdue') "
             "AND repaid < principal+interest", (hid,)).fetchone()[0]
-        limit = int(LIMIT_SHARE * det["income30d"] * row[3]) if row else 0
+        # economy revamp 2026-10-23: the limit counts the money earned in 30 days AND what the company
+        # holds in its warehouse (at the system price), so producers who keep goods can borrow too
+        wh_value = sum(_prices.get(r[0], 0) * float(r[1] or 0) for r in conn.execute(
+            "SELECT item_id, qty FROM warehouse WHERE hid=? AND qty>0", (hid,)))
+        limit = int((LIMIT_SHARE * det["income30d"] + WAREHOUSE_SHARE * wh_value) * row[3]) if row else 0
         reason = None
-        if det["ageDays"] < MIN_AGE_DAYS:
+        balance = econ.credits_of(conn, hid)
+        if balance < 0:
+            reason = "Your balance is negative. Get back above zero first"
+        elif det["ageDays"] < MIN_AGE_DAYS:
             reason = f"Loans unlock after {MIN_AGE_DAYS} days of play"
         elif det["overdue"]:
             reason = "Repay your overdue loans first"
@@ -290,6 +298,33 @@ def install(api) -> None:
         return {"err": 0, **limits(conn, hid, now), "minTerm": MIN_TERM, "maxTerm": MAX_TERM,
                 "graceDays": GRACE_DAYS, "garnishShare": GARNISH_SHARE, "minPrincipal": MIN_PRINCIPAL,
                 "ladder": [{"rating": n, "minScore": lo, "weeklyRate": r, "risk": RISK[n]} for n, lo, r, _ in LADDER]}
+
+    @api.endpoint("/api/v1/loans/stats", feature="LOANS")
+    def stats(conn, hid, form):
+        """Global loan market figures (anonymous): owner 2026-10-23."""
+        now = econ.utcnow()
+        with econ.tx(conn):
+            maybe_sweep(conn, now)
+        live = conn.execute("SELECT principal, interest, repaid, rating, status FROM loans "
+                            "WHERE status IN ('active','overdue')").fetchall()
+        outstanding = sum(max(0, int(r[0]) + int(r[1]) - int(r[2])) for r in live)
+        funded = [int(r[0]) for r in conn.execute("SELECT principal FROM loans WHERE funded_at IS NOT NULL")]
+        forgiven = conn.execute("SELECT COUNT(*), COALESCE(SUM(principal+interest-repaid),0) FROM loans "
+                                "WHERE status='forgiven'").fetchone()
+        repaid = conn.execute("SELECT COUNT(*) FROM loans WHERE status='repaid'").fetchone()[0]
+        open_req = conn.execute("SELECT COUNT(*), COALESCE(SUM(principal),0) FROM loans WHERE status='open'").fetchone()
+        scores = {n: lo for n, lo, _, _ in LADDER}
+        rated = [scores[r[3]] for r in live if r[3] in scores]
+        avg_score = sum(rated) / len(rated) if rated else None
+        avg_rating = next((n for n, lo, _, _ in LADDER if avg_score is not None and avg_score >= lo), None)
+        srt = sorted(funded)
+        median = (srt[len(srt) // 2] if len(srt) % 2 else (srt[len(srt) // 2 - 1] + srt[len(srt) // 2]) / 2) if srt else 0
+        return {"err": 0, "activeLoans": len(live), "overdue": sum(1 for r in live if r[4] == "overdue"),
+                "outstanding": outstanding, "totalLent": sum(funded), "loansFunded": len(funded),
+                "defaults": int(forgiven[0]), "defaultedAmount": int(forgiven[1]), "repaidLoans": int(repaid),
+                "openRequests": int(open_req[0]), "requested": int(open_req[1]),
+                "averageLoan": round(sum(funded) / len(funded)) if funded else 0, "medianLoan": round(median),
+                "averageRating": avg_rating}
 
     @api.endpoint("/api/v1/loans/list", feature="LOANS")
     def market(conn, hid, form):

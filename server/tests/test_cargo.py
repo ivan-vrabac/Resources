@@ -213,3 +213,24 @@ def test_stack_holds_what_the_same_loose_crates_would():
             assert abs(mix.get(i, 0) - exp) / exp < 0.1, (i, mix.get(i), exp)
     assert any(i in mix for i in cargo.BOX_EXTRA)        # box specials can be in a stack
 
+
+def test_every_collector_gets_the_same_contents():
+    """Owner 2026-10-23: a crate holds the same for everyone (rolled once at the drop)."""
+    dropper, d_sid, _ = new_player("same0", credits=0, wh_level=20)
+    with main.get_db() as conn:
+        with econ.tx(conn):
+            cargo.grant(conn, dropper, 20, "test")
+    call(C + "drop", d_sid, count=20, lat=LAT, lng=LNG)
+    got = []
+    for i in range(2):
+        hid, sid, _ = new_player(f"same{i + 1}", credits=0, wh_level=20)
+        set_building(hid, 65, 10)                      # same Museum level → same visible crates and bonus
+        crates = call(C + "nearby", sid, lat1=LAT - 0.01, lng1=LNG - 0.01, lat2=LAT + 0.01, lng2=LNG + 0.01)["crates"]
+        out = {}
+        for c in crates:
+            r = call(C + "collect", sid, id=c["id"], lat=c["lat"], lng=c["lng"])
+            if r["err"] == 0:
+                out[c["id"]] = (r["itemID"], r["qty"])
+        got.append(out)
+    assert got[0] and got[0] == got[1]
+

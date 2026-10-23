@@ -11,6 +11,7 @@ import '../widgets/top_banner.dart';
 
 import '../app_colors.dart';
 import '../widgets/popups.dart';
+import '../widgets/price_chart.dart';
 /// Market: system trade (sell 100% / buy 150%) and player BUY orders (sell by filling one),
 /// Haulage Firm transport tax included in every price shown.
 class MarketScreen extends StatefulWidget {
@@ -381,12 +382,14 @@ class _MarketItemScreenState extends State<MarketItemScreen> {
                 ),
               if (sysSell == null)
                 Padding(padding: EdgeInsets.only(top: 8),
-                    child: Text('The system does not trade this item — players only.',
+                    child: Text('The system does not trade this item, players only.',
                         style: TextStyle(color: AppColors.t54, fontSize: 12))),
               const SizedBox(height: 12),
               Text('Selling into a buy order is free of tax for you; the buyer paid the transport tax '
                   'when placing the order. Equal prices: the older order is served first.',
                   style: TextStyle(color: AppColors.t38, fontSize: 11)),
+              const SizedBox(height: 16),
+              PriceHistoryChart(itemId: widget.itemId),
             ]),
           );
         },

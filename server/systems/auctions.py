@@ -252,6 +252,10 @@ def sweep(conn, h, now, rng=None) -> list:
     return pushes
 
 
+def now_utc():
+    return econ.utcnow()
+
+
 def install(api) -> None:
     h = api.h
     _prices.update(h.SYSTEM_PRICES)
@@ -318,7 +322,11 @@ def install(api) -> None:
                 "bids": [{"ts": b["ts"], "amount": b["amount"], "player": refs[b["hid"]], "auctionID": b["aid"]}
                          for b in reversed(bids)],
                 "lastSale": {"ts": last["settled_at"], "price": last["top_bid"],
-                             "player": social.public_ref(conn, last["top_hid"])} if last else None}
+                             "player": social.public_ref(conn, last["top_hid"])} if last else None,
+                # owner 2026-10-23: sale prices (resource units) of up to the last 365 days, for a graph
+                "sales": [{"ts": r[0], "price": r[1]} for r in conn.execute(
+                    "SELECT settled_at, top_bid FROM auctions WHERE item_id=? AND status='sold' AND settled_at >= ? "
+                    "ORDER BY settled_at", (item, (now_utc() - datetime.timedelta(days=365)).isoformat()))]}
 
     @api.endpoint("/api/v1/auctions/bid", feature="AUCTIONS")
     def bid(conn, hid, form):

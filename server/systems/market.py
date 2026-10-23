@@ -80,6 +80,13 @@ def init_schema(conn) -> None:
         CREATE INDEX IF NOT EXISTS idx_trades_item_ts ON mkt_trades(item_id, ts);
         CREATE INDEX IF NOT EXISTS idx_trades_buyer ON mkt_trades(buyer_hid, ts);
         CREATE INDEX IF NOT EXISTS idx_trades_seller ON mkt_trades(seller_hid, ts);
+        CREATE TABLE IF NOT EXISTS price_days (
+            day      TEXT NOT NULL,
+            item_id  INTEGER NOT NULL,
+            sys_sell REAL,
+            sys_buy  REAL,
+            PRIMARY KEY (day, item_id)
+        );
     """)
     conn.commit()
 
@@ -254,6 +261,34 @@ def install(api) -> None:
                         "tax": t["tax"] if t["tax_payer"] == hid else 0})
         return {"err": 0, "trades": out}
 
+    @api.endpoint("/api/v1/market/prices", feature="MARKET_V2")
+    def price_history(conn, hid, form):
+        """Daily price history of one item for a graph (owner 2026-10-23): the system's buying price
+        (bottom), its selling price (top) and the average player trade price of each day (volume
+        weighted; days without player trades show the system's buying price). days = 7, 30 or 365."""
+        item_id = int_arg(form, "itemID", None, 1)
+        days = int_arg(form, "days", 30, 1, 365)
+        if days not in (7, 30, 365):
+            days = 30
+        p = prices.get(item_id)
+        today = econ.utcnow().date()
+        start = today - datetime.timedelta(days=days - 1)
+        with econ.tx(conn):
+            record_day_prices(conn, today)
+        snap = {r[0]: (r[1], r[2]) for r in conn.execute(
+            "SELECT day, sys_sell, sys_buy FROM price_days WHERE item_id=? AND day>=?", (item_id, start.isoformat()))}
+        avg = {r[0]: (r[1] / r[2], r[2]) for r in conn.execute(
+            "SELECT substr(ts,1,10), SUM(price*qty), SUM(qty) FROM mkt_trades WHERE kind='player' AND item_id=? "
+            "AND ts>=? GROUP BY substr(ts,1,10)", (item_id, start.isoformat()))}
+        out = []
+        for i in range(days):
+            d = (start + datetime.timedelta(days=i)).isoformat()
+            ss, sb = snap.get(d, (p, round(p * SYSTEM_BUY_MARKUP, 2) if p else None))
+            a, q = avg.get(d, (None, 0))
+            out.append({"day": d, "systemSell": ss, "systemBuy": sb,
+                        "avg": round(a, 2) if a is not None else ss, "traded": int(q)})
+        return {"err": 0, "itemID": item_id, "days": out}
+
     @api.endpoint("/api/v1/market/quote", feature="MARKET_V2")
     def quote(conn, hid, form):
         """Preview of costs/proceeds and tax for any market action (nothing is changed)."""
@@ -412,6 +447,14 @@ def install(api) -> None:
             refund = round(o["escrow"]) if o["side"] == "buy" else o["qty_open"]
             close_order(conn, o, "cancelled")
         return {"err": 0, "side": o["side"], "refunded": refund}
+
+    def record_day_prices(conn, day) -> None:
+        """Snapshot the system prices once per day (so later price changes don't rewrite history)."""
+        iso = day.isoformat()
+        if conn.execute("SELECT 1 FROM price_days WHERE day=? LIMIT 1", (iso,)).fetchone():
+            return
+        conn.executemany("INSERT OR IGNORE INTO price_days(day, item_id, sys_sell, sys_buy) VALUES(?,?,?,?)",
+                         [(iso, i, v, round(v * SYSTEM_BUY_MARKUP, 2)) for i, v in prices.items()])
 
     # sell orders no longer exist (owner's rule): return the items of any still open
     with h.get_db() as conn:

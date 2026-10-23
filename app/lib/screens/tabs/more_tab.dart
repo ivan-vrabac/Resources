@@ -10,6 +10,9 @@ import '../market_screen.dart';
 import '../log_screen.dart';
 
 import '../../app_colors.dart';
+import '../../services/game_api.dart';
+import '../../widgets/popups.dart';
+import '../../constants.dart';
 class MoreTab extends StatefulWidget {
   const MoreTab({super.key});
   @override
@@ -78,7 +81,7 @@ class _MoreTabState extends State<MoreTab> {
                   else
                     Text('Loading rank...', style: TextStyle(color: AppColors.t38, fontSize: 12)),
                   const SizedBox(height: 4),
-                  Row(children: [
+                  InkWell(onTap: () => showWorkingAtmosphere(context), child: Row(mainAxisSize: MainAxisSize.min, children: [
                     Text('WA ', style: TextStyle(color: AppColors.t38, fontSize: 11)),
                     _waColor(player.wa) != null
                         ? Text('${player.wa}%',
@@ -88,7 +91,9 @@ class _MoreTabState extends State<MoreTab> {
                               fontWeight: FontWeight.bold,
                             ))
                         : const SizedBox.shrink(),
-                  ]),
+                    Icon(Icons.info_outline, size: 12, color: AppColors.t38),
+                  ])),
+
                 ])),
                 FilledButton.tonal(
                   onPressed: () => Navigator.of(context).push(
@@ -158,3 +163,52 @@ class _MoreTabState extends State<MoreTab> {
     );
   }
 }
+
+
+/// Working atmosphere: current value, today's accident chance and the latest accidents
+/// (server: /api/v1/incidents). Penalty rules stay a secret; only what happened is shown.
+Future<void> showWorkingAtmosphere(BuildContext context) async {
+  final r = await GameApi.call('/api/v1/incidents', context.read<PlayerProvider>().sid);
+  if (!context.mounted || !r.ok) return;
+  final list = (r.data['incidents'] as List).cast<Map<String, dynamic>>();
+  const names = {'fire': 'Factory fire', 'strike': 'Strike', 'disease': 'Disease at a mine', 'earthquake': 'Earthquake'};
+  await showAppSheet(
+    context: context,
+    isScrollControlled: true,
+    builder: (ctx) => SafeArea(child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Working atmosphere: ${(r.data['wa'] as num).toStringAsFixed(1)}%',
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 6),
+        Text('Chance of an accident today: about ${r.data['chancePerDay']}% per factory. '
+            'Idle factories, accidents and attacks lower the atmosphere; finished quests raise it. '
+            'Accidents cost money, and the Law Firm softens them.',
+            style: TextStyle(fontSize: 12, color: AppColors.t60)),
+        if ((r.data['strikes'] as num? ?? 0) > 0)
+          Padding(padding: const EdgeInsets.only(top: 6),
+              child: Text('${r.data['strikes']} factory(ies) on strike', style: const TextStyle(color: Colors.orangeAccent))),
+        const SizedBox(height: 10),
+        Text('Recent accidents', style: TextStyle(fontSize: 12, color: AppColors.t54)),
+        if (list.isEmpty) const Padding(padding: EdgeInsets.all(8), child: Text('None so far.')),
+        ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.4),
+          child: ListView(shrinkWrap: true, children: [
+            for (final i in list)
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.warning_amber, color: Colors.redAccent, size: 18),
+                title: Text(names[i['kind']] ?? '${i['kind']}'),
+                subtitle: Text((i['ts'] as String).replaceFirst('T', ' ').substring(0, 16)),
+                trailing: (i['penalty'] as num? ?? 0) > 0
+                    ? Text('−ꞓ${fmtNum((i['penalty'] as num).toInt())}', style: const TextStyle(color: Colors.redAccent))
+                    : null,
+              ),
+          ]),
+        ),
+      ]),
+    )),
+  );
+}
+

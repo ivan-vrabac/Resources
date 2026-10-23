@@ -7,6 +7,7 @@ import '../widgets/top_banner.dart';
 
 import '../app_colors.dart';
 import '../widgets/popups.dart';
+import '../constants.dart' show fmtNum;
 /// Loans: your credit rating and limit, open loan requests from other players (lend), and your
 /// borrowing/lending history with repayment.
 class LoansScreen extends StatefulWidget {
@@ -16,7 +17,7 @@ class LoansScreen extends StatefulWidget {
 }
 
 class _LoansScreenState extends State<LoansScreen> {
-  Map<String, dynamic>? _status, _market, _mine;
+  Map<String, dynamic>? _status, _market, _mine, _stats;
   bool _loading = true;
   String? _error;
   bool _busy = false;
@@ -34,6 +35,7 @@ class _LoansScreenState extends State<LoansScreen> {
       GameApi.call('/api/v1/loans/status', _sid),
       GameApi.call('/api/v1/loans/list', _sid),
       GameApi.call('/api/v1/loans/mine', _sid),
+      GameApi.call('/api/v1/loans/stats', _sid),
     ]);
     if (!mounted) return;
     setState(() {
@@ -44,6 +46,7 @@ class _LoansScreenState extends State<LoansScreen> {
         _status = rs[0].data;
         _market = rs[1].data;
         _mine = rs[2].data;
+        _stats = rs[3].data;
       }
     });
   }
@@ -167,16 +170,54 @@ class _LoansScreenState extends State<LoansScreen> {
     await _act('/api/v1/loans/request', {'principal': p, 'termDays': term}, 'Loan request published');
   }
 
+  /// Global, anonymous loan market figures (server: /api/v1/loans/stats).
+  Widget _marketCard() {
+    final st = _stats;
+    if (st == null) return const SizedBox.shrink();
+    Widget cell(String label, String value) => Expanded(child: Column(children: [
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text(label, style: const TextStyle(fontSize: 10), textAlign: TextAlign.center),
+        ]));
+    String c(Object? v) => 'ꞓ${fmtNum((v as num? ?? 0).toInt())}';
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Loan market', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Row(children: [
+            cell('active loans', '${st['activeLoans']}'),
+            cell('outstanding', c(st['outstanding'])),
+            cell('overdue', '${st['overdue']}'),
+          ]),
+          const SizedBox(height: 8),
+          Row(children: [
+            cell('lent in total', c(st['totalLent'])),
+            cell('defaults', '${st['defaults']} (${c(st['defaultedAmount'])})'),
+            cell('repaid', '${st['repaidLoans']}'),
+          ]),
+          const SizedBox(height: 8),
+          Row(children: [
+            cell('average loan', c(st['averageLoan'])),
+            cell('median loan', c(st['medianLoan'])),
+            cell('average rating', '${st['averageRating'] ?? '—'}'),
+          ]),
+        ]),
+      ),
+    );
+  }
+
   Widget _lendTab() {
     final reqs = (_market!['requests'] as List).cast<Map<String, dynamic>>();
     if (reqs.isEmpty) {
       return RefreshIndicator(onRefresh: _load,
-          child: ListView(children: const [Padding(padding: EdgeInsets.all(24),
+          child: ListView(padding: const EdgeInsets.all(8), children: [_marketCard(), const Padding(padding: EdgeInsets.all(24),
               child: Text('No open loan requests right now.', textAlign: TextAlign.center))]));
     }
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(padding: const EdgeInsets.all(8), children: [
+        _marketCard(),
         for (final l in reqs)
           Card(
             child: ListTile(
