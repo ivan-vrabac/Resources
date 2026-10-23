@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../app_colors.dart';
 import '../branding.dart';
 import '../models/player_provider.dart';
 import '../models/tab_config.dart';
@@ -19,52 +20,65 @@ bool kNotifMineDestroyed = true;
 bool kNotifWarehouseFull = true;
 
 // ── App color palette ──────────────────────────────────────────────────────────
-Color  kAppSeedColor  = Branding.themeSeed;
+// owner 2026-10-23: no separate accent; background, text and icon colours (AppColors) + strength
 double kSurfaceTone   = 0.5; // 0.0 = very dark, 1.0 = less dark
-// owner 2026-10-23: stronger looks — own background colour and tint strength, text and icon colours
-Color? kBgColor;              // null = the accent colour
-double kBgStrength    = 0.3;  // how strongly backgrounds and panels take the background colour
-Color? kTextColor;            // null = default (white)
-Color? kIconColor;            // null = default
+double kBgStrength    = 0.3; // how strongly backgrounds and panels take the background colour
 
-ThemeData _buildAppTheme(Color seed, double surfaceTone) {
-  // vibrant variant + the exact chosen colour as primary, and backgrounds tinted with it, so the
-  // choice is clearly visible everywhere (owner 2026-10-20: colours didn't change enough)
+ThemeData _buildAppTheme() {
+  final accent = AppColors.accent, fg = AppColors.fg, bg = AppColors.bg;
   final scheme = ColorScheme.fromSeed(
-      seedColor: seed, brightness: Brightness.dark, dynamicSchemeVariant: DynamicSchemeVariant.vibrant);
-  final base = Color.lerp(const Color(0xFF0A0A0A), const Color(0xFF2D2D3D), surfaceTone)!;
-  final bg = kBgColor ?? seed;
-  final k = kBgStrength;
-  final surface = Color.lerp(base, bg, k * 0.9)!;
-  var theme = ThemeData(
-    colorScheme: scheme.copyWith(
-      primary: seed,
-      surface: surface,
-      onSurface: kTextColor,
-      surfaceContainer: Color.lerp(base, bg, k * 1.2),
-      surfaceContainerHigh: Color.lerp(base, bg, k * 1.5),
-      surfaceContainerHighest: Color.lerp(base, bg, (k * 1.8).clamp(0.0, 1.0)),
-      onSurfaceVariant: kIconColor,
-    ),
-    scaffoldBackgroundColor: Color.lerp(base, bg, k * 0.6),
-    useMaterial3: true,
+      seedColor: accent, brightness: Brightness.dark, dynamicSchemeVariant: DynamicSchemeVariant.vibrant);
+  late final Color scaffold, surface, c1, c2, c3;
+  if (AppColors.isBlack) {
+    // true OLED black: black screens, panels just visible enough to separate
+    scaffold = Colors.black;
+    surface = const Color(0xFF000000);
+    c1 = const Color(0xFF121212);
+    c2 = const Color(0xFF1C1C1C);
+    c3 = const Color(0xFF262626);
+  } else {
+    final base = Color.lerp(const Color(0xFF0A0A0A), const Color(0xFF2D2D3D), kSurfaceTone)!;
+    final k = kBgStrength;
+    scaffold = Color.lerp(base, bg, k * 0.6)!;
+    surface = Color.lerp(base, bg, k * 0.9)!;
+    c1 = Color.lerp(base, bg, (k * 1.2).clamp(0.0, 1.0))!;
+    c2 = Color.lerp(base, bg, (k * 1.5).clamp(0.0, 1.0))!;
+    c3 = Color.lerp(base, bg, (k * 1.8).clamp(0.0, 1.0))!;
+  }
+  // outlines are mixed from the text colour, so panels never melt into the background
+  final outline = Color.lerp(c2, fg, 0.35)!;
+  final cs = scheme.copyWith(
+    primary: accent,
+    onPrimary: accent.computeLuminance() > 0.45 ? Colors.black : Colors.white,
+    secondary: accent,
+    surface: surface,
+    onSurface: fg,
+    onSurfaceVariant: fg.withValues(alpha: 0.75),
+    surfaceContainerLowest: scaffold,
+    surfaceContainerLow: c1,
+    surfaceContainer: c1,
+    surfaceContainerHigh: c2,
+    surfaceContainerHighest: c3,
+    outline: outline,
+    outlineVariant: outline.withValues(alpha: 0.6),
   );
-  if (kTextColor != null) {
-    theme = theme.copyWith(textTheme: theme.textTheme.apply(bodyColor: kTextColor, displayColor: kTextColor));
-  }
-  if (kIconColor != null) {
-    theme = theme.copyWith(
-      iconTheme: theme.iconTheme.copyWith(color: kIconColor),
-      listTileTheme: theme.listTileTheme.copyWith(iconColor: kIconColor),
-      appBarTheme: theme.appBarTheme.copyWith(iconTheme: IconThemeData(color: kIconColor),
-          actionsIconTheme: IconThemeData(color: kIconColor)),
-    );
-  }
-  return theme;
+  final base = ThemeData(colorScheme: cs, useMaterial3: true, scaffoldBackgroundColor: scaffold);
+  return base.copyWith(
+    textTheme: base.textTheme.apply(bodyColor: fg, displayColor: fg),
+    iconTheme: base.iconTheme.copyWith(color: accent),
+    listTileTheme: base.listTileTheme.copyWith(iconColor: accent, textColor: fg),
+    appBarTheme: base.appBarTheme.copyWith(backgroundColor: surface, foregroundColor: fg,
+        iconTheme: IconThemeData(color: accent), actionsIconTheme: IconThemeData(color: accent)),
+    cardTheme: base.cardTheme.copyWith(color: c1, shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12), side: BorderSide(color: outline.withValues(alpha: 0.7)))),
+    bottomSheetTheme: base.bottomSheetTheme.copyWith(backgroundColor: c1, modalBackgroundColor: c1),
+    dialogTheme: base.dialogTheme.copyWith(backgroundColor: c2),
+    dividerColor: outline.withValues(alpha: 0.5),
+    navigationBarTheme: base.navigationBarTheme.copyWith(backgroundColor: surface),
+  );
 }
 
-final appThemeNotifier = ValueNotifier<ThemeData>(
-  _buildAppTheme(Branding.themeSeed, 0.5));
+final appThemeNotifier = ValueNotifier<ThemeData>(_buildAppTheme());
 
 class SettingsScreen extends StatefulWidget {
   final TabConfig config;
@@ -78,13 +92,13 @@ class SettingsScreen extends StatefulWidget {
 
 double kCloudOpacity = 0.55;
 
-const List<Color> kRingPresets = [
-  Colors.teal, Colors.blueAccent, Colors.deepPurple,
+final List<Color> kRingPresets = [
+  AppColors.accent, Colors.blueAccent, Colors.deepPurple,
   Colors.greenAccent, Colors.orange, Colors.redAccent,
 ];
 Color  kDroneRingColor   = Colors.orange;
 double kDroneRingOpacity = 0.50;
-Color  kScanRingColor    = Colors.teal;
+Color  kScanRingColor    = AppColors.accent;
 double kScanRingOpacity  = 0.50;
 Color  kLocalRingColor   = Colors.blueAccent;
 double kLocalRingOpacity = 0.70;
@@ -116,13 +130,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(children: [
         _sectionHeader('Interface'),
         ListTile(
-          leading: const Icon(Icons.tab, color: Colors.teal),
+          leading: Icon(Icons.tab, color: AppColors.accent),
           title: const Text('Bottom bar'),
           subtitle: Text(
             '${widget.config.bottomTabs.length} tab${widget.config.bottomTabs.length == 1 ? '' : 's'} pinned',
-            style: const TextStyle(color: Colors.white38, fontSize: 12),
+            style: TextStyle(color: AppColors.t38, fontSize: 12),
           ),
-          trailing: const Icon(Icons.chevron_right, color: Colors.white38),
+          trailing: Icon(Icons.chevron_right, color: AppColors.t38),
           onTap: () => Navigator.push(context, MaterialPageRoute(
             builder: (_) => _BottomBarSettings(config: widget.config, onSave: widget.onSave),
           )),
@@ -170,16 +184,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _sectionHeader(String title) => Padding(
     padding: const EdgeInsets.only(top: 12, bottom: 4, left: 16),
     child: Text(title.toUpperCase(),
-        style: const TextStyle(fontSize: 10, color: Colors.white38, letterSpacing: 1.1)),
+        style: TextStyle(fontSize: 10, color: AppColors.t38, letterSpacing: 1.1)),
   );
 
   Widget _categoryTile(BuildContext context, IconData icon, String title,
       String subtitle, VoidCallback onTap) {
     return ListTile(
-      leading: Icon(icon, color: Colors.teal),
+      leading: Icon(icon, color: AppColors.accent),
       title: Text(title),
-      subtitle: Text(subtitle, style: const TextStyle(color: Colors.white38, fontSize: 12)),
-      trailing: const Icon(Icons.chevron_right, color: Colors.white38),
+      subtitle: Text(subtitle, style: TextStyle(color: AppColors.t38, fontSize: 12)),
+      trailing: Icon(Icons.chevron_right, color: AppColors.t38),
       onTap: onTap,
     );
   }
@@ -190,7 +204,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 Widget _settingsSectionHeader(String title) => Padding(
   padding: const EdgeInsets.only(top: 12, bottom: 4, left: 16),
   child: Text(title.toUpperCase(),
-      style: const TextStyle(fontSize: 10, color: Colors.white38, letterSpacing: 1.1)),
+      style: TextStyle(fontSize: 10, color: AppColors.t38, letterSpacing: 1.1)),
 );
 
 // ── Reusable color picker ──────────────────────────────────────────────────────
@@ -309,20 +323,20 @@ class _ScanHeatmapPageState extends State<_ScanHeatmapPage> {
             Text(
               '${(_cloudOpacity * 100).round()}%  —  '
               '${_cloudOpacity < 0.3 ? "subtle" : _cloudOpacity < 0.6 ? "medium" : "bright"}',
-              style: const TextStyle(fontSize: 12, color: Colors.tealAccent),
+              style: TextStyle(fontSize: 12, color: AppColors.accent),
             ),
             Row(children: [
-              const Text('10%', style: TextStyle(color: Colors.white38, fontSize: 11)),
+              Text('10%', style: TextStyle(color: AppColors.t38, fontSize: 11)),
               Expanded(
                 child: Slider(
                   value: _cloudOpacity,
                   min: 0.10, max: 0.90, divisions: 16,
-                  activeColor: Colors.teal,
+                  activeColor: AppColors.accent,
                   label: '${(_cloudOpacity * 100).round()}%',
                   onChanged: _setCloudOpacity,
                 ),
               ),
-              const Text('90%', style: TextStyle(color: Colors.white38, fontSize: 11)),
+              Text('90%', style: TextStyle(color: AppColors.t38, fontSize: 11)),
             ]),
           ]),
         ),
@@ -339,12 +353,12 @@ class _ScanHeatmapPageState extends State<_ScanHeatmapPage> {
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
                     color: _heatmapScheme == kHeatmapSchemes[i]
-                        ? Colors.teal.withValues(alpha: 0.20)
+                        ? AppColors.accent.withValues(alpha: 0.20)
                         : Colors.white.withValues(alpha: 0.04),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
                       color: _heatmapScheme == kHeatmapSchemes[i]
-                          ? Colors.tealAccent.withValues(alpha: 0.6)
+                          ? AppColors.accent.withValues(alpha: 0.6)
                           : Colors.white12,
                     ),
                   ),
@@ -359,17 +373,17 @@ class _ScanHeatmapPageState extends State<_ScanHeatmapPage> {
                     const SizedBox(width: 12),
                     Text(kHeatmapSchemeLabels[i], style: TextStyle(
                       fontSize: 13,
-                      color: _heatmapScheme == kHeatmapSchemes[i] ? Colors.tealAccent : Colors.white70,
+                      color: _heatmapScheme == kHeatmapSchemes[i] ? AppColors.accent : AppColors.t70,
                     )),
                     const Spacer(),
                     if (_heatmapScheme == kHeatmapSchemes[i])
-                      const Icon(Icons.check, size: 16, color: Colors.tealAccent),
+                      Icon(Icons.check, size: 16, color: AppColors.accent),
                   ]),
                 ),
               ),
             ],
-            const Text('Updates the current heatmap immediately.',
-                style: TextStyle(fontSize: 11, color: Colors.white38)),
+            Text('Updates the current heatmap immediately.',
+                style: TextStyle(fontSize: 11, color: AppColors.t38)),
           ]),
         ),
       ]),
@@ -430,9 +444,9 @@ class _ScanRingsPageState extends State<_ScanRingsPage> {
       SwitchListTile(
         dense: true,
         title: Text(title, style: const TextStyle(fontSize: 13)),
-        subtitle: Text(subtitle, style: const TextStyle(fontSize: 11, color: Colors.white38)),
+        subtitle: Text(subtitle, style: TextStyle(fontSize: 11, color: AppColors.t38)),
         value: get(),
-        activeColor: Colors.teal,
+        activeColor: AppColors.accent,
         onChanged: (v) async {
           setState(() => set(v));
           final prefs = await SharedPreferences.getInstance();
@@ -449,7 +463,7 @@ class _ScanRingsPageState extends State<_ScanRingsPage> {
           dense: true,
           title: const Text('Show ring labels', style: TextStyle(fontSize: 13)),
           value: _showRingLabels,
-          activeColor: Colors.teal,
+          activeColor: AppColors.accent,
           onChanged: (v) async {
             setState(() => _showRingLabels = v);
             kShowRingLabels = v;
@@ -476,7 +490,7 @@ class _ScanRingsPageState extends State<_ScanRingsPage> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label, style: const TextStyle(fontSize: 12, color: Colors.white70)),
+        Text(label, style: TextStyle(fontSize: 12, color: AppColors.t70)),
         const SizedBox(height: 6),
         _ColorPickerWidget(
           selected: color,
@@ -536,29 +550,29 @@ class _MapAppearancePageState extends State<_MapAppearancePage> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text(
+            Text(
               'Controls the opacity of map UI panels (scan buttons, resource selector, top bar). '
               'At 100% the panels match the bottom navigation bar exactly.',
-              style: TextStyle(fontSize: 12, color: Colors.white54),
+              style: TextStyle(fontSize: 12, color: AppColors.t54),
             ),
             const SizedBox(height: 12),
             Text(
               '${(_panelOpacity * 100).round()}%  —  '
               '${_panelOpacity >= 0.95 ? "opaque (matches nav bar)" : _panelOpacity >= 0.6 ? "semi-transparent" : "very transparent"}',
-              style: const TextStyle(fontSize: 12, color: Colors.tealAccent),
+              style: TextStyle(fontSize: 12, color: AppColors.accent),
             ),
             Row(children: [
-              const Text('20%', style: TextStyle(color: Colors.white38, fontSize: 11)),
+              Text('20%', style: TextStyle(color: AppColors.t38, fontSize: 11)),
               Expanded(
                 child: Slider(
                   value: _panelOpacity,
                   min: 0.20, max: 1.0, divisions: 16,
-                  activeColor: Colors.teal,
+                  activeColor: AppColors.accent,
                   label: '${(_panelOpacity * 100).round()}%',
                   onChanged: _setPanelOpacity,
                 ),
               ),
-              const Text('100%', style: TextStyle(color: Colors.white38, fontSize: 11)),
+              Text('100%', style: TextStyle(color: AppColors.t38, fontSize: 11)),
             ]),
             const SizedBox(height: 8),
             OutlinedButton.icon(
@@ -566,8 +580,8 @@ class _MapAppearancePageState extends State<_MapAppearancePage> {
               icon: const Icon(Icons.refresh, size: 16),
               label: const Text('Reset to default'),
               style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.teal,
-                side: const BorderSide(color: Colors.teal),
+                foregroundColor: AppColors.accent,
+                side: BorderSide(color: AppColors.accent),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               ),
             ),
@@ -610,31 +624,31 @@ class _PerformancePageState extends State<_PerformancePage> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('GPS refresh interval',
-                style: TextStyle(fontSize: 13, color: Colors.white70)),
+            Text('GPS refresh interval',
+                style: TextStyle(fontSize: 13, color: AppColors.t70)),
             const SizedBox(height: 4),
             Text(
               '$_gpsInterval second${_gpsInterval == 1 ? '' : 's'}  —  '
               '${_gpsInterval <= 2 ? "very frequent" : _gpsInterval <= 4 ? "balanced (recommended)" : _gpsInterval <= 9 ? "power saving" : "minimal updates"}',
-              style: const TextStyle(fontSize: 12, color: Colors.tealAccent),
+              style: TextStyle(fontSize: 12, color: AppColors.accent),
             ),
             Row(children: [
-              const Text('1s', style: TextStyle(color: Colors.white38, fontSize: 11)),
+              Text('1s', style: TextStyle(color: AppColors.t38, fontSize: 11)),
               Expanded(
                 child: Slider(
                   value: _gpsInterval.toDouble(),
                   min: 1, max: 10, divisions: 9,
-                  activeColor: Colors.teal,
+                  activeColor: AppColors.accent,
                   label: '${_gpsInterval}s',
                   onChanged: (v) => _setGpsInterval(v.round()),
                 ),
               ),
-              const Text('10s', style: TextStyle(color: Colors.white38, fontSize: 11)),
+              Text('10s', style: TextStyle(color: AppColors.t38, fontSize: 11)),
             ]),
-            const Text(
+            Text(
               'Controls how often the app applies GPS position updates. '
               'Android Fused Location Provider is used for high accuracy.',
-              style: TextStyle(fontSize: 11, color: Colors.white38),
+              style: TextStyle(fontSize: 11, color: AppColors.t38),
             ),
           ]),
         ),
@@ -683,8 +697,8 @@ class _NumbersDisplayPageState extends State<_NumbersDisplayPage> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Decimal places in compact notation',
-                style: TextStyle(fontSize: 13, color: Colors.white70)),
+            Text('Decimal places in compact notation',
+                style: TextStyle(fontSize: 13, color: AppColors.t70)),
             const SizedBox(height: 8),
             Container(
               width: double.infinity,
@@ -695,13 +709,13 @@ class _NumbersDisplayPageState extends State<_NumbersDisplayPage> {
               ),
               child: Text(
                 'e.g. ${_preview(_numDecimals)}',
-                style: const TextStyle(fontSize: 13, color: Colors.tealAccent,
+                style: TextStyle(fontSize: 13, color: AppColors.accent,
                     fontFamily: 'monospace'),
               ),
             ),
             const SizedBox(height: 8),
             Row(children: [
-              const Text('0', style: TextStyle(color: Colors.white38, fontSize: 11)),
+              Text('0', style: TextStyle(color: AppColors.t38, fontSize: 11)),
               Expanded(
                 child: Slider(
                   value: _numDecimals < 0 ? 5 : _numDecimals.toDouble(),
@@ -710,7 +724,7 @@ class _NumbersDisplayPageState extends State<_NumbersDisplayPage> {
                   onChanged: (v) => _setDecimals(v.round() == 5 ? -1 : v.round()),
                 ),
               ),
-              const Text('Full', style: TextStyle(color: Colors.white38, fontSize: 11)),
+              Text('Full', style: TextStyle(color: AppColors.t38, fontSize: 11)),
             ]),
           ]),
         ),
@@ -718,7 +732,7 @@ class _NumbersDisplayPageState extends State<_NumbersDisplayPage> {
         SwitchListTile(
           title: const Text('Invert ASK / BID colours'),
           subtitle: Text(kInvertAskBid ? 'ASK green · BID red' : 'ASK red · BID green',
-              style: const TextStyle(color: Colors.white38, fontSize: 12)),
+              style: TextStyle(color: AppColors.t38, fontSize: 12)),
           value: kInvertAskBid,
           onChanged: (v) async {
             setState(() => kInvertAskBid = v);
@@ -733,11 +747,19 @@ class _NumbersDisplayPageState extends State<_NumbersDisplayPage> {
 
 // ── App Appearance settings page ───────────────────────────────────────────────
 
-const _kSeedPresetColors = [
-  Colors.teal, Colors.cyan, Colors.lightBlue, Colors.blue, Colors.indigo, Colors.deepPurple,
-  Colors.purple, Colors.pink, Colors.red, Color(0xFFB71C1C), Colors.deepOrange, Colors.orange,
-  Colors.amber, Color(0xFFFFD700), Colors.lime, Colors.lightGreen, Colors.green, Color(0xFF1B5E20),
-  Colors.brown, Colors.blueGrey, Color(0xFF9E9E9E),
+
+// backgrounds: black (OLED) first, default grey (blueGrey) among them
+final _kBgPresetColors = <Color>[
+  Colors.black, Color(0xFF424242), Colors.blueGrey, Colors.brown, Colors.indigo, Colors.blue, Colors.lightBlue,
+  Colors.cyan, AppColors.accent, Colors.green, Color(0xFF1B5E20), Colors.lime, Colors.amber, Colors.orange,
+  Colors.deepOrange, Colors.red, Color(0xFFB71C1C), Colors.pink, Colors.purple, Colors.deepPurple,
+];
+
+final _kIconPresetColors = <Color>[
+  AppColors.accent, Colors.cyanAccent, Colors.lightBlueAccent, Colors.blueAccent, Colors.indigoAccent,
+  Colors.deepPurpleAccent, Colors.purpleAccent, Colors.pinkAccent, Colors.redAccent, Colors.deepOrangeAccent,
+  Colors.orangeAccent, Colors.amberAccent, Colors.yellowAccent, Colors.limeAccent, Colors.lightGreenAccent,
+  Colors.greenAccent, Colors.white, Color(0xFFBDBDBD),
 ];
 
 // readable text colours on dark backgrounds
@@ -754,83 +776,64 @@ class _AppAppearancePage extends StatefulWidget {
 }
 
 class _AppAppearancePageState extends State<_AppAppearancePage> {
-  late Color  _seed;
-  late double _tone;
-
-  @override
-  void initState() {
-    super.initState();
-    _seed = kAppSeedColor;
-    _tone = kSurfaceTone;
-  }
-
-  Future<void> _setSeed(Color c) async {
-    setState(() => _seed = c);
-    kAppSeedColor = c;
-    appThemeNotifier.value = _buildAppTheme(c, _tone);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('app_seed_color', c.toARGB32());
-  }
-
-  Future<void> _setTone(double t) async {
-    setState(() => _tone = t);
-    kSurfaceTone = t;
-    appThemeNotifier.value = _buildAppTheme(_seed, t);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble('app_surface_tone', t);
-  }
-
-  /// Background / text / icon colour (null = default) and tint strength, saved and applied at once.
-  Future<void> _setExtra({Color? bg, Color? text, Color? icon, double? strength,
-      bool clearBg = false, bool clearText = false, bool clearIcon = false}) async {
+  Future<void> _apply() async {
+    setState(() {});
+    appThemeNotifier.value = _buildAppTheme();
+    // screens that read AppColors directly repaint now, not only when they are reopened
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      void mark(Element e) { e.markNeedsBuild(); e.visitChildren(mark); }
+      WidgetsBinding.instance.rootElement?.visitChildren(mark);
+    });
     final prefs = await SharedPreferences.getInstance();
     Future<void> put(String key, Color? c) => c == null ? prefs.remove(key) : prefs.setInt(key, c.toARGB32());
-    setState(() {
-      if (bg != null || clearBg) kBgColor = bg;
-      if (text != null || clearText) kTextColor = text;
-      if (icon != null || clearIcon) kIconColor = icon;
-      if (strength != null) kBgStrength = strength;
-    });
-    appThemeNotifier.value = _buildAppTheme(_seed, _tone);
-    await put('app_bg_color', kBgColor);
-    await put('app_text_color', kTextColor);
-    await put('app_icon_color', kIconColor);
+    await put('app_bg_color', AppColors.background);
+    await put('app_text_color', AppColors.text);
+    await put('app_icon_color', AppColors.icon);
     await prefs.setDouble('app_bg_strength', kBgStrength);
+    await prefs.setDouble('app_surface_tone', kSurfaceTone);
   }
 
-  Widget _optionalColor(String title, Color? value, List<Color> presets, String defaultLabel,
-      void Function(Color?) onChanged) {
+  Future<void> _reset() async {
+    AppColors.background = null;
+    AppColors.text = null;
+    AppColors.icon = null;
+    kBgStrength = 0.3;
+    kSurfaceTone = 0.5;
+    await _apply();
+  }
+
+  Widget _swatches(Color current, List<Color> presets, void Function(Color) onTap) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Expanded(child: Text(title, style: const TextStyle(fontSize: 13))),
-          ChoiceChip(label: Text(defaultLabel), selected: value == null, onSelected: (_) => onChanged(null)),
-        ]),
-        const SizedBox(height: 6),
-        Wrap(spacing: 8, runSpacing: 8, children: [
-          for (final c in presets)
-            GestureDetector(
-              onTap: () => onChanged(c),
-              child: Container(
-                width: 32, height: 32,
-                decoration: BoxDecoration(
-                  color: c, shape: BoxShape.circle,
-                  border: Border.all(color: value?.toARGB32() == c.toARGB32() ? Colors.white : Colors.white24,
-                      width: value?.toARGB32() == c.toARGB32() ? 3 : 1),
-                ),
+      child: Wrap(spacing: 8, runSpacing: 8, children: [
+        for (final c in presets)
+          GestureDetector(
+            onTap: () => onTap(c),
+            child: Container(
+              width: 34, height: 34,
+              decoration: BoxDecoration(
+                color: c, shape: BoxShape.circle,
+                border: Border.all(
+                    color: current.toARGB32() == c.toARGB32() ? AppColors.fg : AppColors.fg.withValues(alpha: 0.3),
+                    width: current.toARGB32() == c.toARGB32() ? 3 : 1),
               ),
+              child: current.toARGB32() == c.toARGB32()
+                  ? Icon(Icons.check, size: 18, color: c.computeLuminance() > 0.45 ? Colors.black : Colors.white)
+                  : null,
             ),
-        ]),
+          ),
       ]),
     );
   }
 
-  Future<void> _reset() async {
-    await _setExtra(strength: 0.3, clearBg: true, clearText: true, clearIcon: true);
-    await _setSeed(Branding.themeSeed);
-    await _setTone(0.5);
-  }
+  Widget _slider(String left, String right, double value, double max, ValueChanged<double> onChanged) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(children: [
+          Text(left, style: TextStyle(color: AppColors.t54, fontSize: 11)),
+          Expanded(child: Slider(value: value, min: 0.0, max: max, divisions: 10, onChanged: onChanged)),
+          Text(right, style: TextStyle(color: AppColors.t54, fontSize: 11)),
+        ]),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -838,61 +841,26 @@ class _AppAppearancePageState extends State<_AppAppearancePage> {
     return Scaffold(
       appBar: AppBar(toolbarHeight: 36, title: const Text('App Appearance')),
       body: ListView(children: [
-        _settingsSectionHeader('Primary / Accent Color'),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: _ColorPickerWidget(
-            selected: _seed,
-            presets: _kSeedPresetColors,
-            swatchSize: 36,
-            onChanged: _setSeed,
-          ),
-        ),
-        _settingsSectionHeader('Background & Surface Darkness'),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(
-              _tone < 0.2 ? 'Very dark' : _tone < 0.5 ? 'Dark' : _tone < 0.8 ? 'Balanced' : 'Lighter dark',
-              style: TextStyle(fontSize: 12, color: cs.primary),
-            ),
-            Row(children: [
-              const Text('Darker', style: TextStyle(color: Colors.white38, fontSize: 11)),
-              Expanded(
-                child: Slider(
-                  value: _tone, min: 0.0, max: 1.0, divisions: 10,
-                  activeColor: cs.primary,
-                  onChanged: _setTone,
-                ),
-              ),
-              const Text('Lighter', style: TextStyle(color: Colors.white38, fontSize: 11)),
-            ]),
-            const Text(
-              'Controls app background and panel surface brightness. '
-              'Map panel opacity is in Map Appearance.',
-              style: TextStyle(fontSize: 11, color: Colors.white38),
-            ),
-          ]),
-        ),
         _settingsSectionHeader('Background Colour'),
-        _optionalColor('Colour of backgrounds and panels', kBgColor, _kSeedPresetColors, 'Accent',
-            (c) => _setExtra(bg: c, clearBg: c == null)),
+        _swatches(AppColors.bg, _kBgPresetColors, (c) { AppColors.background = c; _apply(); }),
+        if (!AppColors.isBlack) ...[
+          _slider('Subtle', 'Strong', kBgStrength, 0.6, (v) { kBgStrength = v; _apply(); }),
+          _slider('Darker', 'Lighter', kSurfaceTone, 1.0, (v) { kSurfaceTone = v; _apply(); }),
+        ] else
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text('Black: true black screens (saves battery on OLED displays).',
+                style: TextStyle(fontSize: 11, color: AppColors.t54)),
+          ),
+        _settingsSectionHeader('Text Colour'),
+        _swatches(AppColors.fg, _kTextPresetColors, (c) { AppColors.text = c; _apply(); }),
+        _settingsSectionHeader('Icon & Symbol Colour'),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(children: [
-            const Text('Subtle', style: TextStyle(color: Colors.white38, fontSize: 11)),
-            Expanded(child: Slider(value: kBgStrength, min: 0.0, max: 0.6, divisions: 12,
-                activeColor: cs.primary, onChanged: (v) => _setExtra(strength: v))),
-            const Text('Strong', style: TextStyle(color: Colors.white38, fontSize: 11)),
-          ]),
+          child: Text('Icons, buttons, sliders and highlights.', style: TextStyle(fontSize: 11, color: AppColors.t54)),
         ),
-        _settingsSectionHeader('Text Colour'),
-        _optionalColor('Colour of text', kTextColor, _kTextPresetColors, 'Default',
-            (c) => _setExtra(text: c, clearText: c == null)),
-        _settingsSectionHeader('Icon & Symbol Colour'),
-        _optionalColor('Colour of icons and symbols', kIconColor, _kSeedPresetColors, 'Default',
-            (c) => _setExtra(icon: c, clearIcon: c == null)),
-        const SizedBox(height: 8),
+        _swatches(AppColors.accent, _kIconPresetColors, (c) { AppColors.icon = c; _apply(); }),
+        const SizedBox(height: 12),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: OutlinedButton.icon(
@@ -1020,12 +988,12 @@ class _AppIconPageState extends State<_AppIconPage> {
             secondary: Image.asset(v.asset, width: 40, height: 40,
                 errorBuilder: (_, __, ___) => const Icon(Icons.apps)),
           ),
-        const Padding(
+        Padding(
           padding: EdgeInsets.all(16),
           child: Text(
             'Only icons bundled with this build can be selected. To ship your own icons '
             'or app name, see docs/BRANDING.md.',
-            style: TextStyle(fontSize: 11, color: Colors.white38),
+            style: TextStyle(fontSize: 11, color: AppColors.t38),
           ),
         ),
       ])),
@@ -1066,10 +1034,10 @@ class _NotificationsPageState extends State<_NotificationsPage> {
         SwitchListTile(
           dense: true,
           title: const Text('Enable notifications'),
-          subtitle: const Text('Master on/off for all game alerts',
-              style: TextStyle(fontSize: 11, color: Colors.white38)),
+          subtitle: Text('Master on/off for all game alerts',
+              style: TextStyle(fontSize: 11, color: AppColors.t38)),
           value: _enabled,
-          activeColor: Colors.teal,
+          activeColor: AppColors.accent,
           onChanged: (v) async {
             setState(() { _enabled = v; kNotifEnabled = v; });
             await _set('notif_enabled', v);
@@ -1079,8 +1047,8 @@ class _NotificationsPageState extends State<_NotificationsPage> {
         SwitchListTile(
           dense: true,
           title: const Text('Mine destruction warning'),
-          subtitle: const Text('~24 hours before a mine is destroyed',
-              style: TextStyle(fontSize: 11, color: Colors.white38)),
+          subtitle: Text('~24 hours before a mine is destroyed',
+              style: TextStyle(fontSize: 11, color: AppColors.t38)),
           value: _enabled && _mineWarning,
           activeColor: Colors.orange,
           onChanged: _enabled ? (v) async {
@@ -1091,8 +1059,8 @@ class _NotificationsPageState extends State<_NotificationsPage> {
         SwitchListTile(
           dense: true,
           title: const Text('Mine destroyed'),
-          subtitle: const Text('When a mine reaches 0 condition',
-              style: TextStyle(fontSize: 11, color: Colors.white38)),
+          subtitle: Text('When a mine reaches 0 condition',
+              style: TextStyle(fontSize: 11, color: AppColors.t38)),
           value: _enabled && _mineDestroyed,
           activeColor: Colors.redAccent,
           onChanged: _enabled ? (v) async {
@@ -1103,8 +1071,8 @@ class _NotificationsPageState extends State<_NotificationsPage> {
         SwitchListTile(
           dense: true,
           title: const Text('Warehouse full'),
-          subtitle: const Text('When storage is full and production is being lost',
-              style: TextStyle(fontSize: 11, color: Colors.white38)),
+          subtitle: Text('When storage is full and production is being lost',
+              style: TextStyle(fontSize: 11, color: AppColors.t38)),
           value: _enabled && _whFull,
           activeColor: Colors.amber,
           onChanged: _enabled ? (v) async {
@@ -1119,7 +1087,7 @@ class _NotificationsPageState extends State<_NotificationsPage> {
             'At most one notification per category per 24 hours. '
             'Multiple mine events are combined into a single notification. '
             'Notifications are scheduled locally based on mine conditions at last sync.',
-            style: const TextStyle(fontSize: 11, color: Colors.white38),
+            style: TextStyle(fontSize: 11, color: AppColors.t38),
           ),
         ),
         const SizedBox(height: 16),
@@ -1156,16 +1124,14 @@ Future<void> loadNumDecimalsPrefs() async {
   kNotifMineWarning   = prefs.getBool('notif_mine_warning')   ?? true;
   kNotifMineDestroyed = prefs.getBool('notif_mine_destroyed') ?? true;
   kNotifWarehouseFull = prefs.getBool('notif_wh_full')        ?? true;
-  final seedArgb = prefs.getInt('app_seed_color');
-  if (seedArgb != null) kAppSeedColor = Color(seedArgb);
   kSurfaceTone = (prefs.getDouble('app_surface_tone') ?? 0.5).clamp(0.0, 1.0);
   final bgArgb = prefs.getInt('app_bg_color'), textArgb = prefs.getInt('app_text_color'),
       iconArgb = prefs.getInt('app_icon_color');
-  kBgColor = bgArgb == null ? null : Color(bgArgb);
-  kTextColor = textArgb == null ? null : Color(textArgb);
-  kIconColor = iconArgb == null ? null : Color(iconArgb);
+  AppColors.background = bgArgb == null ? null : Color(bgArgb);
+  AppColors.text = textArgb == null ? null : Color(textArgb);
+  AppColors.icon = iconArgb == null ? null : Color(iconArgb);
   kBgStrength = (prefs.getDouble('app_bg_strength') ?? 0.3).clamp(0.0, 0.6);
-  appThemeNotifier.value = _buildAppTheme(kAppSeedColor, kSurfaceTone);
+  appThemeNotifier.value = _buildAppTheme();
 }
 
 // ── Palette color stops (v = 0-255 grayscale quality byte) ────────────────────
@@ -1302,10 +1268,10 @@ class _BottomBarSettingsState extends State<_BottomBarSettings> {
       body: ListView(padding: const EdgeInsets.all(16), children: [
         _sectionHeader('Pinned tabs (drag to reorder)'),
         if (_bottom.isEmpty)
-          const Padding(
+          Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
             child: Text('No tabs pinned — all appear in More',
-                style: TextStyle(color: Colors.white38)),
+                style: TextStyle(color: AppColors.t38)),
           ),
         ReorderableListView(
           shrinkWrap: true,
@@ -1322,18 +1288,18 @@ class _BottomBarSettingsState extends State<_BottomBarSettings> {
               ListTile(
                 key: ValueKey(id),
                 leading: Icon(tabMeta[id]?.icon ?? Icons.circle_outlined,
-                    color: _kFixed.contains(id) ? Colors.tealAccent : Colors.teal),
+                    color: _kFixed.contains(id) ? AppColors.accent : AppColors.accent),
                 title: Text(tabMeta[id]?.label ?? id.name),
                 subtitle: _kFixed.contains(id)
-                    ? const Text('Required', style: TextStyle(fontSize: 10, color: Colors.tealAccent))
+                    ? Text('Required', style: TextStyle(fontSize: 10, color: AppColors.accent))
                     : null,
                 trailing: _kFixed.contains(id)
                     ? const Icon(Icons.lock_outline, size: 18, color: Colors.white24)
                     : Row(mainAxisSize: MainAxisSize.min, children: [
-                        const Icon(Icons.drag_handle, color: Colors.white38),
+                        Icon(Icons.drag_handle, color: AppColors.t38),
                         IconButton(
-                          icon: const Icon(Icons.arrow_downward, size: 18,
-                              color: Colors.white54),
+                          icon: Icon(Icons.arrow_downward, size: 18,
+                              color: AppColors.t54),
                           tooltip: 'Remove from bar',
                           onPressed: () => _moveToOverflow(id),
                         ),
@@ -1345,10 +1311,10 @@ class _BottomBarSettingsState extends State<_BottomBarSettings> {
         _sectionHeader('More / overflow'),
         ..._overflow.map((id) => ListTile(
           leading: Icon(tabMeta[id]?.icon ?? Icons.circle_outlined,
-              color: Colors.white38),
+              color: AppColors.t38),
           title: Text(tabMeta[id]?.label ?? id.name),
           trailing: IconButton(
-            icon: const Icon(Icons.arrow_upward, size: 18, color: Colors.teal),
+            icon: Icon(Icons.arrow_upward, size: 18, color: AppColors.accent),
             tooltip: 'Pin to bar',
             onPressed: () => _moveToBottom(id),
           ),
@@ -1356,10 +1322,10 @@ class _BottomBarSettingsState extends State<_BottomBarSettings> {
         const SizedBox(height: 8),
         _sectionHeader('Always present'),
         ListTile(
-          leading: const Icon(Icons.menu, color: Colors.white38),
+          leading: Icon(Icons.menu, color: AppColors.t38),
           title: const Text('More'),
-          subtitle: const Text('Profile, settings & overflow',
-              style: TextStyle(color: Colors.white38, fontSize: 11)),
+          subtitle: Text('Profile, settings & overflow',
+              style: TextStyle(color: AppColors.t38, fontSize: 11)),
         ),
         const SizedBox(height: 16),
         Padding(
@@ -1377,6 +1343,6 @@ class _BottomBarSettingsState extends State<_BottomBarSettings> {
   Widget _sectionHeader(String title) => Padding(
     padding: const EdgeInsets.only(top: 8, bottom: 4, left: 4),
     child: Text(title.toUpperCase(),
-        style: const TextStyle(fontSize: 10, color: Colors.white38, letterSpacing: 1.1)),
+        style: TextStyle(fontSize: 10, color: AppColors.t38, letterSpacing: 1.1)),
   );
 }

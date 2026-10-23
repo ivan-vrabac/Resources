@@ -11,6 +11,7 @@ import '../widgets/top_banner.dart';
 import 'dm_screen.dart';
 import 'profile_screen.dart';
 
+import '../app_colors.dart';
 class ChatScreen extends StatefulWidget {
   /// Inside the Social tab (no app bar of its own).
   final bool embedded;
@@ -203,7 +204,6 @@ class _ChatScreenState extends State<ChatScreen> {
   void _openPlayerSheet(String hid, String name, bool isMuted, int unread) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1A1A2E),
       builder: (_) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Padding(
@@ -212,7 +212,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
           ),
           ListTile(
-            leading: const Icon(Icons.query_stats, color: Colors.tealAccent),
+            leading: Icon(Icons.query_stats, color: AppColors.accent),
             title: const Text('View stats', style: TextStyle(color: Colors.white)),
             onTap: () {
               Navigator.pop(context);
@@ -220,7 +220,7 @@ class _ChatScreenState extends State<ChatScreen> {
             },
           ),
           ListTile(
-            leading: const Icon(Icons.mail_outline, color: Colors.tealAccent),
+            leading: Icon(Icons.mail_outline, color: AppColors.accent),
             title: const Text('Private messages', style: TextStyle(color: Colors.white)),
             trailing: unread > 0
                 ? Container(
@@ -242,7 +242,7 @@ class _ChatScreenState extends State<ChatScreen> {
             subtitle: Text(isMuted
                 ? 'Re-enable mention notifications from this player'
                 : 'Suppress mention notifications from this player',
-                style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                style: TextStyle(color: AppColors.t54, fontSize: 11)),
             onTap: () async {
               final newSet = Set<String>.from(_mutedHids);
               isMuted ? newSet.remove(hid) : newSet.add(hid);
@@ -254,8 +254,8 @@ class _ChatScreenState extends State<ChatScreen> {
           ListTile(
             leading: const Icon(Icons.block, color: Colors.red),
             title: const Text('Block', style: TextStyle(color: Colors.white)),
-            subtitle: const Text('Hide all messages from this player (undo in Contacts)',
-                style: TextStyle(color: Colors.white54, fontSize: 11)),
+            subtitle: Text('Hide all messages from this player (undo in Contacts)',
+                style: TextStyle(color: AppColors.t54, fontSize: 11)),
             onTap: () async {
               Navigator.pop(context);
               final r = await GameApi.call('/api/v1/social/contact',
@@ -292,7 +292,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1A1A2E),
       builder: (_) => StatefulBuilder(
         builder: (ctx, setSheet) => SafeArea(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -302,13 +301,13 @@ class _ChatScreenState extends State<ChatScreen> {
                   style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
             ),
             if (allMuted.isEmpty)
-              const Padding(
+              Padding(
                   padding: EdgeInsets.all(16),
-                  child: Text('No muted players', style: TextStyle(color: Colors.white54)))
+                  child: Text('No muted players', style: TextStyle(color: AppColors.t54)))
             else
               ...allMuted.map(((String, String) pair) => ListTile(
                 title: Text(pair.$2, style: const TextStyle(color: Colors.white)),
-                subtitle: Text(pair.$1.substring(0, 8), style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                subtitle: Text(pair.$1.substring(0, 8), style: TextStyle(color: AppColors.t38, fontSize: 10)),
                 trailing: TextButton(
                   onPressed: () async {
                     final newSet = Set<String>.from(_mutedHids)..remove(pair.$1);
@@ -362,7 +361,7 @@ class _ChatScreenState extends State<ChatScreen> {
               child: Row(children: [
                 Icon(Icons.gavel, size: 14, color: cs.primary),
                 const SizedBox(width: 6),
-                Expanded(child: Text(_rules.join(' · '), style: const TextStyle(fontSize: 11, color: Colors.white70))),
+                Expanded(child: Text(_rules.join(' · '), style: TextStyle(fontSize: 11, color: AppColors.t70))),
                 if (widget.embedded && _mutedHids.isNotEmpty)
                   InkWell(onTap: _showMutedList,
                       child: const Icon(Icons.notifications_off, size: 16, color: Colors.orange)),
@@ -373,10 +372,10 @@ class _ChatScreenState extends State<ChatScreen> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
                 : _messages.isEmpty
-                    ? const Center(
+                    ? Center(
                         child: Text('No messages yet.\nBe the first to say something!',
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.white38, fontSize: 14)))
+                            style: TextStyle(color: AppColors.t38, fontSize: 14)))
                     : ListView.builder(
                         controller: _scroll,
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -388,13 +387,13 @@ class _ChatScreenState extends State<ChatScreen> {
           // @ suggestions
           if (_showSuggestions && _filteredSuggestions.isNotEmpty)
             Container(
-              color: const Color(0xFF1A1A2E),
+              color: cs.surfaceContainerHigh,
               constraints: const BoxConstraints(maxHeight: 160),
               child: ListView(
                 shrinkWrap: true,
                 children: _filteredSuggestions.map((name) => ListTile(
                   dense: true,
-                  leading: const Icon(Icons.alternate_email, color: Colors.tealAccent, size: 16),
+                  leading: Icon(Icons.alternate_email, color: AppColors.accent, size: 16),
                   title: Text(name, style: const TextStyle(color: Colors.white, fontSize: 13)),
                   onTap: () => _insertMention(name),
                 )).toList(),
@@ -421,12 +420,12 @@ class _ChatScreenState extends State<ChatScreen> {
                   textCapitalization: TextCapitalization.sentences,
                   decoration: InputDecoration(
                     hintText: 'Type a message… use @ to mention',
-                    hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+                    hintStyle: TextStyle(color: AppColors.t38, fontSize: 13),
                     filled: true,
                     fillColor: cs.surfaceContainerHighest,
                     // show what's left only near the limit, so the bar never jumps
                     counterText: _input.text.length > _maxLen * 0.8 ? '${_maxLen - _input.text.length}' : '',
-                    counterStyle: const TextStyle(fontSize: 10, color: Colors.white38),
+                    counterStyle: TextStyle(fontSize: 10, color: AppColors.t38),
                     border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(20),
                         borderSide: BorderSide.none),
@@ -456,6 +455,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = msg['msg']  as String? ?? '';
     final ts   = msg['ts']   as String? ?? '';
     final isMe = msg['isMe'] == true;
+    final cs = Theme.of(context).colorScheme;
 
     String timeStr = '';
     try {
@@ -474,20 +474,17 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Avatar: the player's HQ picture; tap for the player menu
-            GestureDetector(
-              onTap: isMe ? null : () => _showMuteBlockMenu(msg),
-              child: SizedBox(
-                width: 30, height: 30,
-                child: Image.asset('assets/images/hq_thumb_${((msg['hqLevel'] as num?) ?? 1).toInt().clamp(1, 10)}.png',
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => CircleAvatar(radius: 14,
-                        child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: const TextStyle(fontSize: 11)))),
-              ),
-            ),
-            const SizedBox(width: 8),
             Expanded(
-              child: Column(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  // every message has an outline; yours are highlighted
+                  color: isMe ? cs.primary.withValues(alpha: 0.18) : cs.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: isMe ? cs.primary : cs.outline.withValues(alpha: 0.6),
+                      width: isMe ? 1.5 : 1),
+                ),
+                child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(children: [
@@ -495,7 +492,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       onTap: isMe ? null : () => _showMuteBlockMenu(msg),
                       child: Text(name,
                           style: TextStyle(
-                              color: isMe ? Colors.tealAccent : Colors.white70,
+                              color: isMe ? cs.primary : cs.onSurface.withValues(alpha: 0.8),
                               fontSize: 11,
                               fontWeight: FontWeight.bold)),
                     ),
@@ -506,6 +503,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   const SizedBox(height: 2),
                   _buildRichText(text, context),
                 ],
+              ),
               ),
             ),
           ],
@@ -574,7 +572,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     return RichText(
       text: TextSpan(
-        style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+        style: TextStyle(color: AppColors.t70, fontSize: 13, height: 1.4),
         children: spans,
       ),
     );

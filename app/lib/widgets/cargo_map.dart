@@ -10,6 +10,7 @@ import 'async_view.dart';
 import 'top_banner.dart';
 import '../screens/settings_screen.dart' show kShowMuseumRing;
 
+import '../app_colors.dart';
 /// Holiday crate art: the week (Mon–Sun) containing Christmas, Easter Sunday or Halloween uses
 /// its own crate set; otherwise the regular cargo box / container art.
 String? _holiday(DateTime d) {
@@ -118,7 +119,6 @@ class CargoController extends ChangeNotifier {
     if (crate['stacked'] == true) {
       final pick = await showModalBottomSheet<String>(
         context: context,
-        backgroundColor: const Color(0xFF1A1A2E),
         builder: (_) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
           ListTile(title: Text('Stacked cargo (${fmtNum((crate['count'] as num? ?? 100).toInt())} crates)'),
               subtitle: const Text('Needs one truck per crate (in range, not used up) or one drone per crate (remote, used up).')),
@@ -224,8 +224,8 @@ class CargoController extends ChangeNotifier {
                     style: const TextStyle(fontWeight: FontWeight.bold)),
               ),
             if ((r.data['left'] as num) > 0)
-              Text('${r.data['left']} crates are still waiting — you need more trucks.',
-                  style: const TextStyle(color: Colors.white54, fontSize: 12)),
+              Text('${r.data['left']} crates are still waiting. You need more trucks.',
+                  style: TextStyle(color: AppColors.t54, fontSize: 12)),
           ]),
         ),
         actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
@@ -239,7 +239,6 @@ class CargoController extends ChangeNotifier {
     if (!context.mounted) return;
     await showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1A1A2E),
       isScrollControlled: true,
       builder: (_) => _CargoPanel(controller: this, sid: sid, pos: pos, onDropped: onDropped),
     );
@@ -497,9 +496,9 @@ class _CargoPanelState extends State<_CargoPanel> {
           ]),
           const SizedBox(height: 4),
           Text('Collection range ${c.collectRange.round()} m (Museum level ${c.info['museum'] ?? 0})',
-              style: const TextStyle(color: Colors.white54, fontSize: 12)),
-          const Text('The pick-up ring can be shown in Settings › Scan Rings.',
-              style: TextStyle(color: Colors.white38, fontSize: 11)),
+              style: TextStyle(color: AppColors.t54, fontSize: 12)),
+          Text('The pick-up ring can be shown in Settings › Scan Rings.',
+              style: TextStyle(color: AppColors.t38, fontSize: 11)),
           const Divider(),
           if (stackUnlocked)
             SegmentedButton<bool>(
@@ -512,7 +511,7 @@ class _CargoPanelState extends State<_CargoPanel> {
             )
           else
             Text('Stacked Cargo Rain unlocks at Haulage Firm level ${c.info['stackHaulageLevel'] ?? 5}.',
-                style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                style: TextStyle(color: AppColors.t54, fontSize: 12)),
           if (maxVal >= minVal) ...[
             Slider(
               value: _count.clamp(minVal, maxVal),
@@ -524,9 +523,9 @@ class _CargoPanelState extends State<_CargoPanel> {
                   _count = _stacked ? (v / stackSize).round() * stackSize.toDouble() : v) : null,
             ),
             if (_stacked)
-              const Text('The crates are split into 1–5 stacks. Everyone can see a stack; each collector '
+              Text('The crates are split into 1 to 5 stacks. Everyone can see a stack; each collector '
                   'gets the found objects their Museum level allows.',
-                  style: TextStyle(color: Colors.white54, fontSize: 11)),
+                  style: TextStyle(color: AppColors.t54, fontSize: 11)),
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
@@ -538,10 +537,10 @@ class _CargoPanelState extends State<_CargoPanel> {
               ),
             ),
           ] else
-            const Padding(
+            Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
               child: Text('No Cargo Rain to drop. Earn crates from daily quests and level-ups.',
-                  style: TextStyle(color: Colors.white54)),
+                  style: TextStyle(color: AppColors.t54)),
             ),
         ]),
       ),

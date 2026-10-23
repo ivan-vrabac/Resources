@@ -38,7 +38,7 @@ CHAT_MAX_LEN = 300
 CHAT_RULES = [
     "Respect each other.",
     "Only English is allowed.",
-    "No spam and no links — game talk only.",
+    "No spam and no links, game talk only.",
 ]
 
 
@@ -293,14 +293,22 @@ def install(api) -> None:
 
     @api.endpoint("/api/v1/chat/unread", feature="SOCIAL")
     def chat_unread(conn, hid, form):
-        """Messages after `seen` from other, non-blocked players (capped at 99)."""
+        """Messages after `seen` from other, non-blocked players (capped at 99), how many of them
+        mention you (@your name), and your unread private messages. The Social tab badge shows
+        mentions + private messages (owner 2026-10-23)."""
         seen = int_arg(form, "seen", 0, 0)
         hidden = blocked_by(conn, hid) | {hid}
-        rows = conn.execute("SELECT hid FROM chat_messages WHERE id > ? ORDER BY id DESC LIMIT 500",
+        rows = conn.execute("SELECT hid, msg FROM chat_messages WHERE id > ? ORDER BY id DESC LIMIT 500",
                             (seen,)).fetchall()
-        count = sum(1 for r in rows if r[0] not in hidden)
+        rows = [r for r in rows if r[0] not in hidden]
+        me = conn.execute("SELECT company_name FROM players WHERE hID=?", (hid,)).fetchone()
+        tag = f"@{me[0]}".lower() if me and me[0] else None
+        mentions = sum(1 for r in rows if tag and tag in (r[1] or "").lower())
+        dm = conn.execute("SELECT COUNT(*) FROM private_messages WHERE to_hid=? AND read_at IS NULL",
+                          (hid,)).fetchone()[0]
         latest = conn.execute("SELECT COALESCE(MAX(id),0) FROM chat_messages").fetchone()[0]
-        return {"err": 0, "unread": min(count, 99), "latestId": latest}
+        return {"err": 0, "unread": min(len(rows), 99), "mentions": min(mentions, 99), "dm": min(int(dm), 99),
+                "latestId": latest}
 
     @api.endpoint("/api/v1/chat/send", feature="SOCIAL")
     def chat_send(conn, hid, form):
@@ -314,7 +322,7 @@ def install(api) -> None:
         if last and last[0] == msg:
             raise econ.GameError("duplicate", "You just sent that message")
         if not (chat_limit_burst.allow(hid) and chat_limit_minute.allow(hid)):
-            raise econ.GameError("rate_limited", "Slow down — one message every 2 seconds")
+            raise econ.GameError("rate_limited", "Slow down, you can send one message every 2 seconds")
         name = conn.execute("SELECT company_name FROM players WHERE hID=?", (hid,)).fetchone()[0]
         with econ.tx(conn):
             cur = conn.execute("INSERT INTO chat_messages(hid, name, msg, ts) VALUES(?,?,?,?)",

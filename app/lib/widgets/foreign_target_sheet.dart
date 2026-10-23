@@ -3,6 +3,7 @@ import 'package:latlong2/latlong.dart';
 import '../constants.dart';
 import '../screens/profile_screen.dart';
 
+import '../app_colors.dart';
 /// Sheet for another player's mine or HQ tapped on the map: owner, basic state, profile link.
 /// Later phases add actions here (external repair, attack) through [extraActions].
 class ForeignTargetSheet extends StatelessWidget {
@@ -26,7 +27,7 @@ class ForeignTargetSheet extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            Icon(isHq ? Icons.location_city : Icons.construction, color: Colors.white70),
+            Icon(isHq ? Icons.location_city : Icons.construction, color: AppColors.t70),
             const SizedBox(width: 8),
             Expanded(child: Text(
               isHq ? 'Headquarters (level ${target['lvl']})' : (kMineNames[itemId] ?? 'Mine'),
@@ -37,7 +38,7 @@ class ForeignTargetSheet extends StatelessWidget {
                   color: cond > 60 ? Colors.green : cond > 30 ? Colors.orange : Colors.red)),
           ]),
           const SizedBox(height: 4),
-          Text('Owner: $owner', style: const TextStyle(color: Colors.white70)),
+          Text('Owner: $owner', style: TextStyle(color: AppColors.t70)),
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,

@@ -7,6 +7,7 @@ import '../widgets/async_view.dart';
 import '../widgets/top_banner.dart';
 import 'profile_screen.dart';
 
+import '../app_colors.dart';
 /// Private conversation with one player (by public id). Polls for new messages while open.
 class DmScreen extends StatefulWidget {
   final String pid;
@@ -49,6 +50,7 @@ class _DmScreenState extends State<DmScreen> {
     final r = await GameApi.call('/api/v1/chat/dm/messages', _sid, {'pid': widget.pid});
     if (!mounted) return;
     final grew = r.ok && r.list('messages').length != _msgs.length;
+    if (grew) context.read<PlayerProvider>().pollChatUnread();   // reading clears the Social badge
     setState(() {
       _loading = false;
       if (!quiet) _error = r.ok ? null : r.message;
@@ -97,7 +99,7 @@ class _DmScreenState extends State<DmScreen> {
             error: _error,
             onRetry: _load,
             builder: () => _msgs.isEmpty
-                ? const Center(child: Text('No messages yet — say hello!', style: TextStyle(color: Colors.white54)))
+                ? Center(child: Text('No messages yet — say hello!', style: TextStyle(color: AppColors.t54)))
                 : ListView.builder(
                     controller: _scroll,
                     padding: const EdgeInsets.all(8),
@@ -112,13 +114,13 @@ class _DmScreenState extends State<DmScreen> {
                           margin: const EdgeInsets.symmetric(vertical: 3),
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           decoration: BoxDecoration(
-                            color: me ? Colors.teal.withValues(alpha: 0.35) : Colors.white.withValues(alpha: 0.08),
+                            color: me ? AppColors.accent.withValues(alpha: 0.35) : Colors.white.withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
                             Text(m['msg'] as String),
                             Text((m['ts'] as String).substring(5, 16).replaceFirst('T', ' '),
-                                style: const TextStyle(fontSize: 9, color: Colors.white38)),
+                                style: TextStyle(fontSize: 9, color: AppColors.t38)),
                           ]),
                         ),
                       );
@@ -174,6 +176,7 @@ class _DmThreadsScreenState extends State<DmThreadsScreen> {
     final r = await GameApi.call('/api/v1/chat/dm/threads', context.read<PlayerProvider>().sid);
     if (!mounted) return;
     setState(() { _loading = false; _error = r.ok ? null : r.message; if (r.ok) _threads = r.list('threads'); });
+    context.read<PlayerProvider>().pollChatUnread();
   }
 
   @override
@@ -188,10 +191,10 @@ class _DmThreadsScreenState extends State<DmThreadsScreen> {
         builder: () => RefreshIndicator(
           onRefresh: _load,
           child: _threads.isEmpty
-              ? ListView(children: const [
+              ? ListView(children: [
                   SizedBox(height: 80),
                   Center(child: Text('No conversations yet.\nTap a player in Contacts to message them.',
-                      textAlign: TextAlign.center, style: TextStyle(color: Colors.white54))),
+                      textAlign: TextAlign.center, style: TextStyle(color: AppColors.t54))),
                 ])
               : ListView(children: [
                   for (final t in _threads)

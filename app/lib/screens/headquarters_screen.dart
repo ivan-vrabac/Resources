@@ -13,6 +13,7 @@ import '../widgets/top_banner.dart';
 import '../services/api_service.dart';
 import '../services/game_api.dart';
 
+import '../app_colors.dart';
 const Map<int, Map<int, int>> kHqUpgradeReqs = {
   2:  {2: 750000,  3: 750000,  8: 750000,  20: 750000},
   3:  {7: 1500000, 13: 1500000, 22: 1500000, 24: 1500000},
@@ -104,12 +105,12 @@ class _HeadquartersScreenState extends State<HeadquartersScreen> {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('No HQ placed yet.',
-                    style: TextStyle(color: Colors.white70, fontSize: 14)),
+                Text('No HQ placed yet.',
+                    style: TextStyle(color: AppColors.t70, fontSize: 14)),
                 const SizedBox(height: 8),
-                const Text(
+                Text(
                   'Your HQ is your base of operations. Place it within 500m of your location.',
-                  style: TextStyle(color: Colors.white38, fontSize: 12),
+                  style: TextStyle(color: AppColors.t38, fontSize: 12),
                 ),
                 const SizedBox(height: 16),
                 SizedBox(
@@ -133,11 +134,11 @@ class _HeadquartersScreenState extends State<HeadquartersScreen> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
               child: Row(children: [
-                const Icon(Icons.location_on_outlined, color: Colors.white38, size: 16),
+                Icon(Icons.location_on_outlined, color: AppColors.t38, size: 16),
                 const SizedBox(width: 6),
                 Text(
                   '${hq.lat.toStringAsFixed(4)}, ${hq.lng.toStringAsFixed(4)}',
-                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                  style: TextStyle(color: AppColors.t38, fontSize: 12),
                 ),
                 const Spacer(),
                 TextButton(
@@ -204,7 +205,7 @@ class _HQInfoCard extends StatelessWidget {
               'assets/images/hq_thumb_${hq.level}.png',
               fit: BoxFit.contain,
               errorBuilder: (_, __, ___) =>
-                  const Icon(Icons.location_city, size: 48, color: Colors.teal),
+                  Icon(Icons.location_city, size: 48, color: AppColors.accent),
             ),
           ),
           const SizedBox(width: 16),
@@ -215,25 +216,25 @@ class _HQInfoCard extends StatelessWidget {
               IconButton(
                 tooltip: 'Information',
                 visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.info_outline, color: Colors.white70),
+                icon: Icon(Icons.info_outline, color: AppColors.t70),
                 onPressed: () => showHqInfo(context),
               ),
             ]),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color: Colors.teal.withValues(alpha: 0.2),
+                color: AppColors.accent.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text('Level ${hq.level}',
-                  style: const TextStyle(color: Colors.tealAccent,
+                  style: TextStyle(color: AppColors.accent,
                       fontWeight: FontWeight.bold, fontSize: 13)),
             ),
             const SizedBox(height: 6),
-            Text('Level ${hq.level} headquarters boost their employees\' efficiency — they would love to work '
-                'at the HQ one day — by ${((boostF - 1) * 100).round()}%. Mines within ${boostR} m, where the '
-                'building can be seen, are affected.',
-                style: const TextStyle(color: Colors.white60, fontSize: 12)),
+            Text('Employees of a level ${hq.level} headquarters work ${((boostF - 1) * 100).round()}% harder, '
+                'because they hope to work at the HQ one day. Your mines within ${boostR} m, from where '
+                'the building can be seen, get this boost.',
+                style: TextStyle(color: AppColors.t60, fontSize: 12)),
           ])),
         ]),
       ),
@@ -260,8 +261,8 @@ class _UpgradeCard extends StatelessWidget {
           Text('Upgrade to Level $targetLevel',
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
           const SizedBox(height: 4),
-          const Text('Resources needed to upgrade your HQ',
-              style: TextStyle(color: Colors.white38, fontSize: 11)),
+          Text('Resources needed to upgrade your HQ',
+              style: TextStyle(color: AppColors.t38, fontSize: 11)),
           const SizedBox(height: 12),
           ...reqs.entries.map((e) {
             final id = e.key;
@@ -279,7 +280,7 @@ class _UpgradeCard extends StatelessWidget {
                   SizedBox(width: 20, height: 20,
                     child: imgPath != null
                         ? Image.asset(imgPath, fit: BoxFit.contain)
-                        : const Icon(Icons.inventory_2_outlined, size: 16, color: Colors.white38)),
+                        : Icon(Icons.inventory_2_outlined, size: 16, color: AppColors.t38)),
                   const SizedBox(width: 8),
                   Expanded(child: Text(itemName(id),
                       style: const TextStyle(fontSize: 12))),
@@ -288,7 +289,7 @@ class _UpgradeCard extends StatelessWidget {
                   else
                     Text(
                       '${fmtNum(remaining)} left',
-                      style: const TextStyle(fontSize: 11, color: Colors.white54),
+                      style: TextStyle(fontSize: 11, color: AppColors.t54),
                     ),
                 ]),
                 const SizedBox(height: 3),
@@ -298,14 +299,14 @@ class _UpgradeCard extends StatelessWidget {
                     value: progress,
                     minHeight: 4,
                     backgroundColor: Colors.white12,
-                    color: done ? Colors.greenAccent : Colors.teal,
+                    color: done ? Colors.greenAccent : AppColors.accent,
                   ),
                 ),
                 if (deposited > 0 && !done)
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
                     child: Text('${fmtNum(deposited)} / ${fmtNum(need)} deposited',
-                        style: const TextStyle(fontSize: 10, color: Colors.white38)),
+                        style: TextStyle(fontSize: 10, color: AppColors.t38)),
                   ),
               ]),
             );
@@ -399,7 +400,7 @@ class _DepositDialogState extends State<_DepositDialog> {
       title: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Text('Deposit Resources'),
         Text('Toward Level $targetLevel',
-            style: const TextStyle(fontSize: 12, color: Colors.white38,
+            style: TextStyle(fontSize: 12, color: AppColors.t38,
                 fontWeight: FontWeight.normal)),
       ]),
       content: SingleChildScrollView(
@@ -428,8 +429,8 @@ class _DepositDialogState extends State<_DepositDialog> {
                   SizedBox(width: 20, height: 20,
                     child: imgPath != null
                         ? Image.asset(imgPath, fit: BoxFit.contain)
-                        : const Icon(Icons.inventory_2_outlined, size: 16,
-                            color: Colors.white38)),
+                        : Icon(Icons.inventory_2_outlined, size: 16,
+                            color: AppColors.t38)),
                   const SizedBox(width: 8),
                   Expanded(child: Text(itemName(id),
                       style: const TextStyle(fontSize: 12))),
@@ -437,14 +438,14 @@ class _DepositDialogState extends State<_DepositDialog> {
                       style: TextStyle(
                         fontSize: 11,
                         color: (_amounts[id] ?? 0) >= remaining
-                            ? Colors.greenAccent : Colors.white54,
+                            ? Colors.greenAccent : AppColors.t54,
                       )),
                 ]),
                 if (deposited > 0)
                   Padding(
                     padding: const EdgeInsets.only(left: 28, top: 1),
                     child: Text('${fmtNum(deposited)} already deposited',
-                        style: const TextStyle(fontSize: 10, color: Colors.tealAccent)),
+                        style: TextStyle(fontSize: 10, color: AppColors.accent)),
                   ),
                 if (have < remaining && deposited < need)
                   Padding(
@@ -462,7 +463,7 @@ class _DepositDialogState extends State<_DepositDialog> {
                         ? (v) => setState(() => _amounts[id] = v)
                         : null,
                     activeColor: (_amounts[id] ?? 0) >= remaining
-                        ? Colors.greenAccent : Colors.teal,
+                        ? Colors.greenAccent : AppColors.accent,
                     inactiveColor: Colors.white12,
                   ),
                 ),
@@ -523,12 +524,12 @@ class _BonusLevelCard extends StatelessWidget {
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('HQ Bonus Level $index',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13,
-                    color: unlocked ? Colors.amberAccent : Colors.white54)),
+                    color: unlocked ? Colors.amberAccent : AppColors.t54)),
             const SizedBox(height: 2),
             Text(unlocked
                     ? 'Unlocked with luxury points'
                     : 'Needs ${index * 10000} luxury points (you have $points)',
-                style: TextStyle(color: unlocked ? Colors.white54 : Colors.white24, fontSize: 11)),
+                style: TextStyle(color: unlocked ? AppColors.t54 : Colors.white24, fontSize: 11)),
           ])),
           Icon(unlocked ? Icons.lock_open : Icons.lock_outline,
               color: unlocked ? Colors.amberAccent : Colors.white24, size: 20),
@@ -547,7 +548,7 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
     child: Text(text.toUpperCase(),
-        style: const TextStyle(fontSize: 11, color: Colors.white38, letterSpacing: 1.2)),
+        style: TextStyle(fontSize: 11, color: AppColors.t38, letterSpacing: 1.2)),
   );
 }
 
@@ -726,13 +727,13 @@ class _HQPlaceScreenState extends State<_HQPlaceScreen> {
               ),
             ),
             // Map data attribution (required by the OSM tile usage policy)
-            const Align(
+            Align(
               alignment: Alignment.bottomRight,
               child: IgnorePointer(
                 child: Padding(
                   padding: EdgeInsets.all(4),
                   child: Text('© OpenStreetMap contributors',
-                      style: TextStyle(color: Colors.white54, fontSize: 9)),
+                      style: TextStyle(color: AppColors.t54, fontSize: 9)),
                 ),
               ),
             ),
@@ -818,7 +819,7 @@ class _HQPlaceScreenState extends State<_HQPlaceScreen> {
                     width: boostR * 2 * ppm, height: boostR * 2 * ppm,
                     alignment: Alignment.center,
                     child: CustomPaint(painter: _RangeCirclePainter(
-                      color: Colors.teal, fillOpacity: 0.08, strokeWidth: 1.0)),
+                      color: AppColors.accent, fillOpacity: 0.08, strokeWidth: 1.0)),
                   ),
               ];
               return MarkerLayer(markers: markers);
@@ -883,7 +884,7 @@ class _HQPlaceScreenState extends State<_HQPlaceScreen> {
           ),
 
         if (_selected == null)
-          const Positioned(
+          Positioned(
             top: 12, left: 0, right: 0,
             child: Center(
               child: Material(
@@ -892,7 +893,7 @@ class _HQPlaceScreenState extends State<_HQPlaceScreen> {
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   child: Text('Tap map to place HQ',
-                      style: TextStyle(fontSize: 12, color: Colors.white70)),
+                      style: TextStyle(fontSize: 12, color: AppColors.t70)),
                 ),
               ),
             ),
@@ -918,8 +919,8 @@ class _HQPlaceScreenState extends State<_HQPlaceScreen> {
                     const SizedBox(width: 4),
                     Text(
                       _withinRange
-                          ? '${_distance.toStringAsFixed(0)}m from you — within range'
-                          : '${_distance.toStringAsFixed(0)}m — too far (max 200m)',
+                          ? '${_distance.toStringAsFixed(0)}m from you, within range'
+                          : '${_distance.toStringAsFixed(0)}m, too far (max 200 m)',
                       style: TextStyle(
                         fontSize: 12,
                         color: _withinRange ? Colors.greenAccent : Colors.redAccent,
@@ -940,8 +941,8 @@ class _HQPlaceScreenState extends State<_HQPlaceScreen> {
                     onPressed: canAuto ? _autoPosition : null,
                     icon: const Icon(Icons.auto_fix_high, size: 14),
                     label: const Text('Auto'),
-                    style: OutlinedButton.styleFrom(foregroundColor: Colors.tealAccent,
-                        side: BorderSide(color: canAuto ? Colors.teal : Colors.white24)),
+                    style: OutlinedButton.styleFrom(foregroundColor: AppColors.accent,
+                        side: BorderSide(color: canAuto ? AppColors.accent : Colors.white24)),
                   );
                 })(),
                 const SizedBox(width: 8),
@@ -1182,42 +1183,58 @@ Future<void> showHqInfo(BuildContext context) async {
   await showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    backgroundColor: const Color(0xFF1A1A2E),
     builder: (ctx) => DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.7,
       builder: (_, scroll) => ListView(controller: scroll, padding: const EdgeInsets.all(16), children: [
         const Text('Headquarters', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        Text(r.data['bonusLevels'] as String? ?? '', style: const TextStyle(color: Colors.white60, fontSize: 12)),
+        Text(r.data['bonusLevels'] as String? ?? '', style: TextStyle(color: AppColors.t60, fontSize: 12)),
         const SizedBox(height: 10),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            headingRowHeight: 36,
-            dataRowMinHeight: 32,
-            dataRowMaxHeight: 56,
-            columnSpacing: 18,
-            columns: const [
-              DataColumn(label: Text('Level')),
-              DataColumn(label: Text('Mine boost')),
-              DataColumn(label: Text('Boost range')),
-              DataColumn(label: Text('Needs')),
-            ],
-            rows: [
-              for (final l in levels)
-                DataRow(
-                  color: WidgetStatePropertyAll((l['level'] as num).toInt() == cur ? Colors.teal.withValues(alpha: 0.25) : null),
-                  cells: [
-                    DataCell(Text('${l['level']}')),
-                    for (final e in (l['effects'] as List).cast<Map<String, dynamic>>()) DataCell(Text(e['value'] as String)),
-                    DataCell(Text((l['res'] as Map).entries
-                        .map((e) => '${fmtNum(e.value as num)} ${itemName(int.parse(e.key as String))}').join('\n'),
-                        style: const TextStyle(fontSize: 11, color: Colors.white70))),
-                  ],
+        for (final l in levels) Builder(builder: (_) {
+          final lvl = (l['level'] as num).toInt();
+          final eff = (l['effects'] as List).cast<Map<String, dynamic>>();
+          final res = (l['res'] as Map).entries.toList();
+          final cs = Theme.of(context).colorScheme;
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: lvl == cur ? cs.primary.withValues(alpha: 0.15) : cs.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: lvl == cur ? cs.primary : cs.outline.withValues(alpha: 0.5)),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Text('Level $lvl', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                if (lvl == cur) ...[
+                  const SizedBox(width: 8),
+                  Text('current', style: TextStyle(color: cs.primary, fontSize: 12)),
+                ],
+              ]),
+              const SizedBox(height: 6),
+              for (final e in eff)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Text('${e['label']}: ${e['value']}', style: const TextStyle(fontSize: 13)),
                 ),
-            ],
-          ),
-        ),
+              if (res.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text('Needs to reach this level:', style: TextStyle(fontSize: 12, color: AppColors.t60)),
+                const SizedBox(height: 4),
+                Wrap(spacing: 8, runSpacing: 6, children: [
+                  for (final e in res)
+                    Row(mainAxisSize: MainAxisSize.min, children: [
+                      Image.asset('assets/images_res/res${e.key}.png', width: 18, height: 18,
+                          errorBuilder: (_, __, ___) => const SizedBox(width: 18)),
+                      const SizedBox(width: 4),
+                      Text('${fmtNum(e.value as num)} ${itemName(int.parse(e.key as String))}',
+                          style: const TextStyle(fontSize: 12)),
+                    ]),
+                ]),
+              ],
+            ]),
+          );
+        }),
       ]),
     ),
   );

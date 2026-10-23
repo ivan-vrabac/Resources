@@ -7,6 +7,7 @@ import '../models/player_provider.dart';
 import '../services/api_service.dart';
 import '../widgets/top_banner.dart';
 
+import '../app_colors.dart';
 // ── Symbol definitions ─────────────────────────────────────────────────────────
 // Indices 0-29 → res128-res157, index 30 → res163, index 31 → jackpot
 
@@ -28,7 +29,7 @@ Widget _symbolWidget(int idx, {double size = 52}) {
   return Image.asset('assets/images_res/res${_kCasinoResIds[idx]}.png',
       width: size, height: size, fit: BoxFit.contain,
       errorBuilder: (_, __, ___) =>
-          Icon(Icons.casino, color: Colors.white54, size: size * 0.8));
+          Icon(Icons.casino, color: AppColors.t54, size: size * 0.8));
 }
 
 // ── Single reel widget ─────────────────────────────────────────────────────────
@@ -300,15 +301,15 @@ class _CasinoScreenState extends State<CasinoScreen> {
               fontWeight: FontWeight.bold)),
         ]),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('You hit the jackpot!',
-              style: TextStyle(color: Colors.white70, fontSize: 14)),
+          Text('You hit the jackpot!',
+              style: TextStyle(color: AppColors.t70, fontSize: 14)),
           const SizedBox(height: 12),
           Text('ꞓ${_fmtLarge(amount)}',
               style: const TextStyle(color: Colors.amber, fontSize: 32,
                   fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          const Text('has been added to your account.',
-              style: TextStyle(color: Colors.white54, fontSize: 12)),
+          Text('has been added to your account.',
+              style: TextStyle(color: AppColors.t54, fontSize: 12)),
         ]),
         actions: [
           FilledButton(
@@ -336,7 +337,7 @@ class _CasinoScreenState extends State<CasinoScreen> {
             _batchRow('Three of a Kind',  counts['three_of_a_kind']?? 0, Colors.amberAccent),
             _batchRow('Two Pair',         counts['two_pair']       ?? 0, Colors.yellow),
             _batchRow('One Pair',         counts['one_pair']       ?? 0, Colors.lime),
-            _batchRow('No Pair',          counts['no_pair']        ?? 0, Colors.white38),
+            _batchRow('No Pair',          counts['no_pair']        ?? 0, AppColors.t38),
             const Divider(height: 20),
             _statRow('Total bet',  'ꞓ${_fmtLarge(bet)}',  Colors.redAccent),
             _statRow('Total won',  'ꞓ${_fmtLarge(win)}',  Colors.greenAccent),
@@ -371,7 +372,7 @@ class _CasinoScreenState extends State<CasinoScreen> {
   Widget _statRow(String label, String val, Color col) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 2),
     child: Row(children: [
-      Expanded(child: Text(label, style: const TextStyle(fontSize: 12, color: Colors.white54))),
+      Expanded(child: Text(label, style: TextStyle(fontSize: 12, color: AppColors.t54))),
       Text(val, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: col)),
     ]),
   );
@@ -418,7 +419,7 @@ class _CasinoScreenState extends State<CasinoScreen> {
     final betStep = 1000000;
     final maxBetSteps = (_maxBet / betStep).round();
 
-    Color handColor = Colors.white54;
+    Color handColor = AppColors.t54;
     if (_lastHand != null) {
       handColor = switch (_lastHand!) {
         'jackpot'         => Colors.amber,
@@ -428,7 +429,7 @@ class _CasinoScreenState extends State<CasinoScreen> {
         'three_of_a_kind' => Colors.amberAccent,
         'two_pair'        => Colors.yellow,
         'one_pair'        => Colors.lime,
-        _                 => Colors.white38,
+        _                 => AppColors.t38,
       };
     }
 
@@ -522,9 +523,9 @@ class _CasinoScreenState extends State<CasinoScreen> {
           // ── Payout table ─────────────────────────────────────────────────
           ExpansionTile(
             dense: true,
-            collapsedIconColor: Colors.white38,
+            collapsedIconColor: AppColors.t38,
             iconColor: Colors.amber,
-            title: const Text('Payout Table', style: TextStyle(color: Colors.white54, fontSize: 12)),
+            title: Text('Payout Table', style: TextStyle(color: AppColors.t54, fontSize: 12)),
             children: [
               _payRow('One Pair',        '×3',     Colors.lime),
               _payRow('Two Pair',        '×5',     Colors.yellow),
@@ -541,7 +542,7 @@ class _CasinoScreenState extends State<CasinoScreen> {
           Row(children: [
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
-                Text('Spins left: ', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                Text('Spins left: ', style: TextStyle(color: AppColors.t54, fontSize: 12)),
                 Text('$_spinsLeft',
                     style: TextStyle(
                         color: _spinsLeft > 100 ? Colors.greenAccent
@@ -551,15 +552,15 @@ class _CasinoScreenState extends State<CasinoScreen> {
                 if (_gdPacksUsed > 0) ...[
                   const SizedBox(width: 8),
                   Text('(${4 - _gdPacksUsed} GD left)',
-                      style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                      style: TextStyle(color: AppColors.t38, fontSize: 11)),
                 ],
               ]),
               if (_timeLeftSecs != null && _timeLeftSecs! > 0)
                 Text('Resets in ${_fmtTime(_timeLeftSecs!)}',
-                    style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                    style: TextStyle(color: AppColors.t38, fontSize: 10)),
               if (_timeLeftSecs == null || _timeLeftSecs! <= 0)
-                const Text('Timer starts on first spin',
-                    style: TextStyle(color: Colors.white38, fontSize: 10)),
+                Text('Timer starts on first spin',
+                    style: TextStyle(color: AppColors.t38, fontSize: 10)),
             ])),
             // GD button
             if (canUseDiamond)
@@ -580,7 +581,7 @@ class _CasinoScreenState extends State<CasinoScreen> {
 
           // ── Bet selector ─────────────────────────────────────────────────
           Row(children: [
-            const Text('Bet: ', style: TextStyle(color: Colors.white54, fontSize: 13)),
+            Text('Bet: ', style: TextStyle(color: AppColors.t54, fontSize: 13)),
             Expanded(
               child: Slider(
                 value: (_bet / betStep).clamp(1, maxBetSteps.toDouble()),
@@ -694,8 +695,8 @@ class _CasinoScreenState extends State<CasinoScreen> {
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
     child: Row(children: [
       Expanded(child: Text(name, style: TextStyle(fontSize: 12, color: col))),
-      Text(multiplier, style: const TextStyle(
-          fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white70)),
+      Text(multiplier, style: TextStyle(
+          fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.t70)),
     ]),
   );
 }

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/player_provider.dart';
 import '../services/api_service.dart';
 
+import '../app_colors.dart';
 const _kCategories = [
   ('All', ''),
   ('Mines', 'newmine'),
@@ -133,7 +134,7 @@ class _LogScreenState extends State<LogScreen> {
           child: _loading
               ? const Center(child: CircularProgressIndicator())
               : filtered.isEmpty
-                  ? const Center(child: Text('No log entries', style: TextStyle(color: Colors.white54)))
+                  ? Center(child: Text('No log entries', style: TextStyle(color: AppColors.t54)))
                   : RefreshIndicator(
                       onRefresh: () => _load(offset: _offset),
                       child: ListView.builder(
@@ -150,7 +151,7 @@ class _LogScreenState extends State<LogScreen> {
                             title: Text(_labelForType(type, data)),
                             subtitle: Text(
                               ts.length > 16 ? ts.substring(0, 16).replaceAll('T', ' ') : ts,
-                              style: const TextStyle(fontSize: 10, color: Colors.white38),
+                              style: TextStyle(fontSize: 10, color: AppColors.t38),
                             ),
                           );
                         },
@@ -169,7 +170,7 @@ class _LogScreenState extends State<LogScreen> {
                 child: Text(
                   'Page $currentPage / $totalPages  (${_total} total)',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 12, color: Colors.white54),
+                  style: TextStyle(fontSize: 12, color: AppColors.t54),
                 ),
               ),
               IconButton(
@@ -209,7 +210,7 @@ class _LogScreenState extends State<LogScreen> {
       case 'repair': case 'repairkit': return Colors.orange;
       case 'marketsell': case 'marketbuy': case 'marketsold': return Colors.amber;
       case 'mineupgrade': case 'techupgrade': return Colors.lightBlueAccent;
-      default: return Colors.teal;
+      default: return AppColors.accent;
     }
   }
 

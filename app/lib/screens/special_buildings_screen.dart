@@ -9,6 +9,7 @@ import '../widgets/top_banner.dart';
 import 'casino_screen.dart';
 import 'headquarters_screen.dart';
 
+import '../app_colors.dart';
 // Helper: resolve res map keys/values to int entries
 List<MapEntry<int, int>> _resEntries(dynamic resMap) {
   if (resMap == null) return [];
@@ -89,8 +90,8 @@ class _SpecialBuildingsScreenState extends State<SpecialBuildingsScreen> {
         header: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           const _SectionHeader('Special Buildings'),
           const SizedBox(height: 4),
-          const Text('Tap a building to open it; hold and drag to change the order.',
-              style: TextStyle(color: Colors.white38, fontSize: 12)),
+          Text('Tap a building to open it; hold and drag to change the order.',
+              style: TextStyle(color: AppColors.t38, fontSize: 12)),
           const SizedBox(height: 12),
           // Headquarters is always the first section
           CollapsibleCard(
@@ -163,16 +164,17 @@ class CollapsibleCard extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
             child: Row(children: [
               SizedBox(width: 40, height: 40, child: Image.asset(image, fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => const Icon(Icons.account_balance, size: 30, color: Colors.teal))),
+                  errorBuilder: (_, __, ___) => Icon(Icons.account_balance, size: 30, color: AppColors.accent))),
               const SizedBox(width: 12),
               Expanded(child: Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15))),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(color: Colors.teal.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(6)),
-                child: Text(level, style: const TextStyle(color: Colors.tealAccent, fontSize: 11, fontWeight: FontWeight.bold)),
-              ),
+              if (level.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(color: AppColors.accent.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(6)),
+                  child: Text(level, style: TextStyle(color: AppColors.accent, fontSize: 11, fontWeight: FontWeight.bold)),
+                ),
               if (trailing != null) trailing!,
-              Icon(open ? Icons.expand_less : Icons.expand_more, color: Colors.white54),
+              Icon(open ? Icons.expand_less : Icons.expand_more, color: AppColors.t54),
             ]),
           ),
         ),
@@ -280,12 +282,12 @@ class _SpecialBuildingCardState extends State<_SpecialBuildingCard> {
       final nextR = nextLvl < kTcScanRadius.length  ? kTcScanRadius[nextLvl] : 2250;
       effectWidget = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          const Icon(Icons.radar, size: 14, color: Colors.tealAccent),
+          Icon(Icons.radar, size: 14, color: AppColors.accent),
           const SizedBox(width: 4),
-          const Text('Scan radius: ', style: TextStyle(color: Colors.white54, fontSize: 11)),
-          Text('${curR}m', style: const TextStyle(color: Colors.tealAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+          Text('Scan radius: ', style: TextStyle(color: AppColors.t54, fontSize: 11)),
+          Text('${curR}m', style: TextStyle(color: AppColors.accent, fontSize: 11, fontWeight: FontWeight.bold)),
           if (!_isMaxLevel) ...[
-            const Text(' → ', style: TextStyle(color: Colors.white38, fontSize: 11)),
+            Text(' → ', style: TextStyle(color: AppColors.t38, fontSize: 11)),
             Text('${nextR}m', style: const TextStyle(color: Colors.greenAccent, fontSize: 11, fontWeight: FontWeight.bold)),
           ],
         ]),
@@ -293,10 +295,10 @@ class _SpecialBuildingCardState extends State<_SpecialBuildingCard> {
         Row(children: [
           const Icon(Icons.visibility, size: 14, color: Colors.amberAccent),
           const SizedBox(width: 4),
-          const Text('Quality cap: ', style: TextStyle(color: Colors.white54, fontSize: 11)),
+          Text('Quality cap: ', style: TextStyle(color: AppColors.t54, fontSize: 11)),
           Text('$curQ%', style: const TextStyle(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold)),
           if (!_isMaxLevel) ...[
-            const Text(' → ', style: TextStyle(color: Colors.white38, fontSize: 11)),
+            Text(' → ', style: TextStyle(color: AppColors.t38, fontSize: 11)),
             Text('$nextQ%', style: const TextStyle(color: Colors.greenAccent, fontSize: 11, fontWeight: FontWeight.bold)),
           ],
         ]),
@@ -305,10 +307,10 @@ class _SpecialBuildingCardState extends State<_SpecialBuildingCard> {
       final lvl = widget.currentLevel;
       final range = lvl <= 0 ? 100 : (100.0 + (lvl - 1) * 11.0).clamp(100.0, 200.0).round();
       effectWidget = Row(children: [
-        const Icon(Icons.zoom_out_map, size: 14, color: Colors.tealAccent),
+        Icon(Icons.zoom_out_map, size: 14, color: AppColors.accent),
         const SizedBox(width: 4),
-        const Text('Boss range: ', style: TextStyle(color: Colors.white54, fontSize: 11)),
-        Text('${range}m', style: const TextStyle(color: Colors.tealAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+        Text('Boss range: ', style: TextStyle(color: AppColors.t54, fontSize: 11)),
+        Text('${range}m', style: TextStyle(color: AppColors.accent, fontSize: 11, fontWeight: FontWeight.bold)),
       ]);
     }
 
@@ -317,17 +319,17 @@ class _SpecialBuildingCardState extends State<_SpecialBuildingCard> {
       onToggle: widget.onToggle,
       image: 'assets/images_res/res${kSpecialBuildingImageId[widget.itemId] ?? widget.itemId}.png',
       name: name,
-      level: !_owned ? 'Not built' : _isMaxLevel ? 'Max level' : 'Level ${widget.currentLevel}',
+      level: !_owned ? 'Not built' : _isMaxLevel ? '' : 'Level ${widget.currentLevel}',   // maxed: just the star
       trailing: _isMaxLevel ? const Icon(Icons.star, color: Colors.amber, size: 20) : null,
       body: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Expanded(child: Padding(
               padding: const EdgeInsets.only(top: 10),
-              child: Text(desc, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+              child: Text(desc, style: TextStyle(color: AppColors.t54, fontSize: 12)),
             )),
             IconButton(
               tooltip: 'Information',
-              icon: const Icon(Icons.info_outline, color: Colors.white70),
+              icon: Icon(Icons.info_outline, color: AppColors.t70),
               onPressed: () => showBuildingInfo(context, widget.itemId),
             ),
           ]),
@@ -344,14 +346,14 @@ class _SpecialBuildingCardState extends State<_SpecialBuildingCard> {
               child: LinearProgressIndicator(
                 value: widget.currentLevel / widget.maxLevel,
                 backgroundColor: Colors.white12,
-                color: _isMaxLevel ? Colors.amber : Colors.teal,
+                color: _isMaxLevel ? Colors.amber : AppColors.accent,
                 minHeight: 4,
               ),
             ),
             Padding(
               padding: const EdgeInsets.only(top: 3),
               child: Text('Level ${widget.currentLevel} / ${widget.maxLevel}',
-                  style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                  style: TextStyle(color: AppColors.t38, fontSize: 10)),
             ),
           ],
 
@@ -380,7 +382,7 @@ class _SpecialBuildingCardState extends State<_SpecialBuildingCard> {
             const Divider(height: 1, color: Colors.white12),
             const SizedBox(height: 10),
             Text(_owned ? 'Upgrade cost:' : 'Build cost:',
-                style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                style: TextStyle(color: AppColors.t54, fontSize: 11)),
             const SizedBox(height: 6),
             _CostRow(
               credits: cost['credits'] as int,
@@ -445,10 +447,10 @@ class _CostRow extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: ok ? Colors.teal.withValues(alpha: 0.15) : Colors.red.withValues(alpha: 0.12),
+        color: ok ? AppColors.accent.withValues(alpha: 0.15) : Colors.red.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(
-          color: ok ? Colors.teal.withValues(alpha: 0.4) : Colors.redAccent.withValues(alpha: 0.4),
+          color: ok ? AppColors.accent.withValues(alpha: 0.4) : Colors.redAccent.withValues(alpha: 0.4),
         ),
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -456,10 +458,10 @@ class _CostRow extends StatelessWidget {
           Image.asset('assets/images_res/res$imgId.png', width: 14, height: 14,
               errorBuilder: (_, __, ___) => const SizedBox())
         else if (icon != null)
-          Icon(icon, size: 14, color: ok ? Colors.tealAccent : Colors.redAccent),
+          Icon(icon, size: 14, color: ok ? AppColors.accent : Colors.redAccent),
         const SizedBox(width: 4),
         Text(label, style: TextStyle(
-            fontSize: 11, color: ok ? Colors.white70 : Colors.redAccent)),
+            fontSize: 11, color: ok ? AppColors.t70 : Colors.redAccent)),
       ]),
     );
   }
@@ -472,7 +474,7 @@ class _SectionHeader extends StatelessWidget {
   const _SectionHeader(this.text);
   @override
   Widget build(BuildContext context) => Text(text.toUpperCase(),
-      style: const TextStyle(fontSize: 11, color: Colors.white38, letterSpacing: 1.2));
+      style: TextStyle(fontSize: 11, color: AppColors.t38, letterSpacing: 1.2));
 }
 
 /// Information sheet: what the building gives at every level and what each level costs (from
@@ -495,14 +497,13 @@ Future<void> showBuildingInfo(BuildContext context, int itemId) async {
   await showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    backgroundColor: const Color(0xFF1A1A2E),
     builder: (ctx) => DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.75,
       builder: (_, scroll) => ListView(controller: scroll, padding: const EdgeInsets.all(16), children: [
         Text(b['name'] as String, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         const SizedBox(height: 4),
-        Text(b['desc'] as String? ?? '', style: const TextStyle(color: Colors.white60, fontSize: 12)),
+        Text(b['desc'] as String? ?? '', style: TextStyle(color: AppColors.t60, fontSize: 12)),
         const SizedBox(height: 12),
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
@@ -520,7 +521,7 @@ Future<void> showBuildingInfo(BuildContext context, int itemId) async {
               for (final l in levels)
                 DataRow(
                   color: WidgetStatePropertyAll((l['level'] as num).toInt() == cur
-                      ? Colors.teal.withValues(alpha: 0.25) : null),
+                      ? AppColors.accent.withValues(alpha: 0.25) : null),
                   cells: [
                     DataCell(Text('${l['level']}', style: TextStyle(
                         fontWeight: (l['level'] as num).toInt() == cur ? FontWeight.bold : FontWeight.normal))),
@@ -528,7 +529,7 @@ Future<void> showBuildingInfo(BuildContext context, int itemId) async {
                       DataCell(Text(e['value'] as String, style: const TextStyle(fontSize: 12))),
                     DataCell(Text(['ꞓ${fmtNum(l['credits'] as num)}',
                       for (final res in (l['res'] as Map).entries) '${fmtNum(res.value as num)} ${itemName(int.parse(res.key as String))}',
-                    ].join('\n'), style: const TextStyle(fontSize: 11, color: Colors.white70))),
+                    ].join('\n'), style: TextStyle(fontSize: 11, color: AppColors.t70))),
                   ],
                 ),
             ],

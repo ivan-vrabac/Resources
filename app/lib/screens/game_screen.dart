@@ -27,6 +27,7 @@ import 'placeholder_screen.dart';
 import 'settings_screen.dart';
 import 'login_screen.dart';
 
+import '../app_colors.dart';
 class _TabMeta {
   final String label;
   final IconData icon;
@@ -216,7 +217,6 @@ class _GameScreenState extends State<GameScreen> {
     }
     final meta = tabMeta[GameTabId.stats]!;
     Navigator.push(context, MaterialPageRoute(builder: (_) => Scaffold(
-      backgroundColor: const Color(0xFF0D0D0D),
       appBar: AppBar(title: Text(meta.label), toolbarHeight: 44),
       body: meta.build(),
     )));
@@ -276,7 +276,7 @@ class _GameScreenState extends State<GameScreen> {
                 final label      = isMore ? 'More' : tabMeta[id]!.label;
                 final isChat     = !isMore && id == GameTabId.social;
                 final unread     = isChat ? prov.chatUnread : 0;
-                final hasBadge   = isChat && (prov.chatUnreadMentions > 0 || unread > 0);
+                final hasBadge   = isChat && unread > 0;
 
                 final iconColor = isSelected ? cs.primary : cs.onSurfaceVariant;
                 Widget iconWidget = Icon(icon, size: 22, color: iconColor);
@@ -428,15 +428,15 @@ class _MoreTabState extends State<_MoreTab> {
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   if (_rank != null)
                     Text('Rank #$_rank',
-                        style: const TextStyle(
-                            color: Colors.teal, fontSize: 13,
+                        style: TextStyle(
+                            color: AppColors.accent, fontSize: 13,
                             fontWeight: FontWeight.bold))
                   else
-                    const Text('Loading rank...',
-                        style: TextStyle(color: Colors.white38, fontSize: 12)),
+                    Text('Loading rank...',
+                        style: TextStyle(color: AppColors.t38, fontSize: 12)),
                   const SizedBox(height: 2),
                   Row(children: [
-                    const Text('WA ', style: TextStyle(color: Colors.white38, fontSize: 11)),
+                    Text('WA ', style: TextStyle(color: AppColors.t38, fontSize: 11)),
                     Text('${player.wa}%',
                         style: TextStyle(
                             color: _waColor(player.wa),
@@ -459,9 +459,9 @@ class _MoreTabState extends State<_MoreTab> {
           ...widget.overflowIds.map((id) {
             final meta = tabMeta[id]!;
             return ListTile(
-              leading: Icon(meta.icon, color: Colors.teal),
+              leading: Icon(meta.icon, color: AppColors.accent),
               title: Text(meta.label),
-              trailing: const Icon(Icons.chevron_right, color: Colors.white38),
+              trailing: Icon(Icons.chevron_right, color: AppColors.t38),
               onTap: () {
                 final content = meta.build();
                 Navigator.push(
@@ -469,7 +469,6 @@ class _MoreTabState extends State<_MoreTab> {
                   MaterialPageRoute(
                     builder: (_) => meta.needsScaffold
                         ? Scaffold(
-                            backgroundColor: const Color(0xFF0D0D0D),
                             appBar: AppBar(title: Text(meta.label), toolbarHeight: 44),
                             body: content,
                           )
@@ -484,9 +483,9 @@ class _MoreTabState extends State<_MoreTab> {
 
         _sectionTitle('System'),
         ListTile(
-          leading: const Icon(Icons.settings, color: Colors.teal),
+          leading: Icon(Icons.settings, color: AppColors.accent),
           title: const Text('Settings'),
-          trailing: const Icon(Icons.chevron_right, color: Colors.white38),
+          trailing: Icon(Icons.chevron_right, color: AppColors.t38),
           onTap: widget.onOpenSettings,
         ),
 
@@ -509,7 +508,7 @@ class _MoreTabState extends State<_MoreTab> {
   }
 
   Widget _fallbackAvatar(dynamic player) => CircleAvatar(
-    backgroundColor: Colors.teal, radius: 24,
+    backgroundColor: AppColors.accent, radius: 24,
     child: Text(
       player.name.isNotEmpty ? player.name[0].toUpperCase() : '?',
       style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -519,7 +518,7 @@ class _MoreTabState extends State<_MoreTab> {
   Widget _sectionTitle(String title) => Padding(
     padding: const EdgeInsets.only(left: 4, bottom: 8),
     child: Text(title.toUpperCase(),
-        style: const TextStyle(fontSize: 11, color: Colors.white38, letterSpacing: 1.2)),
+        style: TextStyle(fontSize: 11, color: AppColors.t38, letterSpacing: 1.2)),
   );
 }
 

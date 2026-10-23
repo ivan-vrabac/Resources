@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../app_colors.dart';
 class PlaceholderScreen extends StatelessWidget {
   final String title;
   final IconData icon;
@@ -24,7 +25,7 @@ class PlaceholderScreen extends StatelessWidget {
               style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Text(subtitle,
-              style: const TextStyle(color: Colors.white54, fontSize: 14)),
+              style: TextStyle(color: AppColors.t54, fontSize: 14)),
         ]),
       ),
     );

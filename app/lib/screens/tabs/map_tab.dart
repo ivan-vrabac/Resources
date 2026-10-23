@@ -34,6 +34,7 @@ import '../../widgets/archaeology_map.dart';
 import '../../widgets/combat_actions.dart';
 import 'mines_tab.dart' show TechUpgradeSheet;
 
+import '../../app_colors.dart';
 // ── Heatmap data from server ───────────────────────────────────────────────────
 
 class _HeatmapData {
@@ -1253,7 +1254,6 @@ class _MapTabState extends State<MapTab> {
     if (best == null) return;
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1A1A2E),
       builder: (_) => ForeignTargetSheet(target: best!, onChanged: _loadMarkers, playerPos: _pos),
     );
   }
@@ -1305,7 +1305,6 @@ class _MapTabState extends State<MapTab> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF1A1A2E),
       builder: (_) => _MapMineSheet(
         mine: mine,
         player: player,
@@ -1771,7 +1770,7 @@ class _MapTabState extends State<MapTab> {
               _mapBtnW(
                 CustomPaint(
                   painter: _RadarIconPainter(
-                    color: _showClouds ? Colors.white : Colors.white70),
+                    color: _showClouds ? Colors.white : AppColors.t70),
                 ),
                 () {
                   if (!_showClouds && _heatmapScans.isEmpty) return;
@@ -1790,7 +1789,7 @@ class _MapTabState extends State<MapTab> {
               _mapBtnW(
                 CustomPaint(
                   painter: _HexIconPainter(
-                    color: _showMines ? Colors.white : Colors.white70),
+                    color: _showMines ? Colors.white : AppColors.t70),
                 ),
                 () async {
                   setState(() => _showMines = !_showMines);
@@ -1805,7 +1804,7 @@ class _MapTabState extends State<MapTab> {
                 Image.asset(_showLoot ? 'assets/mapmarkers/showboxes_on.png' : 'assets/mapmarkers/showboxes_off.png',
                     width: 24, height: 24,
                     errorBuilder: (_, __, ___) => Icon(Icons.inventory_2_outlined,
-                        color: _showLoot ? Colors.white : Colors.white70)),
+                        color: _showLoot ? Colors.white : AppColors.t70)),
                 () async {
                   setState(() => _showLoot = !_showLoot);
                   final p = await SharedPreferences.getInstance();
@@ -1895,7 +1894,7 @@ class _MapTabState extends State<MapTab> {
                   child: Container(
                     height: 48,
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    color: selected ? Colors.teal.withValues(alpha: 0.20) : Colors.transparent,
+                    color: selected ? AppColors.accent.withValues(alpha: 0.20) : Colors.transparent,
                     child: Row(
                       children: [
                         Expanded(
@@ -1909,8 +1908,8 @@ class _MapTabState extends State<MapTab> {
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: isLocked
-                                      ? Colors.white38
-                                      : selected ? Colors.tealAccent : Colors.white70,
+                                      ? AppColors.t38
+                                      : selected ? AppColors.accent : AppColors.t70,
                                 ),
                               ),
                               if (isLocked)
@@ -1935,7 +1934,7 @@ class _MapTabState extends State<MapTab> {
                                     .withValues(alpha: isLocked ? 0.08 : 0.15),
                                 borderRadius: BorderRadius.circular(4),
                                 border: selected
-                                    ? Border.all(color: Colors.tealAccent.withValues(alpha: 0.5))
+                                    ? Border.all(color: AppColors.accent.withValues(alpha: 0.5))
                                     : null,
                               ),
                               child: Opacity(
@@ -1955,8 +1954,8 @@ class _MapTabState extends State<MapTab> {
                                     color: Colors.black.withValues(alpha: 0.52),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
-                                  child: const Center(
-                                    child: Icon(Icons.lock, size: 14, color: Colors.white60),
+                                  child: Center(
+                                    child: Icon(Icons.lock, size: 14, color: AppColors.t60),
                                   ),
                                 ),
                               ),
@@ -2010,7 +2009,7 @@ class _MapTabState extends State<MapTab> {
                 ),
                 child: Text(
                   _fmtDist(dist),
-                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                  style: TextStyle(color: AppColors.t70, fontSize: 11),
                 ),
               ),
             ),
@@ -2029,8 +2028,8 @@ class _MapTabState extends State<MapTab> {
                 color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.6),
                 borderRadius: BorderRadius.circular(3),
               ),
-              child: const Text('© OpenStreetMap contributors',
-                  style: TextStyle(color: Colors.white54, fontSize: 9)),
+              child: Text('© OpenStreetMap contributors',
+                  style: TextStyle(color: AppColors.t54, fontSize: 9)),
             ),
           ),
         ),
@@ -2065,12 +2064,12 @@ class _MapTabState extends State<MapTab> {
                       child: Container(
                         height: 26,
                         decoration: BoxDecoration(
-                          color: Colors.teal.withValues(alpha: 0.15),
+                          color: AppColors.accent.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: Colors.tealAccent.withValues(alpha: 0.5)),
+                          border: Border.all(color: AppColors.accent.withValues(alpha: 0.5)),
                         ),
-                        child: const Center(
-                          child: Icon(Icons.location_pin, size: 14, color: Colors.tealAccent),
+                        child: Center(
+                          child: Icon(Icons.location_pin, size: 14, color: AppColors.accent),
                         ),
                       ),
                     ),
@@ -2142,11 +2141,11 @@ class _MapTabState extends State<MapTab> {
                                   : (inDroneRange && !inLocalRange)
                                       ? Icon(Icons.flight,
                                           size: 16,
-                                          color: disabled ? Colors.white38 : Colors.white)
+                                          color: disabled ? AppColors.t38 : Colors.white)
                                       : SizedBox(width: 16, height: 16,
                                           child: CustomPaint(
                                             painter: _RadarIconPainter(
-                                              color: disabled ? Colors.white38 : Colors.white),
+                                              color: disabled ? AppColors.t38 : Colors.white),
                                           )),
                               const SizedBox(width: 6),
                               Text(
@@ -2155,14 +2154,14 @@ class _MapTabState extends State<MapTab> {
                                     : 'Out of range',
                                 style: TextStyle(
                                     fontSize: 12,
-                                    color: disabled ? Colors.white38 : Colors.white),
+                                    color: disabled ? AppColors.t38 : Colors.white),
                               ),
                             ]),
                             if (costLine != null) ...[
                               const SizedBox(height: 2),
                               Text(costLine, style: TextStyle(
                                   fontSize: 10,
-                                  color: disabled ? Colors.white24 : Colors.white70)),
+                                  color: disabled ? Colors.white24 : AppColors.t70)),
                             ],
                           ],
                         ),
@@ -2193,12 +2192,12 @@ class _MapTabState extends State<MapTab> {
                   child: Container(
                     decoration: BoxDecoration(
                       color: _showResourcePicker
-                          ? Colors.teal.withValues(alpha: 0.25)
+                          ? AppColors.accent.withValues(alpha: 0.25)
                           : Colors.white.withValues(alpha: 0.07),
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(
                         color: _showResourcePicker
-                            ? Colors.tealAccent.withValues(alpha: 0.6)
+                            ? AppColors.accent.withValues(alpha: 0.6)
                             : Colors.white12,
                       ),
                     ),
@@ -2211,12 +2210,12 @@ class _MapTabState extends State<MapTab> {
                               ? Image.asset(imgP, width: 24, height: 24, fit: BoxFit.contain)
                               : Icon(Icons.terrain,
                                   size: 22,
-                                  color: _kMineColor[_selectedMineType] ?? Colors.white70);
+                                  color: _kMineColor[_selectedMineType] ?? AppColors.t70);
                         })(),
                         const SizedBox(height: 2),
                         Icon(
                           _showResourcePicker ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
-                          size: 12, color: Colors.white54,
+                          size: 12, color: AppColors.t54,
                         ),
                       ],
                     ),
@@ -2233,7 +2232,7 @@ class _MapTabState extends State<MapTab> {
         Positioned.fill(
           child: Container(
             color: Colors.black,
-            child: const Center(
+            child: Center(
               child: Padding(
                 padding: EdgeInsets.all(32),
                 child: Column(
@@ -2250,7 +2249,7 @@ class _MapTabState extends State<MapTab> {
                     Text(
                       'A GPS emulator or location spoofer has been detected.\n\n'
                       'If you are not cheating, please clear the app cache or reinstall.',
-                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                      style: TextStyle(color: AppColors.t70, fontSize: 13),
                       textAlign: TextAlign.center,
                     ),
                   ],
@@ -2310,13 +2309,13 @@ class _MapTabState extends State<MapTab> {
         content: Column(mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            const Text('Quality: ', style: TextStyle(color: Colors.white54)),
+            Text('Quality: ', style: TextStyle(color: AppColors.t54)),
             Text(fmtQual(quality), style: TextStyle(
                 color: qColor, fontWeight: FontWeight.bold, fontSize: 18)),
           ]),
           const SizedBox(height: 4),
           Row(children: [
-            const Text('Build cost: ', style: TextStyle(color: Colors.white54)),
+            Text('Build cost: ', style: TextStyle(color: AppColors.t54)),
             Text('ꞓ${fmtNum(cost)}', style: const TextStyle(color: Colors.amber)),
           ]),
           const SizedBox(height: 8),
@@ -2350,7 +2349,7 @@ class _MapTabState extends State<MapTab> {
                   const SizedBox(width: 4),
                   Text('1× Scan Drone${hasDrone ? "" : " (missing)"}',
                       style: TextStyle(
-                          color: hasDrone ? Colors.white70 : Colors.redAccent,
+                          color: hasDrone ? AppColors.t70 : Colors.redAccent,
                           fontSize: 11)),
                 ]),
                 const SizedBox(height: 2),
@@ -2365,7 +2364,7 @@ class _MapTabState extends State<MapTab> {
                   const SizedBox(width: 4),
                   Text('1× Giant Diamond${hasDiamond ? "" : " (missing)"}',
                       style: TextStyle(
-                          color: hasDiamond ? Colors.white70 : Colors.redAccent,
+                          color: hasDiamond ? AppColors.t70 : Colors.redAccent,
                           fontSize: 11)),
                 ]),
                 if (drLevel < 10) ...[
@@ -2439,7 +2438,7 @@ class _MapTabState extends State<MapTab> {
         title: const Text('Confirm Remote Build'),
         content: Column(mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(name, style: const TextStyle(color: Colors.white70)),
+          Text(name, style: TextStyle(color: AppColors.t70)),
           const SizedBox(height: 8),
           Row(children: [
             const Icon(Icons.monetization_on_outlined, size: 14, color: Colors.amber),
@@ -2490,8 +2489,8 @@ class _MapTabState extends State<MapTab> {
             ]),
           ),
           const SizedBox(height: 8),
-          const Text('This cannot be undone.',
-              style: TextStyle(color: Colors.white38, fontSize: 11)),
+          Text('This cannot be undone.',
+              style: TextStyle(color: AppColors.t38, fontSize: 11)),
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
@@ -2619,7 +2618,7 @@ class _MapTabState extends State<MapTab> {
         child: Padding(
           padding: const EdgeInsets.all(8),
           child: Icon(icon, size: 20,
-              color: active ? Colors.white : Colors.white70),
+              color: active ? Colors.white : AppColors.t70),
         ),
       ),
     );
@@ -2773,7 +2772,6 @@ class _MapMineSheetState extends State<_MapMineSheet> {
       showModalBottomSheet(
         context: ctx,
         isScrollControlled: true,
-        backgroundColor: const Color(0xFF1A1A2E),
         builder: (_) => TechUpgradeSheet(mine: mine, player: player, onDone: widget.onDone),
       );
     });
@@ -2816,7 +2814,7 @@ class _MapMineSheetState extends State<_MapMineSheet> {
                   _badge('BOSS RANGE', Colors.greenAccent),
                 const SizedBox(width: 8),
                 IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white54),
+                  icon: Icon(Icons.close, color: AppColors.t54),
                   onPressed: () => Navigator.pop(context),
                 ),
               ]),
@@ -2824,10 +2822,10 @@ class _MapMineSheetState extends State<_MapMineSheet> {
               Wrap(spacing: 6, runSpacing: 4, children: [
                 _badge('${mine.conditionPct}%', _condColor),
                 _badge('Q${fmtQual(mine.quality)}', Colors.amber),
-                _badge('Lv ${mine.level}', Colors.white54),
+                _badge('Lv ${mine.level}', AppColors.t54),
                 if (mine.hasTech) _badge('+${mine.techBoostPct}%', Colors.purpleAccent),
                 if (mine.isSick) _badge('SICK', Colors.redAccent),
-                if (mine.hqBoost != null) _badge('HQ×${mine.hqBoost!.toStringAsFixed(1)}', Colors.tealAccent),
+                if (mine.hqBoost != null) _badge('HQ×${mine.hqBoost!.toStringAsFixed(1)}', AppColors.accent),
               ]),
               const SizedBox(height: 8),
               Row(children: [
@@ -2837,7 +2835,7 @@ class _MapMineSheetState extends State<_MapMineSheet> {
                     style: const TextStyle(color: Colors.greenAccent, fontSize: 12)),
                 const SizedBox(width: 16),
                 Text('${mine.lat.toStringAsFixed(5)}, ${mine.lng.toStringAsFixed(5)}',
-                    style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                    style: TextStyle(color: AppColors.t38, fontSize: 11)),
               ]),
               const Divider(height: 20),
               if (_busy)

@@ -29,9 +29,12 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   // ── Unread chat messages (server-counted, excludes blocked players) ──
-  int _chatUnread = 0;
+  // Social badge (owner 2026-10-23): new private messages + chat messages that mention you
+  int _chatUnread = 0;     // mentions of you in global chat since you last saw it
+  int _dmUnread = 0;       // unread private messages
   int _chatSeenId = -1; // -1 = not loaded yet
-  int get chatUnread => _chatUnread;
+  int get chatUnread => _chatUnread + _dmUnread;
+  int get dmUnread => _dmUnread;
 
   Future<void> _loadChatSeen() async {
     if (_chatSeenId >= 0) return;
@@ -44,9 +47,11 @@ class PlayerProvider extends ChangeNotifier {
     await _loadChatSeen();
     final r = await GameApi.call('/api/v1/chat/unread', sid, {'seen': _chatSeenId});
     if (r.ok) {
-      final n = (r.data['unread'] as num? ?? 0).toInt();
-      if (n != _chatUnread) {
+      final n = (r.data['mentions'] as num? ?? 0).toInt();
+      final dm = (r.data['dm'] as num? ?? 0).toInt();
+      if (n != _chatUnread || dm != _dmUnread) {
         _chatUnread = n;
+        _dmUnread = dm;
         notifyListeners();
       }
     }

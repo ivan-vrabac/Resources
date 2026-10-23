@@ -326,7 +326,7 @@ const Map<int, Map<String, dynamic>> kSpecialBuildings = {
   },
   72: {
     'name': 'Law Firm',
-    'desc': 'Reduces the cost of all claims for damages. The higher the level, the lower the indemnities.',
+    'desc': 'Reduces the penalties of incidents: shorter mine diseases, less earthquake damage and shorter factory fires. The higher the level, the smaller the penalties.',
     'maxLevel': 10,
     'costs': [
       {'credits': 500000,     'res': {'59': 200,   '32': 100,   '57': 50}},

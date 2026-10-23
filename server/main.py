@@ -274,7 +274,7 @@ SPECIAL_BUILDINGS = {
     72: {
         "name": "Law Firm",
         "max_level": 10,
-        "desc": "Reduces the cost of all claims for damages. The higher the level, the lower the indemnities.",
+        "desc": "Reduces the penalties of incidents: shorter mine diseases, less earthquake damage and shorter factory fires. The higher the level, the smaller the penalties.",
         "costs": [
             {"credits": 500000,    "res": {59: 200,   32: 100,  57: 50}},
             {"credits": 2000000,   "res": {59: 800,   32: 300,  57: 200}},
@@ -1587,7 +1587,8 @@ def maybe_run_events(conn, hid: str, wa: int):
 
     sick_mines = [m for m in mines if is_sick(m)]
     healthy = [m for m in mines if not is_sick(m)]
-    sick_until_str = (now + datetime.timedelta(days=DISEASE_DURATION_DAYS)).isoformat()
+    law = protection.law_firm_factor(building_level(conn, hid, protection.LAW_FIRM))
+    sick_until_str = (now + datetime.timedelta(days=DISEASE_DURATION_DAYS * law)).isoformat()
     rng = random.Random()
     hospital = building_level(conn, hid, protection.HOSPITAL)
     spread_f = protection.spread_factor(hospital)
@@ -3235,7 +3236,8 @@ async def factory_new_order(request: Request):
         fire_prob *= protection.fire_factor(station)
         if random.random() < fire_prob:
             fire_until = (now + datetime.timedelta(
-                days=FIRE_DURATION_DAYS * protection.fire_duration_factor(station))).isoformat()
+                days=FIRE_DURATION_DAYS * protection.fire_duration_factor(station)
+                * protection.law_firm_factor(building_level(conn, hid, protection.LAW_FIRM)))).isoformat()
             conn.execute("UPDATE factories SET fire_until=? WHERE factory_id=?", (fire_until, fid))
             add_proto(conn, hid, "factoryfire", {"fID": fid, "until": fire_until})
             conn.commit()

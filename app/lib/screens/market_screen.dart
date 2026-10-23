@@ -9,6 +9,7 @@ import '../services/game_api.dart';
 import '../widgets/async_view.dart';
 import '../widgets/top_banner.dart';
 
+import '../app_colors.dart';
 /// Market: system trade (sell 100% / buy 150%) and player BUY orders (sell by filling one),
 /// Haulage Firm transport tax included in every price shown.
 class MarketScreen extends StatefulWidget {
@@ -96,10 +97,10 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                   child: Row(children: [
-                    const Icon(Icons.local_shipping_outlined, size: 14, color: Colors.white54),
+                    Icon(Icons.local_shipping_outlined, size: 14, color: AppColors.t54),
                     const SizedBox(width: 4),
                     Text('Transport tax ${(_taxRate * 100).round()}% (Haulage Firm)',
-                        style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                        style: TextStyle(fontSize: 11, color: AppColors.t54)),
                   ]),
                 ),
                 Padding(
@@ -117,8 +118,8 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
             RefreshIndicator(
               onRefresh: _load,
               child: _orders.isEmpty
-                  ? ListView(children: const [SizedBox(height: 80),
-                      Center(child: Text('No open orders', style: TextStyle(color: Colors.white54)))])
+                  ? ListView(children: [SizedBox(height: 80),
+                      Center(child: Text('No open orders', style: TextStyle(color: AppColors.t54)))])
                   : ListView(children: [
                       for (final o in _orders)
                         ListTile(
@@ -143,8 +144,8 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
             RefreshIndicator(
               onRefresh: _load,
               child: _trades.isEmpty
-                  ? ListView(children: const [SizedBox(height: 80),
-                      Center(child: Text('No trades yet', style: TextStyle(color: Colors.white54)))])
+                  ? ListView(children: [SizedBox(height: 80),
+                      Center(child: Text('No trades yet', style: TextStyle(color: AppColors.t54)))])
                   : ListView(children: [
                       for (final t in _trades)
                         ListTile(
@@ -156,7 +157,7 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
                               '${fmtCredits(t['price'] as num)}/unit'
                               '${(t['tax'] as num? ?? 0) > 0 ? ' · tax ${fmtCredits(t['tax'] as num)}' : ''}'),
                           trailing: Text((t['ts'] as String).substring(5, 16).replaceFirst('T', ' '),
-                              style: const TextStyle(fontSize: 10, color: Colors.white38)),
+                              style: TextStyle(fontSize: 10, color: AppColors.t38)),
                         ),
                     ]),
             ),
@@ -185,7 +186,7 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
         const SizedBox(width: 12),
         quote('BID', bid, kBidColor),
       ]),
-      trailing: Text(fmtQty(e['owned'] as num? ?? 0), style: const TextStyle(color: Colors.white54)),
+      trailing: Text(fmtQty(e['owned'] as num? ?? 0), style: TextStyle(color: AppColors.t54)),
       onTap: () async {
         await Navigator.of(context).push(MaterialPageRoute(builder: (_) => MarketItemScreen(itemId: id)));
         if (mounted) _load();
@@ -318,7 +319,7 @@ class _MarketItemScreenState extends State<MarketItemScreen> {
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text('You have ${fmtNum(owned)} · free space ${fmtNum(space)}'),
                   Text('Credits ${fmtCredits(credits)} · your transport tax ${(tax * 100).round()}%',
-                      style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                      style: TextStyle(color: AppColors.t54, fontSize: 12)),
                 ])),
               ]),
               const SizedBox(height: 12),
@@ -326,14 +327,14 @@ class _MarketItemScreenState extends State<MarketItemScreen> {
                 _wideButton(Icons.add_shopping_cart, 'Place buy order', () => _orderDialog(), filled: true)
               else
                 Card(
-                  color: Colors.teal.withValues(alpha: 0.12),
+                  color: AppColors.accent.withValues(alpha: 0.12),
                   child: Padding(
                     padding: const EdgeInsets.all(10),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text('Your buy order: ${fmtNum((mine['qty'] as num).toInt())} @ ${fmtCredits(mine['price'] as num)}',
                           style: const TextStyle(fontWeight: FontWeight.bold)),
                       Text('Held: ${fmtCredits(mine['escrow'] as num)} incl. tax',
-                          style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                          style: TextStyle(color: AppColors.t54, fontSize: 12)),
                       const SizedBox(height: 6),
                       Row(children: [
                         Expanded(child: _wideButton(Icons.edit, 'Edit', () => _orderDialog(mine: mine))),
@@ -344,7 +345,7 @@ class _MarketItemScreenState extends State<MarketItemScreen> {
                   ),
                 ),
               const SizedBox(height: 16),
-              const Text('Order book', style: TextStyle(color: Colors.white54, fontSize: 12)),
+              Text('Order book', style: TextStyle(color: AppColors.t54, fontSize: 12)),
               const SizedBox(height: 4),
               if (sysBuy != null)
                 _bookRow(
@@ -356,13 +357,13 @@ class _MarketItemScreenState extends State<MarketItemScreen> {
                         {'side': 'buy', 'itemID': widget.itemId, 'qty': q, 'rid': _rid()})),
                 ),
               if (bids.isEmpty)
-                const Padding(padding: EdgeInsets.all(10),
-                    child: Text('No player buy orders yet.', style: TextStyle(color: Colors.white38))),
+                Padding(padding: EdgeInsets.all(10),
+                    child: Text('No player buy orders yet.', style: TextStyle(color: AppColors.t38))),
               for (final o in bids)
                 _bookRow(
                   label: o['isMe'] == true ? 'You' : (o['name'] as String? ?? 'Player'),
                   price: o['price'] as num, qtyText: fmtNum((o['qty'] as num).toInt()),
-                  color: o['isMe'] == true ? Colors.tealAccent : Colors.white,
+                  color: o['isMe'] == true ? AppColors.accent : Colors.white,
                   action: o['isMe'] == true ? null : 'Sell',
                   onTap: owned <= 0 ? null : () => _qtyTrade(
                     title: 'Sell to ${o['name'] ?? 'player'}', price: o['price'] as num, selling: true,
@@ -378,13 +379,13 @@ class _MarketItemScreenState extends State<MarketItemScreen> {
                         {'side': 'sell', 'itemID': widget.itemId, 'qty': q, 'rid': _rid()})),
                 ),
               if (sysSell == null)
-                const Padding(padding: EdgeInsets.only(top: 8),
+                Padding(padding: EdgeInsets.only(top: 8),
                     child: Text('The system does not trade this item — players only.',
-                        style: TextStyle(color: Colors.white54, fontSize: 12))),
+                        style: TextStyle(color: AppColors.t54, fontSize: 12))),
               const SizedBox(height: 12),
-              const Text('Selling into a buy order is free of tax for you; the buyer paid the transport tax '
+              Text('Selling into a buy order is free of tax for you; the buyer paid the transport tax '
                   'when placing the order. Equal prices: the older order is served first.',
-                  style: TextStyle(color: Colors.white38, fontSize: 11)),
+                  style: TextStyle(color: AppColors.t38, fontSize: 11)),
             ]),
           );
         },
@@ -415,7 +416,7 @@ class _MarketItemScreenState extends State<MarketItemScreen> {
             child: Text(fmtCredits(price), style: const TextStyle(fontWeight: FontWeight.bold)))),
         const SizedBox(width: 8),
         Expanded(flex: 3, child: FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerRight,
-            child: Text(qtyText, style: const TextStyle(color: Colors.white70)))),
+            child: Text(qtyText, style: TextStyle(color: AppColors.t70)))),
         const SizedBox(width: 8),
         SizedBox(
           width: 64,
@@ -484,11 +485,11 @@ class _QtyDialogState extends State<_QtyDialog> {
           const SizedBox(height: 10),
           if (tax > 0)
             Row(children: [
-              const Expanded(child: Text('Transport tax', style: TextStyle(color: Colors.white70))),
+              Expanded(child: Text('Transport tax', style: TextStyle(color: AppColors.t70))),
               Text(fmtCredits(tax)),
             ]),
           Row(children: [
-            Expanded(child: Text(widget.selling ? 'You receive' : 'You pay', style: const TextStyle(color: Colors.white70))),
+            Expanded(child: Text(widget.selling ? 'You receive' : 'You pay', style: TextStyle(color: AppColors.t70))),
             Text(fmtCredits(total), style: const TextStyle(fontWeight: FontWeight.bold)),
           ]),
         ],
@@ -589,9 +590,9 @@ class _OrderDialogState extends State<_OrderDialog> {
           _line('Transport tax', fmtCredits(tax)),
           _line('Held now', fmtCredits(value + tax), bold: true),
           const SizedBox(height: 6),
-          const Text('Credits are held until players sell to you. Unfilled quantity is refunded on cancel '
+          Text('Credits are held until players sell to you. Unfilled quantity is refunded on cancel '
               'or after 2 days. Editing the price puts the order behind older ones at the same price.',
-              style: TextStyle(fontSize: 11, color: Colors.white54)),
+              style: TextStyle(fontSize: 11, color: AppColors.t54)),
         ]),
       ),
       actions: [
@@ -607,7 +608,7 @@ class _OrderDialogState extends State<_OrderDialog> {
   Widget _line(String k, String v, {bool bold = false}) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 1),
         child: Row(children: [
-          Expanded(child: Text(k, style: const TextStyle(color: Colors.white70))),
+          Expanded(child: Text(k, style: TextStyle(color: AppColors.t70))),
           Text(v, style: TextStyle(fontWeight: bold ? FontWeight.bold : FontWeight.normal)),
         ]),
       );

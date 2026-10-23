@@ -76,11 +76,12 @@ def plan_quake(day: str) -> dict:
             "magnitude": mag, "radius_km": radius_km, "peak": round(10 + 60 * s ** 1.2, 1)}
 
 
-def quake_damage(q, dist_m, seismo_level=0) -> float:
+def quake_damage(q, dist_m, seismo_level=0, law_level=0) -> float:
     r = q["radius_km"] * 1000
     if dist_m > r:
         return 0.0
-    return round(min(70.0, q["peak"] * (1 - dist_m / r) ** 1.5) * protection.quake_factor(seismo_level), 2)
+    return round(min(70.0, q["peak"] * (1 - dist_m / r) ** 1.5) * protection.quake_factor(seismo_level)
+                 * protection.law_firm_factor(law_level), 2)
 
 
 def init_schema(conn) -> None:
@@ -300,6 +301,7 @@ def run_quake(conn, h, now, day=None) -> dict | None:
         if conn.execute("SELECT status FROM earthquakes WHERE day=?", (day,)).fetchone()[0] == "done":
             return None
         seismo = {o: h.building_level(conn, o, protection.SEISMOLOGY) for o in owners}
+        law = {o: h.building_level(conn, o, protection.LAW_FIRM) for o in owners}
         updates, total, mx, below, damaged_owners = [], 0.0, 0.0, 0, set()
         # re-read after settling (one query); mines destroyed while settling are simply gone
         now_rows = conn.execute("SELECT mine_id, owner_hid, lat, lng, condition FROM mines WHERE lat BETWEEN ? AND ? "
@@ -308,7 +310,7 @@ def run_quake(conn, h, now, day=None) -> dict | None:
         for m in now_rows:
             if m["mine_id"] not in hit_ids:
                 continue
-            dmg = quake_damage(q, econ.dist_m(q["lat"], q["lng"], m["lat"], m["lng"]), seismo[m["owner_hid"]])
+            dmg = quake_damage(q, econ.dist_m(q["lat"], q["lng"], m["lat"], m["lng"]), seismo[m["owner_hid"]], law[m["owner_hid"]])
             if dmg < QUAKE_MIN_DMG:
                 continue
             cond = float(m["condition"])

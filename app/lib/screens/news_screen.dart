@@ -10,6 +10,7 @@ import '../widgets/async_view.dart';
 import '../widgets/top_banner.dart';
 import 'profile_screen.dart';
 
+import '../app_colors.dart';
 /// Server-generated news (real game events), with category filter, paging, earthquake
 /// reports with an epicenter map, and the player's anonymity setting.
 class NewsScreen extends StatefulWidget {
@@ -132,18 +133,18 @@ class _NewsScreenState extends State<NewsScreen> {
             item != null
                 ? ItemIcon(item, size: 36)
                 : Icon(_icons[n['category']] ?? Icons.newspaper, size: 32,
-                    color: quake ? Colors.orangeAccent : Colors.white70),
+                    color: quake ? Colors.orangeAccent : AppColors.t70),
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(n['title'] as String, style: const TextStyle(fontWeight: FontWeight.bold)),
                 if ((n['body'] as String).isNotEmpty)
                   Padding(padding: const EdgeInsets.only(top: 4), child: Text(n['body'] as String,
-                      style: const TextStyle(color: Colors.white70, fontSize: 13))),
+                      style: TextStyle(color: AppColors.t70, fontSize: 13))),
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text('${_ago(n['ts'] as String)}${item != null && kItemNames[item] != null ? ' · ${kItemNames[item]}' : ''}',
-                      style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                      style: TextStyle(color: AppColors.t38, fontSize: 11)),
                 ),
               ]),
             ),
@@ -160,7 +161,6 @@ class _NewsScreenState extends State<NewsScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF1A1A2E),
       builder: (_) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           SizedBox(
@@ -200,8 +200,8 @@ class _NewsScreenState extends State<NewsScreen> {
                 Text('${d['below_20']} mines fell below 20% condition and need repair to survive.',
                     style: const TextStyle(color: Colors.orangeAccent)),
               const SizedBox(height: 8),
-              const Text('A Seismology Centre reduces earthquake damage to your mines.',
-                  style: TextStyle(color: Colors.white54, fontSize: 12)),
+              Text('A Seismology Centre reduces earthquake damage to your mines.',
+                  style: TextStyle(color: AppColors.t54, fontSize: 12)),
             ]),
           ),
         ]),

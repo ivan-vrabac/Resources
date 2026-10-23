@@ -76,3 +76,20 @@ def test_private_messages_threads_read_and_block():
     call("/api/v1/social/contact", b_sid, pid=a_pid, kind="blacklist")
     assert call("/api/v1/chat/dm/send", a_sid, pid=b_pid, msg="again")["code"] == "blocked"
     assert call("/api/v1/chat/dm/send", a_sid, pid=a_pid, msg="me")["code"] == "bad_input"
+
+
+def test_social_badge_counts_mentions_and_private_messages():
+    a_hid, a_sid, a_name = new_player("bdga")
+    b_hid, b_sid, b_name = new_player("bdgb")
+    seen = call("/api/v1/chat/unread", a_sid)["latestId"]
+    call("/api/v1/chat/send", b_sid, msg="hello everyone")
+    import time; time.sleep(2.1)
+    call("/api/v1/chat/send", b_sid, msg=f"hey @{a_name} look")
+    a_pid = call("/api/v1/social/profile", a_sid)["profile"]["pid"]
+    call("/api/v1/chat/dm/send", b_sid, pid=a_pid, msg="private hi")
+    r = call("/api/v1/chat/unread", a_sid, seen=seen)
+    assert r["unread"] == 2 and r["mentions"] == 1 and r["dm"] == 1
+    b_pid = call("/api/v1/social/profile", b_sid)["profile"]["pid"]
+    call("/api/v1/chat/dm/messages", a_sid, pid=b_pid)          # reading clears it
+    assert call("/api/v1/chat/unread", a_sid, seen=r["latestId"])["dm"] == 0
+

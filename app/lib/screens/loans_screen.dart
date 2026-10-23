@@ -5,6 +5,7 @@ import '../services/game_api.dart';
 import '../widgets/async_view.dart';
 import '../widgets/top_banner.dart';
 
+import '../app_colors.dart';
 /// Loans: your credit rating and limit, open loan requests from other players (lend), and your
 /// borrowing/lending history with repayment.
 class LoansScreen extends StatefulWidget {
@@ -91,7 +92,7 @@ class _LoansScreenState extends State<LoansScreen> {
               Text(s['rating'] as String, style: const TextStyle(fontSize: 36, fontWeight: FontWeight.bold)),
               const SizedBox(width: 16),
               Expanded(child: Text('Risk: ${s['risk']}\nScore ${s['score']} / 100',
-                  style: const TextStyle(color: Colors.white70))),
+                  style: TextStyle(color: AppColors.t70))),
             ]),
           ),
         ),
@@ -109,13 +110,13 @@ class _LoansScreenState extends State<LoansScreen> {
           )
         else
           Card(child: Padding(padding: const EdgeInsets.all(12), child: Text(s['reason'] as String? ?? ''))),
-        const Padding(
+        Padding(
           padding: EdgeInsets.only(top: 12),
           child: Text('Your rating comes from the money you earned in the last 30 days, how long you have '
               'played and how you repaid earlier loans. If a loan is not repaid by its due date, your rating '
               'drops to D and for 30 days the game takes 50% of your mining output, factory output and sales '
               'to pay the lender. After those 30 days the rest is forgiven, but your rating stays reset to D.',
-              style: TextStyle(color: Colors.white54, fontSize: 12)),
+              style: TextStyle(color: AppColors.t54, fontSize: 12)),
         ),
       ]),
     );
@@ -219,7 +220,7 @@ class _LoansScreenState extends State<LoansScreen> {
           'forgiven' => Colors.red,
           'repaid' => Colors.green,
           'active' => Colors.lightBlueAccent,
-          _ => Colors.white54,
+          _ => AppColors.t54,
         };
     Widget tile(Map<String, dynamic> x, bool borrowed) {
       final open = x['status'] == 'open';
@@ -245,10 +246,10 @@ class _LoansScreenState extends State<LoansScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(padding: const EdgeInsets.all(8), children: [
-        const Padding(padding: EdgeInsets.all(8), child: Text('Borrowed', style: TextStyle(color: Colors.white54))),
+        Padding(padding: EdgeInsets.all(8), child: Text('Borrowed', style: TextStyle(color: AppColors.t54))),
         if (b.isEmpty) const Padding(padding: EdgeInsets.all(8), child: Text('No loans yet.')),
         for (final x in b) tile(x, true),
-        const Padding(padding: EdgeInsets.all(8), child: Text('Lent', style: TextStyle(color: Colors.white54))),
+        Padding(padding: EdgeInsets.all(8), child: Text('Lent', style: TextStyle(color: AppColors.t54))),
         if (l.isEmpty) const Padding(padding: EdgeInsets.all(8), child: Text('Nothing lent yet.')),
         for (final x in l) tile(x, false),
       ]),

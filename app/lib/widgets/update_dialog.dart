@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../branding.dart';
 import '../services/update_service.dart';
 
+import '../app_colors.dart';
 /// Shows the installed and the newest published build, and downloads + installs the update.
 class UpdateDialog extends StatefulWidget {
   final BuildInfo? info;
@@ -67,13 +68,13 @@ class _UpdateDialogState extends State<UpdateDialog> {
           if (i != null) ...[
             Text('Latest: ${i.version} (build ${i.build})'),
             Text('Published ${i.date.replaceFirst('T', ' ').split('.').first} · ${UpdateService.fmtSize(i.size)}',
-                style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                style: TextStyle(color: AppColors.t54, fontSize: 12)),
             if (!newer)
               const Padding(padding: EdgeInsets.only(top: 8),
                   child: Text('You have the latest version.', style: TextStyle(color: Colors.greenAccent))),
             if (newer && i.notes.isNotEmpty) ...[
               const SizedBox(height: 10),
-              const Text("What's new", style: TextStyle(color: Colors.white54, fontSize: 12)),
+              Text("What's new", style: TextStyle(color: AppColors.t54, fontSize: 12)),
               for (final n in i.notes.take(12)) Text('• $n', style: const TextStyle(fontSize: 13)),
             ],
           ],
@@ -81,7 +82,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
             const SizedBox(height: 12),
             LinearProgressIndicator(value: _progress),
             Text('${((_progress ?? 0) * 100).round()}% of ${UpdateService.fmtSize(i?.size ?? 0)}',
-                style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                style: TextStyle(fontSize: 12, color: AppColors.t54)),
           ],
           if (_error != null)
             Padding(padding: const EdgeInsets.only(top: 8),

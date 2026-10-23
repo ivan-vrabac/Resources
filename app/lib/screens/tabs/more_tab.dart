@@ -9,6 +9,7 @@ import '../leaderboard_screen.dart';
 import '../market_screen.dart';
 import '../log_screen.dart';
 
+import '../../app_colors.dart';
 class MoreTab extends StatefulWidget {
   const MoreTab({super.key});
   @override
@@ -72,12 +73,12 @@ class _MoreTabState extends State<MoreTab> {
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(player.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                   if (_rank != null)
-                    Text('Rank #$_rank', style: const TextStyle(color: Colors.teal, fontSize: 12))
+                    Text('Rank #$_rank', style: TextStyle(color: AppColors.accent, fontSize: 12))
                   else
-                    const Text('Loading rank...', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                    Text('Loading rank...', style: TextStyle(color: AppColors.t38, fontSize: 12)),
                   const SizedBox(height: 4),
                   Row(children: [
-                    const Text('WA ', style: TextStyle(color: Colors.white38, fontSize: 11)),
+                    Text('WA ', style: TextStyle(color: AppColors.t38, fontSize: 11)),
                     _waColor(player.wa) != null
                         ? Text('${player.wa}%',
                             style: TextStyle(
@@ -132,7 +133,7 @@ class _MoreTabState extends State<MoreTab> {
   }
 
   Widget _fallbackAvatar(dynamic player) => CircleAvatar(
-    backgroundColor: Colors.teal, radius: 24,
+    backgroundColor: AppColors.accent, radius: 24,
     child: Text(
       player.name.isNotEmpty ? player.name[0].toUpperCase() : '?',
       style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -142,16 +143,16 @@ class _MoreTabState extends State<MoreTab> {
   Widget _sectionTitle(String title) => Padding(
     padding: const EdgeInsets.only(left: 4, bottom: 8),
     child: Text(title.toUpperCase(),
-        style: const TextStyle(fontSize: 11, color: Colors.white38, letterSpacing: 1.2)),
+        style: TextStyle(fontSize: 11, color: AppColors.t38, letterSpacing: 1.2)),
   );
 
   Widget _tile(BuildContext context, IconData icon, String title,
       String subtitle, Widget screen) {
     return ListTile(
-      leading: Icon(icon, color: Colors.teal),
+      leading: Icon(icon, color: AppColors.accent),
       title: Text(title),
-      subtitle: Text(subtitle, style: const TextStyle(color: Colors.white38, fontSize: 12)),
-      trailing: const Icon(Icons.chevron_right, color: Colors.white38),
+      subtitle: Text(subtitle, style: TextStyle(color: AppColors.t38, fontSize: 12)),
+      trailing: Icon(Icons.chevron_right, color: AppColors.t38),
       onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen)),
     );
   }

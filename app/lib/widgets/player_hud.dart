@@ -4,6 +4,7 @@ import '../constants.dart' show fmtNum;
 import '../models/player_provider.dart';
 import '../screens/settings_screen.dart' show mapPanelOpacityNotifier;
 
+import '../app_colors.dart';
 class PlayerHud extends StatelessWidget {
   /// Tap on the bar (name, credits, level, XP): the game screen opens the Stats tab.
   final VoidCallback? onTap;
@@ -51,7 +52,7 @@ class PlayerHud extends StatelessWidget {
             const SizedBox(width: 8),
             Text(
               '${(player.xpProgress * 100).toStringAsFixed(0)}%',
-              style: const TextStyle(fontSize: 9, color: Colors.white38),
+              style: TextStyle(fontSize: 9, color: AppColors.t38),
             ),
           ]),
           const SizedBox(height: 6),
@@ -66,7 +67,7 @@ class PlayerHud extends StatelessWidget {
     children: [
       Icon(icon, size: 14, color: color),
       const SizedBox(width: 2),
-      Text(label, style: const TextStyle(fontSize: 12, color: Colors.white70)),
+      Text(label, style: TextStyle(fontSize: 12, color: AppColors.t70)),
     ],
   );
 }

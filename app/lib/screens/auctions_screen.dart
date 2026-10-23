@@ -9,6 +9,7 @@ import '../widgets/async_view.dart';
 import '../widgets/top_banner.dart';
 import 'profile_screen.dart';
 
+import '../app_colors.dart';
 /// The luxury auction: one item at a time, bid with that item's resource (HQ level 10, max 10 of
 /// each item). Bids give luxury points, wins give many more. Tap an item for its bid history.
 class AuctionsScreen extends StatefulWidget {
@@ -71,8 +72,8 @@ class _AuctionsScreenState extends State<AuctionsScreen> {
           const SizedBox(height: 8),
           Text('Bid now: +${a['minBidPoints']} luxury points · winning: about +${a['winPoints']}',
               style: const TextStyle(fontSize: 12, color: Colors.amberAccent)),
-          const Text('The resources leave your warehouse now and come back if someone outbids you.',
-              style: TextStyle(fontSize: 12, color: Colors.white54)),
+          Text('The resources leave your warehouse now and come back if someone outbids you.',
+              style: TextStyle(fontSize: 12, color: AppColors.t54)),
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
@@ -95,7 +96,6 @@ class _AuctionsScreenState extends State<AuctionsScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF1A1A2E),
       builder: (_) => _ItemHistorySheet(itemId: itemId, sid: _sid),
     );
   }
@@ -126,8 +126,8 @@ class _AuctionsScreenState extends State<AuctionsScreen> {
                   child: Text('Bidding needs headquarters level ${d['hqRequired']} (yours: ${d['hqLevel']}).'))),
             for (final a in active) _lotCard(a, d),
             if (recent.isNotEmpty)
-              const Padding(padding: EdgeInsets.fromLTRB(8, 12, 8, 4),
-                  child: Text('Recently sold', style: TextStyle(color: Colors.white54))),
+              Padding(padding: EdgeInsets.fromLTRB(8, 12, 8, 4),
+                  child: Text('Recently sold', style: TextStyle(color: AppColors.t54))),
             for (final a in recent.take(10))
               ListTile(
                 dense: true,
@@ -138,10 +138,10 @@ class _AuctionsScreenState extends State<AuctionsScreen> {
                 onTap: () => _history((a['itemID'] as num).toInt()),
               ),
             const Divider(),
-            const Padding(padding: EdgeInsets.all(8),
+            Padding(padding: EdgeInsets.all(8),
                 child: Text('Your luxury collection — when someone spins five of a kind of an item you hold in the '
                     'casino, you get 1% of the jackpot per item you hold (up to 10 items = 10%).',
-                    style: TextStyle(color: Colors.white54, fontSize: 12))),
+                    style: TextStyle(color: AppColors.t54, fontSize: 12))),
             GridView.count(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
@@ -202,9 +202,9 @@ class _AuctionsScreenState extends State<AuctionsScreen> {
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(itemName(item), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
                 Text('Ends in ${_left(a['endsAt'] as String)} · ${a['bids']} bids',
-                    style: const TextStyle(color: Colors.white70)),
+                    style: TextStyle(color: AppColors.t70)),
                 Text('You own ${a['owned']}/${d['maxOwn']} · tap for history',
-                    style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                    style: TextStyle(color: AppColors.t38, fontSize: 11)),
               ])),
             ]),
           ),
@@ -279,9 +279,9 @@ class _ItemHistorySheetState extends State<_ItemHistorySheet> {
                 ]),
                 const SizedBox(height: 4),
                 Text('Bought with ${itemName((d['resID'] as num).toInt())} · you own ${d['owned']}',
-                    style: const TextStyle(color: Colors.white70)),
+                    style: TextStyle(color: AppColors.t70)),
                 const SizedBox(height: 12),
-                const Text('Recent bids', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                Text('Recent bids', style: TextStyle(color: AppColors.t54, fontSize: 12)),
                 SizedBox(
                   height: 160,
                   width: double.infinity,
@@ -292,13 +292,13 @@ class _ItemHistorySheetState extends State<_ItemHistorySheet> {
                 ),
                 const SizedBox(height: 12),
                 if (d['lastSale'] != null) ...[
-                  const Text('Last sold to', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                  Text('Last sold to', style: TextStyle(color: AppColors.t54, fontSize: 12)),
                   _playerTile((d['lastSale'] as Map).cast<String, dynamic>(), d),
                 ] else
-                  const Text('Never sold yet.', style: TextStyle(color: Colors.white54)),
+                  Text('Never sold yet.', style: TextStyle(color: AppColors.t54)),
                 if ((d['bids'] as List).isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  const Text('Latest bidders', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                  Text('Latest bidders', style: TextStyle(color: AppColors.t54, fontSize: 12)),
                   for (final b in (d['bids'] as List).reversed.take(5).cast<Map<String, dynamic>>())
                     _playerTile({'player': b['player'], 'price': b['amount'], 'ts': b['ts']}, d),
                 ],
@@ -347,7 +347,7 @@ class _BidChart extends CustomPainter {
       ..strokeWidth = 2);
     final tp = TextPainter(textDirection: TextDirection.ltr);
     for (final (val, y) in [(hi, 0.0), (lo, size.height - 12)]) {
-      tp.text = TextSpan(text: fmtQty(val), style: const TextStyle(color: Colors.white54, fontSize: 10));
+      tp.text = TextSpan(text: fmtQty(val), style: TextStyle(color: AppColors.t54, fontSize: 10));
       tp.layout();
       tp.paint(canvas, Offset(0, y));
     }

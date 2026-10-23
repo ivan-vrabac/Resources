@@ -7,6 +7,7 @@ import '../services/storage_service.dart';
 import '../models/player_provider.dart';
 import 'game_screen.dart';
 
+import '../app_colors.dart';
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -152,7 +153,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ? 'Pick a company name and a password to start playing.'
                         : 'Playing since before passwords? Log in with your company name '
                           'and choose a password now — it will protect your account.',
-                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                    style: TextStyle(color: AppColors.t54, fontSize: 12),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 20),

@@ -6,6 +6,7 @@ import '../../services/game_api.dart';
 import '../../constants.dart';
 import '../../widgets/top_banner.dart';
 
+import '../../app_colors.dart';
 class WarehouseTab extends StatefulWidget {
   const WarehouseTab({super.key});
   @override
@@ -95,13 +96,13 @@ class _WarehouseTabState extends State<WarehouseTab> {
               const SizedBox(height: 20),
               Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                 Text('Lv $_whLevel  →  Lv $newLevel',  // ignore: prefer_const_constructors
-                    style: const TextStyle(fontSize: 16, color: Colors.teal)),
+                    style: TextStyle(fontSize: 16, color: AppColors.accent)),
                 Text('ꞓ${fmtNum(totalCost)}',
                     style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 16)),
               ]),
               const SizedBox(height: 4),
               Text('New capacity: ${fmtNum(newCap)} units',
-                  style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                  style: TextStyle(color: AppColors.t54, fontSize: 12)),
               const SizedBox(height: 16),
               if (maxLevels > 1) ...[
                 Slider(
@@ -113,8 +114,8 @@ class _WarehouseTabState extends State<WarehouseTab> {
                   onChanged: (v) => setS(() => selectedLevels = v.round()),
                 ),
                 Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                  const Text('+1', style: TextStyle(color: Colors.white38, fontSize: 11)),
-                  Text('+$maxLevels max', style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                  Text('+1', style: TextStyle(color: AppColors.t38, fontSize: 11)),
+                  Text('+$maxLevels max', style: TextStyle(color: AppColors.t38, fontSize: 11)),
                 ]),
                 const SizedBox(height: 12),
               ],
@@ -165,7 +166,7 @@ class _WarehouseTabState extends State<WarehouseTab> {
               style: const TextStyle(fontSize: 12, color: Colors.lightGreenAccent)),
           if (owned > 1)
             Slider(value: qty.toDouble(), min: 1, max: owned.toDouble(), onChanged: (v) => set(() => qty = v.round())),
-          const Text('You get about', style: TextStyle(color: Colors.white54, fontSize: 12)),
+          Text('You get about', style: TextStyle(color: AppColors.t54, fontSize: 12)),
           for (final o in outs)
             ListTile(
               dense: true,
@@ -227,7 +228,7 @@ class _WarehouseTabState extends State<WarehouseTab> {
                     ),
                     const SizedBox(height: 4),
                     Text('${fmtNum(totalUnits)} / ${fmtNum(_whCap)} units',
-                        style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                        style: TextStyle(fontSize: 12, color: AppColors.t54)),
                   ])),
                   const SizedBox(width: 16),
                   FilledButton.tonalIcon(
@@ -241,11 +242,11 @@ class _WarehouseTabState extends State<WarehouseTab> {
           ),
           const SizedBox(height: 8),
           if (entries.isEmpty)
-            const Center(
+            Center(
               child: Padding(
                 padding: EdgeInsets.all(32),
                 child: Text('Warehouse is empty.\nBuild mines to collect resources.',
-                    textAlign: TextAlign.center, style: TextStyle(color: Colors.white54)),
+                    textAlign: TextAlign.center, style: TextStyle(color: AppColors.t54)),
               ),
             )
           else
@@ -297,10 +298,10 @@ class _ItemIcon extends StatelessWidget {
     final name = itemName(itemId);
     return CircleAvatar(
       radius: 16,
-      backgroundColor: Colors.teal.withValues(alpha: 0.3),
+      backgroundColor: AppColors.accent.withValues(alpha: 0.3),
       child: Text(
         name.isNotEmpty ? name[0] : '?',
-        style: const TextStyle(color: Colors.teal, fontSize: 12, fontWeight: FontWeight.bold),
+        style: TextStyle(color: AppColors.accent, fontSize: 12, fontWeight: FontWeight.bold),
       ),
     );
   }

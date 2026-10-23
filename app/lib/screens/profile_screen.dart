@@ -7,6 +7,7 @@ import '../widgets/async_view.dart';
 import '../widgets/top_banner.dart';
 import 'achievements_screen.dart';
 
+import '../app_colors.dart';
 /// Public profile of a player ([pid]), or your own statistics when [pid] is null.
 class ProfileScreen extends StatefulWidget {
   final String? pid;
@@ -70,7 +71,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             if (icon != null) Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
             Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 2),
-            Text(label, style: const TextStyle(fontSize: 10, color: Colors.white54), textAlign: TextAlign.center),
+            Text(label, style: TextStyle(fontSize: 10, color: AppColors.t54), textAlign: TextAlign.center),
           ]),
         ),
       );
@@ -82,7 +83,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(title, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+        Text(title, style: TextStyle(color: AppColors.t54, fontSize: 12)),
         const SizedBox(height: 6),
         Wrap(spacing: 10, runSpacing: 8, children: [
           for (final it in items)
@@ -90,7 +91,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               message: kMineNames[(it['itemID'] as num).toInt()] ?? itemName((it['itemID'] as num).toInt()),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 image != null ? image((it['itemID'] as num).toInt()) : ItemIcon((it['itemID'] as num).toInt(), size: 34),
-                Text('$prefix${it[key]}', style: const TextStyle(fontSize: 10, color: Colors.white70)),
+                Text('$prefix${it[key]}', style: TextStyle(fontSize: 10, color: AppColors.t70)),
               ]),
             ),
         ]),
@@ -140,14 +141,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(p['name'] as String? ?? '', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                 Text('Member since ${p['memberSince'] ?? '?'}',
-                    style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                    style: TextStyle(color: AppColors.t54, fontSize: 12)),
               ])),
               if (!isMe)
                 IconButton(
                   tooltip: (p['relations'] as List? ?? const []).contains('blacklist') ? 'Unblock' : 'Block',
                   icon: Icon(Icons.block,
                       color: (p['relations'] as List? ?? const []).contains('blacklist')
-                          ? Colors.redAccent : Colors.white38),
+                          ? Colors.redAccent : AppColors.t38),
                   onPressed: _busy ? null : () => _toggle('blacklist',
                       !(p['relations'] as List? ?? const []).contains('blacklist')),
                 ),
@@ -188,7 +189,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(children: [
-                  const Text('Mark as:', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                  Text('Mark as:', style: TextStyle(color: AppColors.t54, fontSize: 12)),
                   const SizedBox(width: 6),
                   _relationChip('friend', 'Friend', Icons.person_add_alt, Colors.lightBlueAccent),
                   const SizedBox(width: 4),

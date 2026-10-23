@@ -10,6 +10,7 @@ import 'async_view.dart';
 import 'foreign_target_sheet.dart';
 import 'top_banner.dart';
 
+import '../app_colors.dart';
 /// Phase 6 actions on another player's mine: free external maintenance (Service Center) and
 /// mafia attacks. Registered once into [ForeignTargetSheet.extraActions].
 class CombatActions {
@@ -143,7 +144,7 @@ class _UnitQtyRowState extends State<_UnitQtyRow> {
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
           Text(widget.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
           Text(widget.showValue ? 'value ${widget.value} · have ${fmtQty(widget.have)}' : 'you have ${fmtQty(widget.have)}',
-              maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white54)),
+              maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: AppColors.t54)),
         ])),
         SizedBox(
           width: 96,
@@ -192,18 +193,18 @@ class _AttackDialogState extends State<_AttackDialog> {
           Text('Defence: $p${def[0]} watch dogs · $p${def[1]} security staff · $p${def[2]} elite'
               '${target['inHqArea'] == true ? ' (HQ area +25%)' : ''}', style: const TextStyle(fontSize: 12)),
           if (!exact)
-            const Text('Estimate — a Mafia HQ level 10 shows the exact numbers.',
-                style: TextStyle(fontSize: 11, color: Colors.white54)),
+            Text('Estimate — a Mafia HQ level 10 shows the exact numbers.',
+                style: TextStyle(fontSize: 11, color: AppColors.t54)),
           Row(children: [
             if (target['lootItem'] != null) ItemIcon((target['lootItem'] as num).toInt(), size: 26),
             const SizedBox(width: 6),
             Expanded(child: Text('Loot if successful: up to ${fmtQty(target['lootEstimate'] as num? ?? 0)} '
                 '${target['lootItem'] != null ? itemName((target['lootItem'] as num).toInt()) : ''}'
                 ' (halved for each successful attack you made in the last 24 h), maybe kits or tech upgrades',
-                style: const TextStyle(fontSize: 12, color: Colors.white70))),
+                style: TextStyle(fontSize: 12, color: AppColors.t70))),
           ]),
-          const Text('Every attack damages the mine 10–70 points depending on the force sent (less if repelled). '
-              'A mine can be attacked once every 24 hours.', style: TextStyle(fontSize: 11, color: Colors.white54)),
+          Text('Every attack damages the mine 10–70 points depending on the force sent (less if repelled). '
+              'A mine can be attacked once every 24 hours.', style: TextStyle(fontSize: 11, color: AppColors.t54)),
           const SizedBox(height: 8),
           for (var k = 0; k < _units.length; k++)
             _UnitQtyRow(
@@ -298,11 +299,11 @@ class _DefenceDialogState extends State<_DefenceDialog> {
         width: double.maxFinite,
         child: SingleChildScrollView(
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Defending now', style: TextStyle(color: Colors.white54, fontSize: 12)),
+            Text('Defending now', style: TextStyle(color: AppColors.t54, fontSize: 12)),
             const SizedBox(height: 6),
             Row(children: [now(95, def[0]), now(97, def[1]), now(98, def[2])]),
             const Divider(height: 24),
-            const Text('Station more', style: TextStyle(color: Colors.white54, fontSize: 12)),
+            Text('Station more', style: TextStyle(color: AppColors.t54, fontSize: 12)),
             for (var k = 0; k < _units.length; k++)
               _UnitQtyRow(
                 itemId: _units[k].$1, name: _units[k].$3, value: 0, showValue: false,
@@ -310,9 +311,9 @@ class _DefenceDialogState extends State<_DefenceDialog> {
                 onChanged: (v) => setState(() => _n[_units[k].$2] = v),
               ),
             const SizedBox(height: 8),
-            const Text('Stationed units stay on the mine and make its repairs more expensive. '
+            Text('Stationed units stay on the mine and make its repairs more expensive. '
                 'The free 200 / 5 / 1 guards come back after a repair.',
-                style: TextStyle(fontSize: 11, color: Colors.white38)),
+                style: TextStyle(fontSize: 11, color: AppColors.t38)),
           ]),
         ),
       ),

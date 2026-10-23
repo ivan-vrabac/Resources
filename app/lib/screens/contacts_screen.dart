@@ -7,6 +7,7 @@ import '../widgets/async_view.dart';
 import 'dm_screen.dart';
 import 'profile_screen.dart';
 
+import '../app_colors.dart';
 /// Friends, enemies, blacklist and watchlist, plus player search.
 class ContactsScreen extends StatefulWidget {
   const ContactsScreen({super.key});
@@ -83,7 +84,7 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
       width: 44, height: 44,
       child: Stack(clipBehavior: Clip.none, children: [
         Positioned.fill(child: Image.asset('assets/images/hq_thumb_$lvl.png', fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) => const Icon(Icons.location_city, size: 32, color: Colors.white54))),
+            errorBuilder: (_, __, ___) => Icon(Icons.location_city, size: 32, color: AppColors.t54))),
         if (unread > 0)
           Positioned(
             right: -4, top: -4,
@@ -101,8 +102,8 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
         leading: _hqAvatar(p),
         title: Text(p['name'] as String? ?? ''),
         subtitle: Text(subtitle ?? 'Level ${p['level']} · HQ ${p['hqLevel']}',
-            style: const TextStyle(color: Colors.white54, fontSize: 12)),
-        trailing: const Icon(Icons.chevron_right, color: Colors.white38),
+            style: TextStyle(color: AppColors.t54, fontSize: 12)),
+        trailing: Icon(Icons.chevron_right, color: AppColors.t38),
         onTap: () => _playerActions(p),
       );
 
@@ -111,7 +112,6 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
     final pid = p['pid'] as String, name = p['name'] as String? ?? '';
     final pick = await showModalBottomSheet<String>(
       context: context,
-      backgroundColor: const Color(0xFF1A1A2E),
       builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
         ListTile(title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold))),
         ListTile(leading: const Icon(Icons.query_stats), title: const Text('View stats'),
@@ -174,7 +174,7 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
       if (_results != null)
         Expanded(
           child: _results!.isEmpty
-              ? const Center(child: Text('No players found', style: TextStyle(color: Colors.white54)))
+              ? Center(child: Text('No players found', style: TextStyle(color: AppColors.t54)))
               : ListView(children: _results!.map((p) => _playerTile(p)).toList()),
         )
       else ...[
@@ -203,10 +203,10 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
                 RefreshIndicator(
                   onRefresh: _load,
                   child: (_contacts[t.$1] ?? const []).isEmpty
-                      ? ListView(children: const [
+                      ? ListView(children: [
                           SizedBox(height: 80),
                           Center(child: Text('Nobody here yet.\nOpen a player profile to add them.',
-                              textAlign: TextAlign.center, style: TextStyle(color: Colors.white54))),
+                              textAlign: TextAlign.center, style: TextStyle(color: AppColors.t54))),
                         ])
                       : ListView(children: (_contacts[t.$1] ?? const []).map((p) => _playerTile(p)).toList()),
                 ),

@@ -6,6 +6,7 @@ import '../services/game_api.dart';
 import '../widgets/async_view.dart';
 import '../widgets/top_banner.dart';
 
+import '../app_colors.dart';
 /// Daily quests (48 h each), rewards and the streak with its Giant Diamond milestones.
 class QuestsScreen extends StatefulWidget {
   const QuestsScreen({super.key});
@@ -70,12 +71,11 @@ class _QuestsScreenState extends State<QuestsScreen> {
         );
     Widget header(String t) => Padding(
           padding: const EdgeInsets.only(top: 12, bottom: 2),
-          child: Text(t.toUpperCase(), style: const TextStyle(fontSize: 11, color: Colors.white54, letterSpacing: 1)),
+          child: Text(t.toUpperCase(), style: TextStyle(fontSize: 11, color: AppColors.t54, letterSpacing: 1)),
         );
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF1A1A2E),
       builder: (_) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
@@ -92,7 +92,7 @@ class _QuestsScreenState extends State<QuestsScreen> {
                         fmtCredits(r['qty'] as num)),
               if (bonus > 0)
                 Text('includes your Aeon Mechanism bonus +${(bonus * 100).round()}%',
-                    style: const TextStyle(fontSize: 11, color: Colors.white38)),
+                    style: TextStyle(fontSize: 11, color: AppColors.t38)),
               header('Every streak day (all quests of the day done)'),
               for (final r in daily)
                 row(ItemIcon((r['itemID'] as num).toInt(), size: 32),
@@ -105,8 +105,8 @@ class _QuestsScreenState extends State<QuestsScreen> {
                 row(ItemIcon((m['itemID'] as num).toInt(), size: 32), 'Every ${m['every']} days',
                     '${m['qty']} × ${itemName((m['itemID'] as num).toInt())}'),
               const SizedBox(height: 8),
-              const Text('Missing a day will not end your streak, but missing two days in a row will.',
-                  style: TextStyle(fontSize: 11, color: Colors.white38)),
+              Text('Missing a day will not end your streak, but missing two days in a row will.',
+                  style: TextStyle(fontSize: 11, color: AppColors.t38)),
             ]),
           ),
         ),
@@ -145,7 +145,7 @@ class _QuestsScreenState extends State<QuestsScreen> {
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text('$streak-day streak', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     Text('Finish all of a day\'s quests to extend it. Next bonus at day $next.',
-                        style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                        style: TextStyle(fontSize: 12, color: AppColors.t54)),
                   ])),
                   OutlinedButton.icon(
                     icon: const Icon(Icons.card_giftcard, size: 16),
@@ -157,11 +157,11 @@ class _QuestsScreenState extends State<QuestsScreen> {
             ),
             const SizedBox(height: 8),
             Text('Each quest: ${fmtCredits(reward['credits'] as num? ?? 0)} + ${reward['crates'] ?? 15} Cargo Rain',
-                style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                style: TextStyle(color: AppColors.t54, fontSize: 12)),
             const SizedBox(height: 8),
             if (qs.isEmpty)
-              const Padding(padding: EdgeInsets.all(24),
-                  child: Center(child: Text('No quests right now', style: TextStyle(color: Colors.white54)))),
+              Padding(padding: EdgeInsets.all(24),
+                  child: Center(child: Text('No quests right now', style: TextStyle(color: AppColors.t54)))),
             for (final q in qs)
               Card(
                 child: Padding(
@@ -171,7 +171,7 @@ class _QuestsScreenState extends State<QuestsScreen> {
                       Expanded(child: Text(q['title'] as String,
                           style: const TextStyle(fontWeight: FontWeight.w600))),
                       Text(q['claimed'] == true ? 'done' : _left(q['expiresAt'] as String),
-                          style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                          style: TextStyle(fontSize: 11, color: AppColors.t54)),
                     ]),
                     const SizedBox(height: 8),
                     ClipRRect(
@@ -187,7 +187,7 @@ class _QuestsScreenState extends State<QuestsScreen> {
                     Row(children: [
                       Text('${q['progress']} / ${q['target']}', style: const TextStyle(fontSize: 12)),
                       if ((q['day'] as String) != (qs.first['day'] as String))
-                        const Text('  · from yesterday', style: TextStyle(fontSize: 11, color: Colors.white38)),
+                        Text('  · from yesterday', style: TextStyle(fontSize: 11, color: AppColors.t38)),
                       const Spacer(),
                       if (q['claimed'] == true)
                         const Icon(Icons.check_circle, color: Colors.greenAccent, size: 20)

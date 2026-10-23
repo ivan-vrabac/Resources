@@ -10,6 +10,7 @@ import 'async_view.dart';
 import 'top_banner.dart';
 import '../screens/settings_screen.dart' show kShowRevealRing;
 
+import '../app_colors.dart';
 /// Artifact detector on the map. Every scan uses up one Artifact Detector (server rule): the
 /// result (a yellow triangle towards the nearest artifact, or the artifact itself once within the
 /// reveal range) stays on the map for [resultTtl] or until the next scan.
@@ -290,7 +291,6 @@ class _ArchaeologyScreenState extends State<ArchaeologyScreen> {
     final qty = await showModalBottomSheet<int>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF1A1A2E),
       builder: (_) => _ArtifactInvestSheet(artifact: a, levelAt: levelAt),
     );
     if (qty == null || qty <= 0 || !mounted) return;
@@ -323,14 +323,14 @@ class _ArchaeologyScreenState extends State<ArchaeologyScreen> {
             row('Pick-up range (Museum ${d['museumLevel']})', '${(d['pickupRange'] as num).round()} m'),
             row('Archaeologists per recovery', '${d['archaeologistsNeeded']} (you have ${fmtQty(d['archaeologists'] as num)})'),
             row('Artifact Detectors', fmtQty(d['detectors'] as num)),
-            const Padding(padding: EdgeInsets.fromLTRB(4, 12, 4, 4),
+            Padding(padding: EdgeInsets.fromLTRB(4, 12, 4, 4),
                 child: Text('Scan with the detector button on the left of the map — each scan uses one '
                     'Artifact Detector. Follow the triangle and scan again when closer; the artifact appears '
                     'within your reveal range. Several players can recover the same artifact; it disappears '
                     '15 minutes after the first recovery.',
-                    style: TextStyle(color: Colors.white54, fontSize: 12))),
+                    style: TextStyle(color: AppColors.t54, fontSize: 12))),
             const Divider(),
-            const Text('Collection', style: TextStyle(color: Colors.white54, fontSize: 12)),
+            Text('Collection', style: TextStyle(color: AppColors.t54, fontSize: 12)),
             GridView.count(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
@@ -347,7 +347,7 @@ class _ArchaeologyScreenState extends State<ArchaeologyScreen> {
                             errorBuilder: (_, __, ___) => const Icon(Icons.diamond, size: 40)),
                         Text(a['name'] as String, textAlign: TextAlign.center, style: const TextStyle(fontSize: 11)),
                         Text('level ${a['level'] ?? 0} · have ${a['owned'] ?? 0}',
-                            style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                            style: TextStyle(fontSize: 10, color: AppColors.t54)),
                       ]),
                     ),
                   ),
@@ -404,7 +404,7 @@ class _ArtifactInvestSheetState extends State<_ArtifactInvestSheet> {
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(a['name'] as String, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               Text('Level $lvl · invested $_invested · you have $_owned',
-                  style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                  style: TextStyle(color: AppColors.t60, fontSize: 12)),
             ])),
           ]),
           const SizedBox(height: 14),
@@ -412,7 +412,7 @@ class _ArtifactInvestSheetState extends State<_ArtifactInvestSheet> {
           const SizedBox(height: 10),
           if (_maxUseful > 0) ...[
             Row(children: [
-              const Text('Invest', style: TextStyle(color: Colors.white70)),
+              Text('Invest', style: TextStyle(color: AppColors.t70)),
               Expanded(
                 child: SliderTheme(
                   data: SliderTheme.of(context).copyWith(activeTrackColor: _kBronze, thumbColor: Colors.amberAccent,
@@ -438,7 +438,7 @@ class _ArtifactInvestSheetState extends State<_ArtifactInvestSheet> {
             ]),
           ] else
             Text(_invested >= widget.levelAt.last ? 'Maximum level reached.' : 'Recover more of these artifacts to invest.',
-                style: const TextStyle(color: Colors.white54)),
+                style: TextStyle(color: AppColors.t54)),
           const SizedBox(height: 10),
           SizedBox(
             width: double.infinity,
@@ -450,8 +450,8 @@ class _ArtifactInvestSheetState extends State<_ArtifactInvestSheet> {
             ),
           ),
           const SizedBox(height: 4),
-          const Text('Invested artifacts are used up and raise the level permanently.',
-              style: TextStyle(color: Colors.white38, fontSize: 11)),
+          Text('Invested artifacts are used up and raise the level permanently.',
+              style: TextStyle(color: AppColors.t38, fontSize: 11)),
         ]),
       ),
     );
@@ -468,7 +468,7 @@ class _ArtifactInvestSheetState extends State<_ArtifactInvestSheet> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           SizedBox(width: 30, child: Text('L${i + 1}', style: TextStyle(
-              color: reached ? Colors.amberAccent : willReach ? _kBronze : Colors.white54,
+              color: reached ? Colors.amberAccent : willReach ? _kBronze : AppColors.t54,
               fontWeight: reached || willReach ? FontWeight.bold : FontWeight.normal, fontSize: 12))),
           Expanded(
             child: ClipRRect(
@@ -482,12 +482,12 @@ class _ArtifactInvestSheetState extends State<_ArtifactInvestSheet> {
           ),
           const SizedBox(width: 8),
           SizedBox(width: 64, child: Text('${min(max(_invested + _add - lo, 0), hi - lo)}/${hi - lo}',
-              textAlign: TextAlign.right, style: const TextStyle(fontSize: 11, color: Colors.white54))),
+              textAlign: TextAlign.right, style: TextStyle(fontSize: 11, color: AppColors.t54))),
         ]),
         Padding(
           padding: const EdgeInsets.only(left: 30, top: 2),
           child: Text(effect, style: TextStyle(fontSize: 12,
-              color: reached ? Colors.white : willReach ? _kBronze : Colors.white38)),
+              color: reached ? Colors.white : willReach ? _kBronze : AppColors.t38)),
         ),
       ]),
     );

@@ -5,6 +5,7 @@ import '../models/player_provider.dart';
 import '../services/game_api.dart';
 import '../widgets/async_view.dart';
 
+import '../app_colors.dart';
 /// Achievements: three stars each, progress to the next star (all computed by the server).
 class AchievementsScreen extends StatefulWidget {
   const AchievementsScreen({super.key});
@@ -79,16 +80,16 @@ class _AchievementsScreenState extends State<AchievementsScreen> {
               Icon(i < stars ? Icons.star : Icons.star_border, size: 20,
                   color: i < stars ? Colors.amber : Colors.white24),
           ]),
-          Text(a['description'] as String, style: const TextStyle(fontSize: 12, color: Colors.white54)),
+          Text(a['description'] as String, style: TextStyle(fontSize: 12, color: AppColors.t54)),
           const SizedBox(height: 8),
           ClipRRect(
             borderRadius: BorderRadius.circular(3),
             child: LinearProgressIndicator(value: frac, minHeight: 6, backgroundColor: Colors.white12,
-                color: next == null ? Colors.amber : Colors.teal),
+                color: next == null ? Colors.amber : AppColors.accent),
           ),
           const SizedBox(height: 4),
           Text('${a['label'] ?? unit}: ${fmtNum(value)} / ${fmtNum(next ?? tiers.last)}',
-              style: const TextStyle(fontSize: 12, color: Colors.white70)),
+              style: TextStyle(fontSize: 12, color: AppColors.t70)),
         ]),
       ),
     );

@@ -6,6 +6,7 @@ import '../services/game_api.dart';
 import '../widgets/async_view.dart';
 import 'profile_screen.dart';
 
+import '../app_colors.dart';
 /// Leaderboards: overall score, luxury points (with luxury items), and output per hour of one
 /// raw resource (mines) or factory product. Compact one-line rows; tap a row for the company sheet.
 class LeaderboardScreen extends StatelessWidget {
@@ -39,22 +40,22 @@ Widget _row(BuildContext context, Map<String, dynamic> r, {Widget? middle, requi
     child: Container(
       height: 34,
       padding: const EdgeInsets.symmetric(horizontal: 10),
-      color: isMe ? Colors.teal.withValues(alpha: 0.12) : null,
+      color: isMe ? AppColors.accent.withValues(alpha: 0.12) : null,
       child: Row(children: [
         SizedBox(width: 38, child: Text('#${r['rank']}', textAlign: TextAlign.right,
-            style: TextStyle(color: isMe ? Colors.tealAccent : Colors.white54, fontSize: 12, fontWeight: FontWeight.bold))),
+            style: TextStyle(color: isMe ? AppColors.accent : AppColors.t54, fontSize: 12, fontWeight: FontWeight.bold))),
         const SizedBox(width: 8),
         Expanded(
           flex: 5,
           child: Text(r['name'] as String? ?? '—', overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 13, color: isMe ? Colors.tealAccent : Colors.white,
+              style: TextStyle(fontSize: 13, color: isMe ? AppColors.accent : Colors.white,
                   fontWeight: isMe ? FontWeight.bold : FontWeight.normal)),
         ),
         if (middle != null) Expanded(flex: 4, child: middle),
         SizedBox(
           width: 92,
           child: Text(unit == null ? value : '$value $unit', textAlign: TextAlign.right,
-              style: TextStyle(color: isMe ? Colors.tealAccent : Colors.white70, fontSize: 13, fontWeight: FontWeight.bold)),
+              style: TextStyle(color: isMe ? AppColors.accent : AppColors.t70, fontSize: 13, fontWeight: FontWeight.bold)),
         ),
       ]),
     ),
@@ -103,7 +104,7 @@ abstract class _BoardState<T extends StatefulWidget> extends State<T> with Autom
           ),
         const SizedBox(width: 8),
         Expanded(child: Text(note ?? (d['myRank'] != null ? 'Your rank: #${d['myRank']}' : ''),
-            style: const TextStyle(color: Colors.white54, fontSize: 12), overflow: TextOverflow.ellipsis)),
+            style: TextStyle(color: AppColors.t54, fontSize: 12), overflow: TextOverflow.ellipsis)),
         IconButton(
           visualDensity: VisualDensity.compact, icon: const Icon(Icons.chevron_left),
           onPressed: page > 0 ? () { setState(() => page--); load(); } : null,
@@ -151,7 +152,7 @@ class _OverallBoardState extends _BoardState<_OverallBoard> {
           if (code.isNotEmpty)
             Padding(padding: const EdgeInsets.only(right: 6), child: Image.asset('assets/images_countryflags/$code.png',
                 width: 18, height: 12, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox(width: 18))),
-          Text('Lv ${r['level']}', style: const TextStyle(color: Colors.white38, fontSize: 11)),
+          Text('Lv ${r['level']}', style: TextStyle(color: AppColors.t38, fontSize: 11)),
         ]));
       }, header: controls());
     });
@@ -185,7 +186,7 @@ class _LuxuryBoardState extends _BoardState<_LuxuryBoard> {
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                       ItemIcon((it['itemID'] as num).toInt(), size: 20),
                       if ((it['qty'] as num) > 1)
-                        Text('×${it['qty']}', style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                        Text('×${it['qty']}', style: TextStyle(fontSize: 10, color: AppColors.t54)),
                     ]),
                   ),
               ]),
@@ -219,7 +220,7 @@ class _ResourceBoardState extends _BoardState<_ResourceBoard> {
       final item = (data!['item'] as num).toInt();
       return list(rows, (r) => _row(context, r, value: fmtNum((r['perHour'] as num).round()), unit: '/h',
           middle: Text('${r['count']} ${_kind == 'mine' ? 'mines' : 'factories'}',
-              style: const TextStyle(color: Colors.white38, fontSize: 11))),
+              style: TextStyle(color: AppColors.t38, fontSize: 11))),
           header: Column(mainAxisSize: MainAxisSize.min, children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),

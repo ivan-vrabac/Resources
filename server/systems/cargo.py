@@ -215,22 +215,62 @@ def roll(rng: random.Random, stacked: bool = False, crates: int = 1, table=None)
     return item, q, table[item][2]
 
 
+def _poisson(rng: random.Random, lam: float) -> int:
+    if lam <= 0:
+        return 0
+    limit, k, p = math.exp(-lam), 0, 1.0
+    while True:
+        p *= rng.random()
+        if p <= limit:
+            return k
+        k += 1
+
+
+def _binom(rng: random.Random, n: int, p: float) -> int:
+    """Binomial(n, p) draw: exact for small n, Poisson for rare outcomes, normal otherwise."""
+    if n <= 0 or p <= 0:
+        return 0
+    if p >= 1:
+        return n
+    if n <= 2000:
+        return sum(1 for _ in range(n) if rng.random() < p)
+    if n * p < 30:
+        return min(n, _poisson(rng, n * p))
+    if n * (1 - p) < 30:
+        return n - min(n, _poisson(rng, n * (1 - p)))
+    return max(0, min(n, int(round(rng.gauss(n * p, math.sqrt(n * p * (1 - p)))))))
+
+
+def _qty(rng: random.Random, item: int, k: int) -> int:
+    """Total quantity of `k` crates of `item` (each QTY-uniform)."""
+    lo, hi = QTY[item]
+    if k <= 0:
+        return 0
+    if hi <= lo:
+        return lo * k
+    if k <= 2000:
+        return sum(rng.randint(lo, hi) for _ in range(k))
+    var = k * ((hi - lo + 1) ** 2 - 1) / 12
+    return max(k * lo, min(k * hi, int(round(rng.gauss(k * (lo + hi) / 2, math.sqrt(var))))))
+
+
 def stack_mix(rng: random.Random, crates: int) -> dict:
-    """Content of a stack of `crates` regular crates: {item: qty}, each crate rolled (exactly up to
-    2000 crates, by expected shares beyond)."""
+    """Content of a stack of `crates` crates: {item: qty}. Exactly what the same number of loose
+    crates would hold (owner 2026-10-23: stacked or not, same for the player): one in five is a
+    cargo box (BOX_LOOT, incl. Giant Diamonds and Tech Upgrades), the rest containers (LOOT)."""
     mix = {}
-    if crates <= 2000:
-        for _ in range(crates):
-            item, q, _ = roll(rng)
-            mix[item] = mix.get(item, 0) + q
-        return mix
-    total_w = sum(v[1] for v in LOOT.values())
-    for item, (_, w, _) in LOOT.items():
-        n = crates * w / total_w
-        lo, hi = QTY[item]
-        q = int(round(n * (lo + hi) / 2 * rng.uniform(0.95, 1.05)))
-        if q > 0:
-            mix[item] = q
+    boxes = _binom(rng, crates, BOX_SHARE)
+    for table, n in ((BOX_LOOT, boxes), (LOOT, crates - boxes)):
+        left, mass = n, float(sum(v[1] for v in table.values()))
+        for item, (_, w, _) in table.items():       # multinomial as a chain of binomials
+            if left <= 0 or mass <= 0:
+                break
+            k = _binom(rng, left, min(1.0, w / mass))
+            left -= k
+            mass -= w
+            q = _qty(rng, item, k)
+            if q > 0:
+                mix[item] = mix.get(item, 0) + q
     return mix
 
 
@@ -279,11 +319,13 @@ def install(api) -> None:
             got = {}
             for item, q in json.loads(c["mix"]).items():
                 item = int(item)
-                if LOOT.get(item, ("", 0, 99))[2] > museum:
+                if BOX_LOOT.get(item, ("", 0, 99))[2] > museum:
                     continue                      # your Museum can't find this one
                 n = int(econ.give(conn, hid, item, int(round(q * bonus)), "cargo_collect", c["id"], strict=False))
                 if n:
                     got[item] = n
+                    if item in (42, 48):
+                        econ.emit(conn, "rare_find", hid, {"itemID": item, "qty": n})
             econ.emit(conn, "cargo_collected", hid, {"crates": int(c["crates"] or 1), "items": got}, public=False)
             return got
         amount = int(round(c["qty"] * bonus))
@@ -399,7 +441,7 @@ def install(api) -> None:
                 if method == "truck":                 # one truck per crate, trucks aren't used up
                     have = int(econ.qty_of(conn, hid, TRUCKS))
                     if have < n:
-                        raise econ.GameError("no_vehicle", f"This stack holds {n:,} crates — you need {n:,} trucks "
+                        raise econ.GameError("no_vehicle", f"This stack holds {n:,} crates, so you need {n:,} trucks "
                                                            f"(you have {have:,})")
                     econ.require_within(lat, lng, c["lat"], c["lng"], truck_range(lv["haulage"]), "stack")
                 elif method == "drone":               # one drone per crate, used up

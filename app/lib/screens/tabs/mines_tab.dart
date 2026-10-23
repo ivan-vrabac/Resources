@@ -7,6 +7,7 @@ import '../../services/api_service.dart';
 import '../../constants.dart';
 import '../../widgets/top_banner.dart';
 
+import '../../app_colors.dart';
 // ── Sort / view helpers ─────────────────────────────────────────────────────
 
 enum _SortMode { output, quality, condition }
@@ -90,12 +91,12 @@ class _MinesTabState extends State<MinesTab> {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 12,
-                color: _sort == m ? Colors.tealAccent : Colors.white,
+                color: _sort == m ? AppColors.accent : Colors.white,
                 fontWeight: _sort == m ? FontWeight.bold : FontWeight.normal,
               ))),
           if (_sort == m)
             Icon(_sortAsc ? Icons.arrow_upward : Icons.arrow_downward,
-                size: 13, color: Colors.tealAccent)
+                size: 13, color: AppColors.accent)
           else
             const SizedBox(width: 13),
         ]),
@@ -199,7 +200,7 @@ class _MinesTabState extends State<MinesTab> {
           needed > kitsAvailable
               ? 'You have $kitsAvailable kits but $needed mines need repair. Will repair $actual.'
               : 'Repair $actual mine${actual == 1 ? '' : 's'} to 100% condition.',
-          style: const TextStyle(color: Colors.white70),
+          style: TextStyle(color: AppColors.t70),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
@@ -247,8 +248,8 @@ class _MinesTabState extends State<MinesTab> {
           Text('Total refund: ꞓ$totalRefund',
               style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),
-          const Text('This cannot be undone.',
-              style: TextStyle(color: Colors.white54, fontSize: 12)),
+          Text('This cannot be undone.',
+              style: TextStyle(color: AppColors.t54, fontSize: 12)),
         ]),
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
@@ -305,13 +306,13 @@ class _MinesTabState extends State<MinesTab> {
     }
     final allMines = loaded;
     if (allMines.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.construction, size: 64, color: Colors.white24),
           SizedBox(height: 16),
           Text('No mines yet.\nGo to the map and tap Scan to find resources.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white54)),
+              style: TextStyle(color: AppColors.t54)),
         ]),
       );
     }
@@ -383,7 +384,7 @@ class _MinesTabState extends State<MinesTab> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                color: Colors.teal.withValues(alpha: 0.93),
+                color: AppColors.accent.withValues(alpha: 0.93),
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: const [BoxShadow(
                     color: Colors.black54, blurRadius: 8)],
@@ -431,10 +432,10 @@ class _MinesTabState extends State<MinesTab> {
             child: Row(children: [
               Expanded(child: Text(_sortLabel(_sort),
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 11, color: Colors.white70))),
+                  style: TextStyle(fontSize: 11, color: AppColors.t70))),
               Icon(
                 _sortAsc ? Icons.arrow_upward : Icons.arrow_downward,
-                size: 12, color: Colors.white70,
+                size: 12, color: AppColors.t70,
               ),
             ]),
           ),
@@ -461,15 +462,15 @@ class _MinesTabState extends State<MinesTab> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: active ? Colors.teal.withValues(alpha: 0.25) : Colors.white10,
+          color: active ? AppColors.accent.withValues(alpha: 0.25) : Colors.white10,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-              color: active ? Colors.teal : Colors.white12),
+              color: active ? AppColors.accent : Colors.white12),
         ),
         child: Text(label,
             style: TextStyle(
                 fontSize: 11,
-                color: active ? Colors.tealAccent : Colors.white54,
+                color: active ? AppColors.accent : AppColors.t54,
                 fontWeight: active ? FontWeight.bold : FontWeight.normal)),
       ),
     );
@@ -547,12 +548,12 @@ class _MinesTabState extends State<MinesTab> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 5, vertical: 1),
                       decoration: BoxDecoration(
-                        color: Colors.teal.withValues(alpha: 0.3),
+                        color: AppColors.accent.withValues(alpha: 0.3),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text('$selCount',
-                          style: const TextStyle(
-                              color: Colors.tealAccent, fontSize: 10)),
+                          style: TextStyle(
+                              color: AppColors.accent, fontSize: 10)),
                     ),
                   ],
                 ]),
@@ -576,7 +577,7 @@ class _MinesTabState extends State<MinesTab> {
                   ),
                 ),
               Icon(expanded ? Icons.expand_less : Icons.expand_more,
-                  color: Colors.white38, size: 20),
+                  color: AppColors.t38, size: 20),
             ]),
           ),
         ),
@@ -648,13 +649,13 @@ class _MinesTabState extends State<MinesTab> {
                 _selected.clear();
                 _selectThreshold = 100.0;
               }),
-              child: const Text('Clear',
-                  style: TextStyle(color: Colors.white38, fontSize: 11)),
+              child: Text('Clear',
+                  style: TextStyle(color: AppColors.t38, fontSize: 11)),
             ),
         ]),
         // Condition threshold slider
         Row(children: [
-          const Text('30%', style: TextStyle(color: Colors.white38, fontSize: 11)),
+          Text('30%', style: TextStyle(color: AppColors.t38, fontSize: 11)),
           Expanded(
             child: Slider(
               value: _selectThreshold,
@@ -673,7 +674,7 @@ class _MinesTabState extends State<MinesTab> {
               }),
             ),
           ),
-          const Text('100%', style: TextStyle(color: Colors.white38, fontSize: 11)),
+          Text('100%', style: TextStyle(color: AppColors.t38, fontSize: 11)),
         ]),
         const SizedBox(height: 8),
         // Row 2: action buttons
@@ -833,7 +834,6 @@ class _MineTileState extends State<_MineTile> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF1A1A2E),
       builder: (_) => TechUpgradeSheet(
         mine: mine, player: player,
         onDone: () => context.read<PlayerProvider>().refresh(),
@@ -872,8 +872,8 @@ class _MineTileState extends State<_MineTile> {
               style: const TextStyle(
                   color: Colors.amber, fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),
-          const Text('This cannot be undone.',
-              style: TextStyle(color: Colors.white54, fontSize: 12)),
+          Text('This cannot be undone.',
+              style: TextStyle(color: AppColors.t54, fontSize: 12)),
         ]),
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
@@ -930,7 +930,7 @@ class _MineTileState extends State<_MineTile> {
         secondary: Column(mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.end, children: [
           Text('Lv ${mine.level}',
-              style: const TextStyle(fontSize: 11, color: Colors.white54)),
+              style: TextStyle(fontSize: 11, color: AppColors.t54)),
           Text('ꞓ${_mineRefund(mine)}',
               style: const TextStyle(fontSize: 11, color: Colors.amber)),
         ]),
@@ -972,7 +972,7 @@ class _MineTileState extends State<_MineTile> {
           if (mine.isSick) ...[const SizedBox(width: 6),
             _badge('SICK', Colors.redAccent)],
           if (mine.hqBoost != null) ...[const SizedBox(width: 6),
-            _badge('HQ×${mine.hqBoost!.toStringAsFixed(1)}', Colors.tealAccent)],
+            _badge('HQ×${mine.hqBoost!.toStringAsFixed(1)}', AppColors.accent)],
         ]),
         trailing: Column(mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.end, children: [
@@ -1052,15 +1052,15 @@ class _MineTileState extends State<_MineTile> {
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: Colors.teal.withValues(alpha: 0.15),
+          color: AppColors.accent.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(6),
         ),
         child: Row(children: [
-          const Icon(Icons.location_city_outlined,
-              color: Colors.tealAccent, size: 14),
+          Icon(Icons.location_city_outlined,
+              color: AppColors.accent, size: 14),
           const SizedBox(width: 6),
           Text('HQ boost ×${mine.hqBoost!.toStringAsFixed(1)} active',
-              style: const TextStyle(color: Colors.tealAccent, fontSize: 11)),
+              style: TextStyle(color: AppColors.accent, fontSize: 11)),
         ]),
       ),
     ],
@@ -1089,7 +1089,7 @@ class _MineTileState extends State<_MineTile> {
           style: TextStyle(
               color: color, fontWeight: FontWeight.bold, fontSize: 13)),
       Text(label,
-          style: const TextStyle(color: Colors.white38, fontSize: 10)),
+          style: TextStyle(color: AppColors.t38, fontSize: 10)),
     ]),
   );
 
@@ -1238,7 +1238,7 @@ class TechUpgradeSheetState extends State<TechUpgradeSheet> {
           const SizedBox(height: 8),
           if (!allFull) ...[
             Text('Installing TU$lv — ${_tuNames[lv]}  ($inStock in stock)',
-                style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                style: TextStyle(color: AppColors.t70, fontSize: 12)),
             const SizedBox(height: 4),
             if (maxSlider > 0) ...[
               Slider(
@@ -1251,18 +1251,18 @@ class TechUpgradeSheetState extends State<TechUpgradeSheet> {
               ),
               Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                 Text('Add: $_addAmount items',
-                    style: const TextStyle(
-                        color: Colors.white54, fontSize: 12)),
+                    style: TextStyle(
+                        color: AppColors.t54, fontSize: 12)),
                 Text('Remaining: $canAdd / 100',
-                    style: const TextStyle(
-                        color: Colors.white38, fontSize: 11)),
+                    style: TextStyle(
+                        color: AppColors.t38, fontSize: 11)),
               ]),
             ] else
               Text(inStock == 0
                   ? 'No TU$lv items in warehouse'
                   : 'Already full at this level',
-                  style: const TextStyle(
-                      color: Colors.white38, fontSize: 12)),
+                  style: TextStyle(
+                      color: AppColors.t38, fontSize: 12)),
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
@@ -1316,7 +1316,7 @@ class TechUpgradeSheetState extends State<TechUpgradeSheet> {
         child: Text('TU$level',
             style: TextStyle(
               color: isLocked ? Colors.white24
-                  : isActive ? Colors.purpleAccent : Colors.white54,
+                  : isActive ? Colors.purpleAccent : AppColors.t54,
               fontSize: 12,
               fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
             ))),
@@ -1349,7 +1349,7 @@ class TechUpgradeSheetState extends State<TechUpgradeSheet> {
           label,
           style: TextStyle(
             color: isLocked ? Colors.white24
-                : hasPreview ? Colors.purpleAccent : Colors.white54,
+                : hasPreview ? Colors.purpleAccent : AppColors.t54,
             fontSize: 11,
             fontWeight: hasPreview ? FontWeight.bold : FontWeight.normal,
           ),

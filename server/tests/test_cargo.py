@@ -194,3 +194,22 @@ def test_recycling_found_objects():
     assert all(float(v).is_integer() for v in outs.values())
     info = call(C + "recycling", sid)
     assert {x["itemID"] for x in info["recipes"]} >= {41, 74, 115, 120}
+
+
+def test_stack_holds_what_the_same_loose_crates_would():
+    """Owner 2026-10-23: 100 000 stacked crates = 100 000 loose crates (incl. the box specials)."""
+    import random
+    from systems import cargo
+    n = 1_000_000
+    mix = cargo.stack_mix(random.Random(7), n)
+    exp_all = {}
+    for table, share in ((cargo.BOX_LOOT, cargo.BOX_SHARE), (cargo.LOOT, 1 - cargo.BOX_SHARE)):
+        tot = sum(v[1] for v in table.values())
+        for i, (_, w, _) in table.items():
+            lo, hi = cargo.QTY[i]
+            exp_all[i] = exp_all.get(i, 0) + n * share * w / tot * (lo + hi) / 2
+    for i, exp in exp_all.items():
+        if exp >= 1000:
+            assert abs(mix.get(i, 0) - exp) / exp < 0.1, (i, mix.get(i), exp)
+    assert any(i in mix for i in cargo.BOX_EXTRA)        # box specials can be in a stack
+

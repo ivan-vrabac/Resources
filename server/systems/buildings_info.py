@@ -43,10 +43,11 @@ def effects(h, item_id: int, lvl: int) -> list:
                 ("Attack values (dogs / gangsters / army)", f"{a[0]} / {a[1]} / {a[2]}" if lvl else "—"),
                 ("Loot", f"{lvl * combat.LOOT_HOURS_PER_LEVEL} h of output" if lvl else "—")]
     if item_id == 72:                                               # Law Firm
-        return [("Claims", f"−{round((1 - protection.law_firm_factor(lvl)) * 100)}% (no claims in the game yet)")]
+        cut = f"−{round((1 - protection.law_firm_factor(lvl)) * 100)}%"
+        return [("Mine disease duration", cut), ("Earthquake damage", cut), ("Factory fire duration", cut)]
     if item_id == SERVICE_CENTER:
         return [("Reward per repair of others' mines", f"{lvl} h of the mine's output"),
-                ("Bonus crates", f"0–{min(4, (lvl + 2) // 3)}")]
+                ("Bonus crates", f"0 to {min(4, (lvl + 2) // 3)}")]
     if item_id == 122:                                              # HR Department
         return [("Strikes and claims", "no strike mechanic in the game yet")]
     if item_id == ARCH_CENTER:
@@ -71,7 +72,7 @@ def install(api) -> None:
                            "effects": [{"label": "Mine boost", "value": f"+{round((h.HQ_BOOST_FACTORS[lvl] - 1) * 100)}%"},
                                        {"label": "Boost range", "value": f"{h.HQ_BOOST_RADIUS[lvl]} m"}]})
         return {"err": 0, "level": cur[0] if cur else 0, "levels": levels,
-                "bonusLevels": "HQ level 10 bonus levels 1–6: one per 10 000 luxury points"}
+                "bonusLevels": "At level 10 the HQ gets bonus levels 1 to 6, one for every 10,000 luxury points."}
 
     @api.endpoint("/api/v1/buildings/info")
     def info(conn, hid, form):

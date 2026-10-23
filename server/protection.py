@@ -4,8 +4,8 @@ protects against, not by how much, so the percentages are a configurable proposa
 - Hospital (71): random mine disease chance −7 %/level, spread chance −5 %/level.
 - Fire Station (126): factory fire chance −8 %/level, fire duration −5 %/level.
 - Seismology Centre (127): earthquake damage −6 %/level (−60 % at level 10).
-- Law Firm (72): claims −5 %/level (eva.txt). The game has no lawsuit/claim mechanic yet, so
-  nothing calls law_firm_factor() — documented as BLOCKED until claims exist.
+- Law Firm (72): penalties of incidents −5 %/level (owner 2026-10-23): shorter mine disease,
+  less earthquake damage, shorter factory fires. Stacks with the protective buildings above.
 """
 HOSPITAL = 71
 LAW_FIRM = 72

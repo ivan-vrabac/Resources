@@ -8,6 +8,7 @@ import '../models/player_provider.dart';
 import '../services/api_service.dart';
 import '../constants.dart';
 
+import '../app_colors.dart';
 DateTime _srvUtc(String s) =>
     DateTime.parse(s.endsWith('Z') || s.contains('+') ? s : '${s}Z');
 
@@ -152,8 +153,8 @@ class _FactoryScreenState extends State<FactoryScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text('Upgrade Factory'),
-            Text('Level $level', style: const TextStyle(
-                color: Colors.teal, fontSize: 13, fontWeight: FontWeight.normal)),
+            Text('Level $level', style: TextStyle(
+                color: AppColors.accent, fontSize: 13, fontWeight: FontWeight.normal)),
           ],
         ),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -183,7 +184,7 @@ class _FactoryScreenState extends State<FactoryScreen> {
                   const SizedBox(width: 4),
                   Text('${fmtNum(need)} ${itemName(id)}',
                       style: TextStyle(fontSize: 12,
-                          color: ok ? Colors.white70 : Colors.red,
+                          color: ok ? AppColors.t70 : Colors.red,
                           fontWeight: ok ? FontWeight.normal : FontWeight.bold)),
                 ]),
               );
@@ -196,13 +197,13 @@ class _FactoryScreenState extends State<FactoryScreen> {
               if (resImagePath(outputItemId) != null)
                 Padding(padding: const EdgeInsets.only(right: 6),
                     child: Image.asset(resImagePath(outputItemId)!, width: 18, height: 18)),
-              Text(itemName(outputItemId), style: const TextStyle(color: Colors.white54, fontSize: 12)),
+              Text(itemName(outputItemId), style: TextStyle(color: AppColors.t54, fontSize: 12)),
             ]),
             const SizedBox(height: 4),
           ],
           Row(children: [
             Text('${fmtNum(curOutPerHr.round())} u/hr',
-                style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                style: TextStyle(color: AppColors.t38, fontSize: 12)),
             const Padding(padding: EdgeInsets.symmetric(horizontal: 6),
                 child: Icon(Icons.arrow_forward, size: 14, color: Colors.greenAccent)),
             Text('${fmtNum(newOutPerHr.round())} u/hr',
@@ -211,11 +212,11 @@ class _FactoryScreenState extends State<FactoryScreen> {
           const SizedBox(height: 4),
           Row(children: [
             Text('${_fmtHrsStatic(curHrsPerBatch)}/batch',
-                style: const TextStyle(color: Colors.white38, fontSize: 11)),
-            const Padding(padding: EdgeInsets.symmetric(horizontal: 6),
-                child: Icon(Icons.arrow_forward, size: 12, color: Colors.teal)),
+                style: TextStyle(color: AppColors.t38, fontSize: 11)),
+            Padding(padding: EdgeInsets.symmetric(horizontal: 6),
+                child: Icon(Icons.arrow_forward, size: 12, color: AppColors.accent)),
             Expanded(child: Text('${_fmtHrsStatic(newHrsPerBatch)}/batch  (${(newLevelMult / curLevelMult * 100 - 100).round()}% faster)',
-                style: const TextStyle(color: Colors.teal, fontSize: 11))),
+                style: TextStyle(color: AppColors.accent, fontSize: 11))),
           ]),
           const SizedBox(height: 16),
           Row(children: [
@@ -282,10 +283,10 @@ class _FactoryScreenState extends State<FactoryScreen> {
               Padding(padding: const EdgeInsets.only(right: 8),
                   child: Image.asset(resImagePath(producesId)!, width: 28, height: 28)),
             Text('+${fmtNum(instantOutput)} ${itemName(producesId)}',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.teal)),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.accent)),
           ]),
           const SizedBox(height: 4),
-          Text('instantly added to warehouse', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+          Text('instantly added to warehouse', style: TextStyle(color: AppColors.t54, fontSize: 12)),
           if (isUnderWeek) ...[
             const SizedBox(height: 10),
             Container(
@@ -322,7 +323,7 @@ class _FactoryScreenState extends State<FactoryScreen> {
           ],
           const SizedBox(height: 8),
           Text('${_fmtDays(kBoostCooldownDays)} cooldown starts after use.',
-              style: const TextStyle(color: Colors.white38, fontSize: 11)),
+              style: TextStyle(color: AppColors.t38, fontSize: 11)),
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(_, false), child: const Text('Cancel')),
@@ -477,11 +478,11 @@ class _FactoryScreenState extends State<FactoryScreen> {
               (_data!['catalog'] as List)
                   .where((c) => !kSpecialBuildings.containsKey(c['itemID'] as int? ?? 0))
                   .every((c) => c['owned'] == true))
-            const Padding(
+            Padding(
               padding: EdgeInsets.all(16),
               child: Text('You own all available factories!',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white54)),
+                  style: TextStyle(color: AppColors.t54)),
             ),
         ]),
       ),
@@ -497,7 +498,7 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
     child: Text(text.toUpperCase(),
-        style: const TextStyle(fontSize: 11, color: Colors.white38, letterSpacing: 1.2)),
+        style: TextStyle(fontSize: 11, color: AppColors.t38, letterSpacing: 1.2)),
   );
 }
 
@@ -615,14 +616,14 @@ class _FactoryTileState extends State<_FactoryTile> {
           Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
             if (outputImgPath != null)
               Image.asset(outputImgPath, width: 48, height: 48, fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => const Icon(Icons.factory, size: 40, color: Colors.teal))
+                  errorBuilder: (_, __, ___) => Icon(Icons.factory, size: 40, color: AppColors.accent))
             else
-              const Icon(Icons.factory, size: 40, color: Colors.teal),
+              Icon(Icons.factory, size: 40, color: AppColors.accent),
             const SizedBox(width: 10),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
               Row(children: [
-                _badge('Level $level', Colors.teal),
+                _badge('Level $level', AppColors.accent),
                 if (hasBooster) ...[
                   const SizedBox(width: 4),
                   _badge('+${((((kWaBoosters[boosterItem]?['boost'] as num?) ?? 1.0) - 1.0) * 100).round()}%',
@@ -645,7 +646,7 @@ class _FactoryTileState extends State<_FactoryTile> {
                 child: Image.asset('assets/images/2x/factoryboost.png', width: 36, height: 36,
                     errorBuilder: (_, __, ___) =>
                         Icon(Icons.rocket_launch, size: 28,
-                            color: isProducing ? Colors.teal : Colors.white24)),
+                            color: isProducing ? AppColors.accent : Colors.white24)),
               ),
             ),
           ]),
@@ -685,7 +686,7 @@ class _FactoryTileState extends State<_FactoryTile> {
               Row(children: [
                 // ignore: unnecessary_non_null_assertion
                 Expanded(child: Text('${itemName(prodItem!)}  â€¢  ${fmtNum(f['prodAmt'] as num)} units',
-                    style: const TextStyle(color: Colors.white54, fontSize: 11))),
+                    style: TextStyle(color: AppColors.t54, fontSize: 11))),
                 Text(_countdown,
                     style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 13)),
                 const SizedBox(width: 8),
@@ -700,7 +701,7 @@ class _FactoryTileState extends State<_FactoryTile> {
               LinearProgressIndicator(
                 value: _prodProgress(),
                 backgroundColor: Colors.white12,
-                color: Colors.teal,
+                color: AppColors.accent,
               ),
             ],
           ] else ...[
@@ -709,7 +710,7 @@ class _FactoryTileState extends State<_FactoryTile> {
                   style: TextStyle(color: Colors.red, fontSize: 11))
             else ...[
               Text('${fmtNum(outPerHr.round())} units/hr  â€¢  ${fmtNum(baseOut)} per batch  â€¢  ${_fmtHrs(hrsPerBatch)}',
-                  style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                  style: TextStyle(color: AppColors.t54, fontSize: 11)),
               const SizedBox(height: 8),
               Row(children: [
                 Expanded(child: FilledButton.tonal(
@@ -822,11 +823,11 @@ class _CatalogTile extends StatelessWidget {
                     child: Image.asset(resImagePath(produces)!, fit: BoxFit.contain)),
               ),
             Text('Produces: ${itemName(produces)}',
-                style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                style: TextStyle(color: AppColors.t54, fontSize: 12)),
           ]),
           if (needs.isNotEmpty) ...[
             const SizedBox(height: 6),
-            const Text('Input per batch:', style: TextStyle(color: Colors.white38, fontSize: 11)),
+            Text('Input per batch:', style: TextStyle(color: AppColors.t38, fontSize: 11)),
             const SizedBox(height: 4),
             Wrap(
               spacing: 8, runSpacing: 4,
@@ -838,11 +839,11 @@ class _CatalogTile extends StatelessWidget {
                     width: 16, height: 16,
                     child: imgPath != null
                         ? Image.asset(imgPath, fit: BoxFit.contain)
-                        : const Icon(Icons.inventory_2_outlined, size: 14, color: Colors.white38),
+                        : Icon(Icons.inventory_2_outlined, size: 14, color: AppColors.t38),
                   ),
                   const SizedBox(width: 4),
                   Text('${e.value} ${itemName(id)}',
-                      style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                      style: TextStyle(fontSize: 11, color: AppColors.t54)),
                 ]);
               }).toList(),
             ),
@@ -888,7 +889,7 @@ class _CatalogTile extends StatelessWidget {
         Text(qty,
             style: TextStyle(
                 fontSize: 11,
-                color: ok ? Colors.white70 : Colors.red,
+                color: ok ? AppColors.t70 : Colors.red,
                 fontWeight: ok ? FontWeight.normal : FontWeight.bold)),
       ]),
     );
@@ -991,12 +992,12 @@ class _StartProdSheetState extends State<_StartProdSheet> {
           children: [
         const Text('Start Production',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        Text(name, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+        Text(name, style: TextStyle(color: AppColors.t54, fontSize: 12)),
         const SizedBox(height: 16),
 
         if (_needs.isNotEmpty) ...[
-          const Text('Required per batch:',
-              style: TextStyle(color: Colors.white38, fontSize: 11)),
+          Text('Required per batch:',
+              style: TextStyle(color: AppColors.t38, fontSize: 11)),
           const SizedBox(height: 6),
           ..._needs.entries.map((e) {
             final id = int.tryParse(e.key) ?? 0;
@@ -1023,7 +1024,7 @@ class _StartProdSheetState extends State<_StartProdSheet> {
                   '$totalNeed / $have',
                   style: TextStyle(
                       fontSize: 12,
-                      color: ok ? Colors.white54 : Colors.red,
+                      color: ok ? AppColors.t54 : Colors.red,
                       fontWeight: ok ? FontWeight.normal : FontWeight.bold),
                 ),
               ]),
@@ -1038,12 +1039,12 @@ class _StartProdSheetState extends State<_StartProdSheet> {
             width: 32, height: 32,
             child: resImagePath(_producesId) != null
                 ? Image.asset(resImagePath(_producesId)!, fit: BoxFit.contain)
-                : const Icon(Icons.inventory_2_outlined, color: Colors.teal),
+                : Icon(Icons.inventory_2_outlined, color: AppColors.accent),
           ),
           const SizedBox(width: 8),
           Text(
             '${fmtNum(totalOut)} ${itemName(_producesId)}  â€¢  ${_fmtHrs(_hrsPerBatch * _batches)}',
-            style: const TextStyle(color: Colors.teal, fontSize: 12),
+            style: TextStyle(color: AppColors.accent, fontSize: 12),
           ),
           const Spacer(),
           TextButton(
@@ -1220,7 +1221,7 @@ class _BoostSheet extends StatelessWidget {
           })(),
           title: Text('Giant Diamond',
               style: TextStyle(
-                  color: (onCooldown || !isProducing) ? Colors.white38 : Colors.white,
+                  color: (onCooldown || !isProducing) ? AppColors.t38 : Colors.white,
                   fontWeight: FontWeight.bold)),
           subtitle: Text(_diamondSubtitle(onCooldown, factory, out7days),
               style: const TextStyle(fontSize: 11)),
@@ -1245,7 +1246,7 @@ class _BoostSheet extends StatelessWidget {
             ]),
           ),
         const Divider(),
-        const Text('Production Boosters', style: TextStyle(color: Colors.white38, fontSize: 11)),
+        Text('Production Boosters', style: TextStyle(color: AppColors.t38, fontSize: 11)),
         const SizedBox(height: 8),
         ...kWaBoosters.entries.map((entry) {
           final id = entry.key;
