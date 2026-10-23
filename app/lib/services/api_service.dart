@@ -232,11 +232,13 @@ class ApiService {
 
   // ── HQ ───────────────────────────────────────────────────────────────────
 
+  /// Place or move the HQ; [curLat]/[curLng] = your GPS position (the server checks the distance).
   static Future<Map<String, dynamic>?> placeHQ(
-      String sid, double lat, double lng) async {
+      String sid, double lat, double lng, double curLat, double curLng) async {
     try {
       final r = await http.post(Uri.parse('$kBaseUrl/flut23/HQNewPosition.php'),
-          body: {'sid': sid, 'lat': lat.toString(), 'lng': lng.toString()})
+          body: {'sid': sid, 'lat': lat.toString(), 'lng': lng.toString(),
+                 'cur_lat': curLat.toString(), 'cur_lng': curLng.toString()})
           .timeout(const Duration(seconds: 10));
       return _zlibJson(r.bodyBytes);
     } catch (_) { return null; }

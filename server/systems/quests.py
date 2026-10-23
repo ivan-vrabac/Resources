@@ -263,6 +263,7 @@ def install(api) -> None:
             credits = int(round(CREDITS_PER_LEVEL * level * bonus))
             crates = int(round(cargo.QUEST_CRATES * bonus))
             econ.credit(conn, hid, credits, "quest_reward", str(qid))
+            h.change_wa(conn, hid, 2.0, "quest")        # owner 2026-10-23: finished quests raise WA
             cargo.grant(conn, hid, crates, "quest")
             econ.emit(conn, "quest_completed", hid, {"code": q["code"]}, public=False)
             conn.execute("INSERT OR IGNORE INTO achievements(hid, code, title, ts) VALUES(?,?,?,?)",

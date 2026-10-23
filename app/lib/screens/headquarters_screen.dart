@@ -80,7 +80,7 @@ class _HeadquartersScreenState extends State<HeadquartersScreen> {
 
     setState(() => _placing = true);
     final sid = context.read<PlayerProvider>().sid;
-    final result = await ApiService.placeHQ(sid, selected.latitude, selected.longitude);
+    final result = await ApiService.placeHQ(sid, selected.latitude, selected.longitude, pos.latitude, pos.longitude);
     if (!mounted) return;
     setState(() => _placing = false);
     if (result == null || result['err'] != 0) {
@@ -148,7 +148,7 @@ class _HeadquartersScreenState extends State<HeadquartersScreen> {
                   child: _placing
                       ? const SizedBox(width: 14, height: 14,
                           child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Move HQ', style: TextStyle(fontSize: 12)),
+                      : Text('Move HQ (ꞓ${fmtNum(25000 * hq.level * hq.level)})', style: const TextStyle(fontSize: 12)),
                 ),
               ]),
             ),

@@ -45,7 +45,7 @@ def test_roll_follows_sfo_table():
         lo, hi = cargo.QTY[item]
         assert lo <= q <= hi
         seen[item] = seen.get(item, 0) + 1
-    assert seen[41] > seen[57] > seen[70] > seen.get(120, 0)   # fossils most common, wreckage rare
+    assert seen[41] > seen[56] > seen[70] > seen.get(120, 0)   # fossils most common, wreckage rare
 
 
 def test_drop_spends_stock_and_scatters_within_range():

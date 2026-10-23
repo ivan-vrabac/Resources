@@ -322,6 +322,10 @@ def run_quake(conn, h, now, day=None) -> dict | None:
             below += new < 20
             damaged_owners.add(m["owner_hid"])
         conn.executemany("UPDATE mines SET condition=? WHERE mine_id=?", updates)
+        # an earthquake is an accident for every company it damaged (penalty + WA, Law Firm softens it)
+        if getattr(h, "PENALTY", None):
+            for owner in damaged_owners:
+                h.PENALTY(conn, owner, "earthquake", day, {"day": day})
         stats = {"affected_mines": len(hits), "damaged_mines": len(updates), "companies": len(damaged_owners),
                  "total_damage": round(total, 1), "max_damage": round(mx, 1), "below_20": below}
         conn.execute("UPDATE earthquakes SET status='done', affected_mines=?, damaged_mines=?, companies=?, "

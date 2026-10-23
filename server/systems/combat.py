@@ -53,6 +53,7 @@ DEFENCE_BASE = (5.0, 50.0, 100.0)
 DEFAULT_DEFENCE = (200, 5, 1)
 MAX_UNITS = 100_000
 ATTACK_COOLDOWN_S = 24 * 3600
+WA_ATTACK_WON, WA_ATTACK_LOST = -0.1, -10.0
 STRENGTH_FULL = 100_000.0       # attack strength for maximum damage
 # owner 2026-10-20: a won attack can also bring special items: (item, chance, min, max)
 SPECIAL_LOOT = ((43, 0.30, 1, 3), (44, 0.10, 1, 2), (45, 0.05, 1, 2), (46, 0.02, 1, 1), (48, 0.005, 1, 1))
@@ -244,6 +245,7 @@ def install(api) -> None:
                 prev = econ.once_get(conn, "attack", hid, rid)
                 if prev is not None:
                     return prev
+            h.check_travel(conn, hid, lat, lng)
             m = mine_or_fail(conn, mine_id)
             if m["owner_hid"] == hid:
                 raise econ.GameError("own_mine", "You can't attack your own mine")
@@ -298,6 +300,10 @@ def install(api) -> None:
             else:
                 conn.execute("UPDATE mines SET condition=? WHERE mine_id=?", (cond, mine_id))
             result.update(damage=round(dmg, 1), condition=cond, destroyed=destroyed)
+            # owner 2026-10-23: attacking hurts your own working atmosphere (won −0.1, lost −10) and the
+            # units that didn't come back are a permanent sink (XP)
+            result["wa"] = h.change_wa(conn, hid, WA_ATTACK_WON if success else WA_ATTACK_LOST, "attack")
+            h.award_sink(conn, hid, res={u: s - l for u, s, l in zip(ATTACK_UNITS, att, a_left) if s > l})
             if success:
                 res = h.MINE_TYPES.get(m["item_id"], {}).get("res")
                 wins = recent_wins(conn, hid, now)
@@ -349,6 +355,7 @@ def install(api) -> None:
         mine_id = (form.get("mineID") or "").strip()
         lat, lng = econ.parse_pos(form)
         with econ.tx(conn):
+            h.check_travel(conn, hid, lat, lng)
             m = mine_or_fail(conn, mine_id)
             owner = m["owner_hid"]
             if owner == hid:

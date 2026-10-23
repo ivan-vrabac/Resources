@@ -13,7 +13,7 @@ const Map<int, String> kItemNames = {
   41: 'Fossils', 42: 'Giant Diamonds', 43: 'Maintenance Kit',
   44: 'Tech Upgrade I', 45: 'Tech Upgrade II', 46: 'Tech Upgrade III',
   48: 'Tech Upgrade IV', 49: 'Ilmenite', 51: 'Titanium', 53: 'Quartz Sand',
-  55: 'Copper Coins', 57: 'Plastics', 58: 'Recycling Plant', 59: 'Glass',
+  55: 'Copper Coins', 56: 'Old Tires', 57: 'Plastics', 58: 'Recycling Plant', 59: 'Glass',
   60: 'Glazier Workshop', 61: 'Casino', 62: 'Plastic Factory',
   63: 'Drone Factory', 64: 'Drone Factory II', 65: 'Museum',
   66: 'Electronics', 67: 'Silicon', 68: 'Silicon Refinery',

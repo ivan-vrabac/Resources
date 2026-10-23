@@ -139,6 +139,9 @@ def credits_of(conn, hid) -> float:
     return float(r[0] or 0)
 
 
+MAX_CREDITS = 9_000_000_000_000_000_000
+
+
 def debit(conn, hid, amount, kind, ref=None) -> None:
     """Take credits; fails (GameError) instead of going negative."""
     amount = round(float(amount))
@@ -146,6 +149,8 @@ def debit(conn, hid, amount, kind, ref=None) -> None:
         raise ValueError("negative debit")
     if amount == 0:
         return
+    if amount > MAX_CREDITS:            # more than any balance can hold (and than SQLite can store)
+        raise GameError("insufficient_credits", "Not enough credits")
     cur = conn.execute("UPDATE players SET credits = credits - ? WHERE hID=? AND credits >= ?",
                        (amount, hid, amount))
     if cur.rowcount != 1:

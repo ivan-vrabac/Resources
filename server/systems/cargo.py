@@ -67,7 +67,8 @@ MUSEUM_QTY_BONUS = 0.05
 
 # sfo.txt found objects: item_id → (name, drop chance %, museum level)
 LOOT = {
-    57: ("Old Tires", 11.5, 0), 41: ("Fossils", 23.0, 0), 55: ("Copper Coins", 21.85, 0),
+    # Old Tires is its own item 56 (it was 57 = Plastics by mistake)
+    56: ("Old Tires", 11.5, 0), 41: ("Fossils", 23.0, 0), 55: ("Copper Coins", 21.85, 0),
     40: ("Roman Coins", 14.95, 0), 70: ("Scrap Metal", 9.11, 3), 74: ("Used Oil", 7.36, 4),
     43: ("Maintenance Kit", 7.36, 4), 115: ("Waste Glass", 5.52, 6), 78: ("Electronic Scrap", 5.29, 6),
     77: ("Plastic Scrap", 4.6, 6), 120: ("Drone Wreckage", 3.68, 7),
@@ -88,7 +89,7 @@ def by_rarity(got: dict) -> list:
     return [{"itemID": k, "qty": v} for k, v in
             sorted(got.items(), key=lambda kv: (-BOX_LOOT.get(kv[0], ("", 0, 0))[1], kv[0]))]
 # Assumed quantity per crate (min, max) — not in the sources.
-QTY = {57: (1, 20), 41: (1, 20), 55: (1, 10), 40: (1, 10), 70: (5, 50), 74: (5, 50), 43: (1, 1),
+QTY = {56: (1, 20), 57: (1, 20), 41: (1, 20), 55: (1, 10), 40: (1, 10), 70: (5, 50), 74: (5, 50), 43: (1, 1),
        115: (5, 50), 78: (5, 30), 77: (5, 50), 120: (1, 3), 42: (1, 1), 44: (1, 3), 45: (1, 2),
        46: (1, 2), 48: (1, 1), 159: (1, 1), 158: (1, 1), 160: (1, 1), 161: (1, 1)}
 # Recycling sources from sfo.txt and srs.txt ("*From recycling"); the ratios are not in the
@@ -101,8 +102,10 @@ RECYCLE = {
     74: [(70, 0.5), (10, 0.5)],                          # used oil → scrap metal, crude oil (srs.txt)
     77: [(74, 0.5)],                                     # plastic scrap → used oil
     43: [(77, 5)],                                       # maintenance kit → plastic scrap
-    55: [(44, 0.01)],                                    # copper coins → Tech Upgrade I
-    40: [(45, 0.01)],                                    # roman coins → Tech Upgrade II
+    # coins: about their own value in Tech Upgrades at 100 % yield (economy revamp 2026-10-23)
+    55: [(44, 0.00024)],                                 # copper coins → Tech Upgrade I (1 per ~4 200)
+    40: [(45, 0.0002)],                                  # roman coins → Tech Upgrade II (1 per 5 000)
+    56: [(77, 1.0), (70, 0.5)],                          # old tires → plastic scrap, scrap metal
 }
 
 
@@ -379,6 +382,7 @@ def install(api) -> None:
                 prev = econ.once_get(conn, "cargo_drop", hid, rid)
                 if prev is not None:
                     return prev
+            h.check_travel(conn, hid, lat, lng)
             if stacks and h.building_level(conn, hid, HAULAGE_FIRM) < STACK_HF_LEVEL:
                 raise econ.GameError("locked", f"Stacked Cargo Rain needs Haulage Firm level {STACK_HF_LEVEL}")
             spend(conn, hid, count, "drop")
@@ -435,6 +439,7 @@ def install(api) -> None:
         method = form.get("method", "hand")
         lat, lng = econ.parse_pos(form)
         with econ.tx(conn):
+            h.check_travel(conn, hid, lat, lng)
             c = conn.execute(OPEN_SQL + " AND c.id=?", open_args(hid) + (crate_id,)).fetchone()
             if not c:
                 raise econ.GameError("gone", "This crate is gone (or you already collected it)")
@@ -456,6 +461,7 @@ def install(api) -> None:
                         raise econ.GameError("locked", f"Drone pick-up needs Drone Research level {DRONE_DR_LEVEL}")
                     econ.require_within(lat, lng, c["lat"], c["lng"], rng_m, "stack")
                     econ.take(conn, hid, SCAN_DRONE, n, "cargo_drone", c["id"])
+                    h.award_sink(conn, hid, res={SCAN_DRONE: n})       # used drones: permanent sink
                 else:
                     raise econ.GameError("needs_vehicle", "Stacked cargo can only be collected by truck or drone")
             else:
@@ -475,6 +481,7 @@ def install(api) -> None:
         lat, lng = econ.parse_pos(form)
         preview = form.get("preview") == "1"
         with econ.tx(conn):
+            h.check_travel(conn, hid, lat, lng)
             lv = levels(conn, hid)
             if lv["haulage"] < TRUCK_HF_LEVEL:
                 raise econ.GameError("locked", f"Truck collection needs Haulage Firm level {TRUCK_HF_LEVEL}")

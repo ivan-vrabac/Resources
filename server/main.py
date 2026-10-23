@@ -984,7 +984,7 @@ def change_wa(conn, hid: str, delta: float, reason: str = "") -> float:
 # Positions come from the phone. Teleporting is refused: between two positioned actions the player
 # can't have travelled faster than TRAVEL_MAX_KMH (allowing GPS jitter). Long gaps are always fine.
 TRAVEL_MAX_KMH = 300
-TRAVEL_FREE_M = 2000          # jumps up to this distance are always accepted (GPS, drone aiming)
+TRAVEL_FREE_M = 5000          # jumps up to this distance are always accepted (GPS fixes switching)
 
 def check_travel(conn, hid: str, lat: float, lng: float) -> None:
     """Raise GameError('teleport') when the position implies impossible travel; else remember it."""
@@ -999,6 +999,9 @@ def check_travel(conn, hid: str, lat: float, lng: float) -> None:
         if d > TRAVEL_FREE_M and d / 1000 / dt_h > TRAVEL_MAX_KMH:
             raise econ.GameError("teleport", "Your position jumped too far too fast. Wait a moment and try again.")
     conn.execute("UPDATE players SET pos_lat=?, pos_lng=?, pos_at=? WHERE hID=?", (lat, lng, now.isoformat(), hid))
+
+EVENT_HOOKS = []         # fn(conn, hid) -> [(title, body)]: daily incidents (systems/incidents.py), in a tx
+PENALTY = None           # set by systems/incidents.py: fn(conn, hid, kind, target, data) -> credits charged
 
 # Called as hook(conn, hid, old_level, new_level) inside the transaction that levelled up.
 LEVEL_UP_HOOKS = []
@@ -1625,7 +1628,16 @@ def mine_rows(conn, hid: str, where: str = "", args: tuple = (), order: str = "m
             for r in rows]
 
 def maybe_run_events(conn, hid: str, wa: int):
-    """Once per hour: check disease spreading and random mine disease events."""
+    """Daily incidents (WA, accidents, strikes: systems/incidents.py); once per hour: disease spreading."""
+    pushes = []
+    with econ.tx(conn):
+        for hook in EVENT_HOOKS:
+            pushes += hook(conn, hid) or []
+    for title, body in pushes:
+        try:
+            _push_to_player(conn, hid, title, body)
+        except Exception:
+            pass
     row = conn.execute("SELECT last_event_check FROM players WHERE hID=?", (hid,)).fetchone()
     now = datetime.datetime.utcnow()
     if row and row["last_event_check"]:
@@ -1676,13 +1688,7 @@ def maybe_run_events(conn, hid: str, wa: int):
                                 and rng.random() < 0.30 * spread_f):
                             infect.add(m["mine_id"])
 
-    # Random new disease if WA is low
-    if wa < 70:
-        disease_prob = max(0.0, (70 - wa) / 70) * 0.03  # up to 3% per hour per mine at WA=0
-        disease_prob *= protection.disease_factor(hospital)
-        for m in healthy:
-            if rng.random() < disease_prob:
-                infect.add(m["mine_id"])
+    # (new outbreaks: daily accidents in systems/incidents.py, chance from the working atmosphere)
 
     if infect:
         conn.executemany("UPDATE mines SET sick_until=? WHERE mine_id=?",
@@ -4334,6 +4340,7 @@ SYSTEM_HELPERS = _types.SimpleNamespace(
     get_db=get_db, hid_from_sid=hid_from_sid, read_form=read_form, zlib_resp=zlib_resp,
     get_player=get_player, wh_capacity=wh_capacity, building_level=building_level,
     award_sink=award_sink, change_wa=change_wa, check_travel=check_travel, economy=economy,
+    EVENT_HOOKS=EVENT_HOOKS, FIRE_DURATION_DAYS=FIRE_DURATION_DAYS, DISEASE_DURATION_DAYS=DISEASE_DURATION_DAYS,
     mine_rate_hr=mine_rate_hr, collect_mine=collect_mine, current_condition=current_condition, compute_repair_cost=compute_repair_cost, collect_mines_bulk=collect_mines_bulk,
     award_xp=award_xp, add_proto=add_proto, level_from_xp=level_from_xp, push=_push_to_player,
     mine_stats=mine_stats, mine_rows=mine_rows,

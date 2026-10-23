@@ -234,12 +234,14 @@ def install(api) -> None:
         can still recover in detection range; the position only within the reveal range."""
         lat, lng = econ.parse_pos(form)
         with econ.tx(conn):
+            h.check_travel(conn, hid, lat, lng)
             lv = levels(conn, hid)
             if lv["centerLevel"] < 1:
                 raise econ.GameError("locked", "Build an Archaeological Center first")
             if lv["detectors"] < 1:
                 raise econ.GameError("no_detector", "You need an Artifact Detector")
             econ.take(conn, hid, DETECTOR, 1, "artifact_scan")
+            h.award_sink(conn, hid, res={DETECTOR: 1})            # a used detector is a permanent sink
         left = int(lv["detectors"]) - 1
         sites = sites_near(lat, lng, lv["detectRange"], period_of(econ.utcnow()))
         done = unavailable(conn, hid, [s["id"] for s in sites])
@@ -267,6 +269,7 @@ def install(api) -> None:
         if not site or period != period_of(econ.utcnow()):
             raise econ.GameError("gone", "This artifact site is gone")
         with econ.tx(conn):
+            h.check_travel(conn, hid, lat, lng)
             lv = levels(conn, hid)
             if lv["centerLevel"] < 1:
                 raise econ.GameError("locked", "Build an Archaeological Center first")
@@ -278,6 +281,7 @@ def install(api) -> None:
                 raise econ.GameError("gone", "You already recovered this artifact, or it is gone")
             need = lv["archaeologistsNeeded"]
             econ.take(conn, hid, ARCHAEOLOGISTS, need, "artifact_recovery", site_id)
+            h.award_sink(conn, hid, res={ARCHAEOLOGISTS: need})
             cur = conn.execute("INSERT OR IGNORE INTO artifact_recoveries(site_id, hid, item_id, lat, lng, ts) "
                                "VALUES(?,?,?,?,?,?)", (site_id, hid, site["item"], site["lat"], site["lng"],
                                                        econ.utcnow_iso()))
