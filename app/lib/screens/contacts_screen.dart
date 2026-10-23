@@ -75,8 +75,30 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
     });
   }
 
+  /// The player's HQ picture (their level), with a dot when they sent you unread messages.
+  Widget _hqAvatar(Map<String, dynamic> p) {
+    final lvl = ((p['hqLevel'] as num?) ?? 0).toInt().clamp(1, 10);
+    final unread = (p['unread'] as num? ?? 0).toInt();
+    return SizedBox(
+      width: 44, height: 44,
+      child: Stack(clipBehavior: Clip.none, children: [
+        Positioned.fill(child: Image.asset('assets/images/hq_thumb_$lvl.png', fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => const Icon(Icons.location_city, size: 32, color: Colors.white54))),
+        if (unread > 0)
+          Positioned(
+            right: -4, top: -4,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(color: Colors.deepOrange, borderRadius: BorderRadius.circular(9)),
+              child: Text('$unread', style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ),
+      ]),
+    );
+  }
+
   Widget _playerTile(Map<String, dynamic> p, {String? subtitle}) => ListTile(
-        leading: CircleAvatar(child: Text((p['name'] as String? ?? '?').characters.first.toUpperCase())),
+        leading: _hqAvatar(p),
         title: Text(p['name'] as String? ?? ''),
         subtitle: Text(subtitle ?? 'Level ${p['level']} · HQ ${p['hqLevel']}',
             style: const TextStyle(color: Colors.white54, fontSize: 12)),
@@ -94,7 +116,16 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
         ListTile(title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold))),
         ListTile(leading: const Icon(Icons.query_stats), title: const Text('View stats'),
             onTap: () => Navigator.pop(ctx, 'stats')),
-        ListTile(leading: const Icon(Icons.mail_outline), title: const Text('Send private message'),
+        ListTile(
+            leading: const Icon(Icons.mail_outline),
+            title: const Text('Private messages'),
+            trailing: (p['unread'] as num? ?? 0) > 0
+                ? Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(color: Colors.deepOrange, borderRadius: BorderRadius.circular(10)),
+                    child: Text('${p['unread']} new', style: const TextStyle(color: Colors.white, fontSize: 12)),
+                  )
+                : null,
             onTap: () => Navigator.pop(ctx, 'dm')),
       ])),
     );

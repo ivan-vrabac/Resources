@@ -11,7 +11,8 @@ class PlayerHud extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final player = context.watch<PlayerProvider>().player;
+    final prov = context.watch<PlayerProvider>();
+    final player = prov.player;
     if (player == null) return const SizedBox();
     // tap the bar (name, credits, level, XP) to open your own company stats
     return GestureDetector(
@@ -30,7 +31,7 @@ class PlayerHud extends StatelessWidget {
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                   overflow: TextOverflow.ellipsis),
             ),
-            _stat(Icons.monetization_on_outlined, 'ꞓ${fmtNum(player.credits)}', Colors.amber),
+            _stat(Icons.monetization_on_outlined, 'ꞓ${fmtNum(prov.credits)}', Colors.amber),
             const SizedBox(width: 12),
             _stat(Icons.military_tech_outlined, 'Lv ${player.level}', Colors.lightBlueAccent),
           ]),

@@ -4,7 +4,6 @@ import '../models/player_provider.dart';
 import '../services/game_api.dart';
 import '../widgets/async_view.dart';
 import '../widgets/top_banner.dart';
-import 'profile_screen.dart';
 
 /// Loans: your credit rating and limit, open loan requests from other players (lend), and your
 /// borrowing/lending history with repayment.
@@ -181,10 +180,9 @@ class _LoansScreenState extends State<LoansScreen> {
             child: ListTile(
               leading: CircleAvatar(child: Text(l['rating'] as String, style: const TextStyle(fontSize: 11))),
               title: Text('${fmtCredits(l['principal'] as num)} for ${l['term_days']} days'),
-              subtitle: Text('${(l['borrower'] as Map)['name']} · risk ${l['risk']}\n'
+              subtitle: Text('Anonymous company · risk ${l['risk']}\n'
                   'You get back ${fmtCredits(l['total'] as num)} (+${fmtCredits(l['interest'] as num)})'),
               isThreeLine: true,
-              onLongPress: () => ProfileScreen.open(context, (l['borrower'] as Map)['pid'] as String),
               trailing: FilledButton(
                 onPressed: _busy ? null : () => _confirmFund(l),
                 child: const Text('Lend'),
@@ -200,7 +198,7 @@ class _LoansScreenState extends State<LoansScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Lend ${fmtCredits(l['principal'] as num)}?'),
-        content: Text('Borrower: ${(l['borrower'] as Map)['name']} (rating ${l['rating']}, risk ${l['risk']}).\n'
+        content: Text('Anonymous borrower · rating ${l['rating']}, risk ${l['risk']}.\n'
             'Repayment of ${fmtCredits(l['total'] as num)} is due ${l['term_days']} days after funding. '
             'If it is late, 50% of the borrower\'s output and sales go to you for 30 days; whatever is still '
             'unpaid after that is forgiven.'),
@@ -224,13 +222,12 @@ class _LoansScreenState extends State<LoansScreen> {
           _ => Colors.white54,
         };
     Widget tile(Map<String, dynamic> x, bool borrowed) {
-      final other = (borrowed ? x['lender'] : x['borrower']) as Map?;
       final open = x['status'] == 'open';
       final owes = ['active', 'overdue'].contains(x['status']) && (x['outstanding'] as num) > 0;
       return Card(
         child: ListTile(
           title: Text('${fmtCredits(x['principal'] as num)} · ${x['term_days']} days · ${x['rating']}'),
-          subtitle: Text('${borrowed ? 'Lender' : 'Borrower'}: ${other?['name'] ?? '—'}\n'
+          subtitle: Text('${borrowed ? 'Borrowed' : 'Lent'} · anonymous\n'
               'Repaid ${fmtCredits(x['repaid'] as num)} of ${fmtCredits(x['total'] as num)}'
               '${x['due_at'] != null ? ' · due ${(x['due_at'] as String).substring(0, 16).replaceFirst('T', ' ')} UTC' : ''}'),
           isThreeLine: true,

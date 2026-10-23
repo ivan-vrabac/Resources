@@ -15,7 +15,7 @@ import '../../branding.dart';
 import '../../constants.dart';
 import '../../models/player.dart';
 import '../../models/player_provider.dart';
-import '../../screens/settings_screen.dart' show kCloudOpacity,
+import '../../screens/settings_screen.dart' show kCloudOpacity, kShowMafiaRing,
     kDroneRingColor, kDroneRingOpacity,
     kScanRingColor, kScanRingOpacity,
     kLocalRingColor, kLocalRingOpacity,
@@ -1334,6 +1334,9 @@ class _MapTabState extends State<MapTab> {
         ? kDroneScanRanges[(drResearchLevel - 1).clamp(0, kDroneScanRanges.length - 1)]
         : 0;
     final hasDrone = kDroneOverride || (player?.lager['117'] ?? 0.0) >= 1;
+    final mafiaLevel = (player?.factories
+        .firstWhere((f) => (f['itemID'] as int? ?? 0) == 86,
+            orElse: () => <String, dynamic>{'lvl': 0})['lvl'] as int? ?? 0);
     final droneRange = hasDrone ? kDroneRange : 0;
     final distToTarget = (_pos != null && _mapCenter != null)
         ? _distM(_pos!, _mapCenter!)
@@ -1361,6 +1364,11 @@ class _MapTabState extends State<MapTab> {
         .firstWhere((r) => r?['mine_item_id'] == _selectedMineType, orElse: () => null);
 
     final canBuild = inLocalRange || inDroneRange;
+    // Build button: a scan result + token, and the snapped build hex inside your local/drone range
+    final snapForBuild = _lastScanPos != null ? _snapBuildPos(_lastScanPos!) : null;
+    final hexDist = (_pos != null && snapForBuild != null) ? _distM(_pos!, snapForBuild) : double.infinity;
+    final buildReady = selectedResult != null && _prospectToken != null &&
+        (hexDist <= 100 || (droneRange > 0 && hexDist <= droneRange));
     final hasActiveSelection = _lastScanPos != null;
     final browseBase = _mapCenter ?? _pos ?? const LatLng(45.815, 15.982);
     final browseSnapPos = canBuild ? _snapBuildPos(browseBase) : null;
@@ -1411,11 +1419,7 @@ class _MapTabState extends State<MapTab> {
               _following = false;
               needsBuild = true;
             }
-            if (hasGesture && _prospectToken != null && _lastScanPos != null &&
-                _distM(_mapCenter!, _lastScanPos!) > 30) {
-              _prospectToken = null;
-              needsBuild = true;
-            }
+            // (the prospect token is kept while panning: the server validates the WIP hex itself)
             if (needsBuild && mounted) setState(() { _builtZoom = newZoom; });
             // Reload markers 600 ms after the user stops panning or zooming.
             if (hasGesture || zoomChanged) {
@@ -1455,14 +1459,15 @@ class _MapTabState extends State<MapTab> {
                   borderColor: kDroneRingColor,
                   borderStrokeWidth: 1.5,
                 ),
-              if (canBuild)
+              // optional Mafia attack ring (Settings › Scan Rings): 100 m at level 1 … 500 m at 10
+              if (kShowMafiaRing && mafiaLevel >= 1)
                 CircleMarker(
-                  point: _mapCenter ?? _pos!,
-                  radius: scanRadius,
+                  point: _pos!,
+                  radius: 100 + (mafiaLevel.clamp(1, 10) - 1) * 400 / 9,
                   useRadiusInMeter: true,
-                  color: kScanRingColor.withValues(alpha: kScanRingOpacity * 0.12),
-                  borderColor: kScanRingColor,
-                  borderStrokeWidth: 1.5,
+                  color: Colors.red.withValues(alpha: 0.05),
+                  borderColor: Colors.redAccent.withValues(alpha: 0.8),
+                  borderStrokeWidth: 1.2,
                 ),
               CircleMarker(
                 point: _pos!,
@@ -1473,6 +1478,24 @@ class _MapTabState extends State<MapTab> {
                 borderStrokeWidth: 1.5,
               ),
             ]),
+            // TC scan ring around the crosshair: reads the live camera every frame (plain pans
+            // don't rebuild the map tab, so a ring placed from _mapCenter would stay behind)
+            Builder(builder: (ctx) {
+              final cam = MapCamera.of(ctx);
+              final c = cam.center;
+              final d = _distM(_pos!, c);
+              if (!(d <= 100 || (droneRange > 0 && d <= droneRange))) return const SizedBox.shrink();
+              return CircleLayer(circles: [
+                CircleMarker(
+                  point: c,
+                  radius: scanRadius,
+                  useRadiusInMeter: true,
+                  color: kScanRingColor.withValues(alpha: kScanRingOpacity * 0.12),
+                  borderColor: kScanRingColor,
+                  borderStrokeWidth: 1.5,
+                ),
+              ]);
+            }),
             // Ring labels — anchored to circle top, only shown when circle ≥ 80px diameter
             (() {
               final refLat = _pos!.latitude * math.pi / 180;
@@ -1480,7 +1503,6 @@ class _MapTabState extends State<MapTab> {
                   (40075017.0 * math.cos(refLat).abs().clamp(0.001, 1.0));
               TextStyle s(Color c) => TextStyle(color: c, fontSize: 9,
                   shadows: const [Shadow(color: Colors.black, blurRadius: 2)]);
-              final scanCenter = _mapCenter ?? _pos!;
               Marker lblAt(String text, LatLng center, double radiusM, Color c) => Marker(
                 point: LatLng(center.latitude + radiusM / 111320.0, center.longitude),
                 width: 96, height: 14,
@@ -1491,8 +1513,7 @@ class _MapTabState extends State<MapTab> {
                 if (!kShowRingLabels) ...[],
                 if (kShowRingLabels && droneRange > 0 && droneRange * ppm > 40)
                   lblAt('Drone range', _pos!, droneRange.toDouble(), kDroneRingColor),
-                if (kShowRingLabels && canBuild && scanRadius * ppm > 40)
-                  lblAt('TC Scan Range', scanCenter, scanRadius, kScanRingColor),
+
                 if (kShowRingLabels && 100 * ppm > 40)
                   lblAt('Local Range', _pos!, 100.0, kLocalRingColor),
               ]);
@@ -1554,15 +1575,17 @@ class _MapTabState extends State<MapTab> {
                   // WIP markers are fixed-size UI indicators; regular mines are geo-scaled.
                   final markerPx = totalPx;
                   final markerH  = markerPx * 0.866;
-                  const barH    = 5.0;
-                  final showBar = !isWip && cond <= 90;
+                  // HP bar inside the hex, scaled with it (same proportions at every zoom)
+                  final barW    = markerPx * 0.56;
+                  final barH    = (markerH * 0.09).clamp(1.5, 10.0);
+                  final showBar = !isWip && cond <= 90 && markerPx >= 14;
                   return Marker(
                     point: LatLng(lat, lng),
                     width: markerPx,
-                    height: markerH + (showBar ? barH : 0),
+                    height: markerH,
                     alignment: Alignment.center,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
+                    child: Stack(
+                      alignment: Alignment.center,
                       children: [
                         SizedBox(
                           width: markerPx, height: markerH,
@@ -1593,15 +1616,19 @@ class _MapTabState extends State<MapTab> {
                           ),
                         ),
                         if (showBar)
-                          SizedBox(width: markerPx, height: barH,
-                            child: ClipRRect(borderRadius: BorderRadius.circular(2),
-                              child: LinearProgressIndicator(
-                                value: cond / 100.0,
-                                backgroundColor: Colors.black54,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  cond < 50 ? Colors.redAccent
-                                      : cond < 80 ? Colors.amber
-                                      : Colors.greenAccent,
+                          Positioned(
+                            bottom: markerH * 0.2,
+                            child: SizedBox(width: barW, height: barH,
+                              child: ClipRRect(borderRadius: BorderRadius.circular(barH / 2),
+                                child: LinearProgressIndicator(
+                                  value: cond / 100.0,
+                                  minHeight: barH,
+                                  backgroundColor: Colors.black54,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    cond < 50 ? Colors.redAccent
+                                        : cond < 80 ? Colors.amber
+                                        : Colors.greenAccent,
+                                  ),
                                 ),
                               ),
                             ),
@@ -2050,24 +2077,21 @@ class _MapTabState extends State<MapTab> {
                     const SizedBox(height: 4),
                     // Mine build icon
                     GestureDetector(
-                      onTap: (selectedResult != null && _prospectToken != null)
-                          ? () => _showBuildDialog(selectedResult!)
-                          : null,
+                      onTap: buildReady ? () => _showBuildDialog(selectedResult!) : null,
                       child: Container(
                         height: 36, width: 52,
                         decoration: BoxDecoration(
-                          color: (selectedResult != null && _prospectToken != null)
+                          color: buildReady
                               ? Colors.amber.withValues(alpha: 0.15)
                               : Colors.transparent,
                           borderRadius: BorderRadius.circular(6),
-                          border: (selectedResult != null && _prospectToken != null)
+                          border: buildReady
                               ? Border.all(color: Colors.amber.withValues(alpha: 0.6))
                               : Border.all(color: Colors.white12),
                         ),
                         child: Center(
                           child: Icon(Icons.construction, size: 22,
-                              color: (selectedResult != null && _prospectToken != null)
-                                  ? Colors.amber : Colors.white24),
+                              color: buildReady ? Colors.amber : Colors.white24),
                         ),
                       ),
                     ),
@@ -2079,7 +2103,9 @@ class _MapTabState extends State<MapTab> {
 
               // ── Center: scan button ───────────────────────────────────────
               Expanded(
-                child: (() {
+                child: ValueListenableBuilder<double>(valueListenable: _crosshairDist, builder: (_, liveDist, __) {
+                  final inLocalRange = _pos != null && liveDist <= 100;
+                  final inDroneRange = _pos != null && droneRange > 0 && liveDist <= droneRange;
                   final disabled = _scanning || _pos == null ||
                       (!inLocalRange && !inDroneRange);
                   final bgColor = inLocalRange
@@ -2143,7 +2169,7 @@ class _MapTabState extends State<MapTab> {
                       ),
                     ),
                   );
-                })(),
+                }),
               ),
 
               const SizedBox(width: 8),

@@ -203,6 +203,7 @@ def install(api) -> None:
                        ).isoformat() if last else None
             out["target"] = {"mineID": mine_id, "isMine": own, "defence": shown, "defenceExact": exact,
                              "nextAttackAt": next_at if next_at and next_at > econ.utcnow_iso() else None,
+                             "lootItem": h.MINE_TYPES.get(m["item_id"], {}).get("res"),
                              "stationed": stationed if own else None, "defenceValues": defence_values(camp),
                              "inHqArea": in_hq_area(conn, m), "condition": m["condition"],
                              "lastAttack": last,

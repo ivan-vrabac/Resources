@@ -15,6 +15,14 @@ DateTime? _srvUtcOpt(String? s) {
   try { return _srvUtc(s); } catch (_) { return null; }
 }
 
+/// Instant-production cooldown in days for this player (5, shortened by Thor's Crucible).
+double kBoostCooldownDays = 5;
+
+String _fmtDays(double d) {
+  final whole = d.floor(), hours = ((d - whole) * 24).round();
+  return hours == 0 ? '$whole-day' : '${whole}d ${hours}h';
+}
+
 class FactoryScreen extends StatefulWidget {
   const FactoryScreen({super.key});
   @override
@@ -48,6 +56,7 @@ class _FactoryScreenState extends State<FactoryScreen> {
     for (final c in (result?['catalog'] as List? ?? const []).cast<Map<String, dynamic>>()) {
       kFactoryTypes[(c['itemID'] as num).toInt()] = {'produces': c['produces'], 'out': c['out'], 'hrs': c['hrs']};
     }
+    kBoostCooldownDays = (result?['boostCooldownDays'] as num? ?? 5).toDouble();
     if (mounted) setState(() { _data = result; _loading = false; });
   }
 
@@ -304,7 +313,7 @@ class _FactoryScreenState extends State<FactoryScreen> {
             ),
           ],
           const SizedBox(height: 8),
-          Text('5-day cooldown starts after use.',
+          Text('${_fmtDays(kBoostCooldownDays)} cooldown starts after use.',
               style: const TextStyle(color: Colors.white38, fontSize: 11)),
         ]),
         actions: [
@@ -549,7 +558,7 @@ class _FactoryTileState extends State<_FactoryTile> {
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
               Row(children: [
-                _badge('Lv $level', Colors.teal),
+                _badge('Level $level', Colors.teal),
                 if (hasBooster) ...[
                   const SizedBox(width: 4),
                   _badge('+${((((kWaBoosters[boosterItem]?['boost'] as num?) ?? 1.0) - 1.0) * 100).round()}%',
@@ -1084,7 +1093,7 @@ class _BoostSheet extends StatelessWidget {
       }
       return 'Boost on cooldown';
     }
-    return 'Instantly collect ~${fmtNum(out7days)} units (7-day output)  •  5-day cooldown';
+    return 'Instantly collect ~${fmtNum(out7days)} units (7-day output)  •  ${_fmtDays(kBoostCooldownDays)} cooldown';
   }
 
   @override

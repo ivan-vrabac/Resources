@@ -23,10 +23,21 @@ Color  kAppSeedColor  = Branding.themeSeed;
 double kSurfaceTone   = 0.5; // 0.0 = very dark, 1.0 = less dark
 
 ThemeData _buildAppTheme(Color seed, double surfaceTone) {
-  final scheme = ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark);
-  final surface = Color.lerp(const Color(0xFF0A0A0A), const Color(0xFF2D2D3D), surfaceTone)!;
+  // vibrant variant + the exact chosen colour as primary, and backgrounds tinted with it, so the
+  // choice is clearly visible everywhere (owner 2026-10-20: colours didn't change enough)
+  final scheme = ColorScheme.fromSeed(
+      seedColor: seed, brightness: Brightness.dark, dynamicSchemeVariant: DynamicSchemeVariant.vibrant);
+  final base = Color.lerp(const Color(0xFF0A0A0A), const Color(0xFF2D2D3D), surfaceTone)!;
+  final surface = Color.lerp(base, seed, 0.14)!;
   return ThemeData(
-    colorScheme: scheme.copyWith(surface: surface),
+    colorScheme: scheme.copyWith(
+      primary: seed,
+      surface: surface,
+      surfaceContainer: Color.lerp(base, seed, 0.20),
+      surfaceContainerHigh: Color.lerp(base, seed, 0.26),
+      surfaceContainerHighest: Color.lerp(base, seed, 0.32),
+    ),
+    scaffoldBackgroundColor: Color.lerp(base, seed, 0.08),
     useMaterial3: true,
   );
 }
@@ -57,6 +68,10 @@ double kScanRingOpacity  = 0.50;
 Color  kLocalRingColor   = Colors.blueAccent;
 double kLocalRingOpacity = 0.70;
 bool   kShowRingLabels   = true;
+// optional range rings (Settings > Scan Rings): Museum pick-up, artifact reveal, Mafia attack
+bool   kShowMuseumRing   = false;
+bool   kShowRevealRing   = false;
+bool   kShowMafiaRing    = false;
 
 const List<String> kHeatmapSchemes      = ['classic', 'cold', 'contrast'];
 const List<String> kHeatmapSchemeLabels = ['Classic', 'Cold', 'Contrast'];
@@ -390,6 +405,20 @@ class _ScanRingsPageState extends State<_ScanRingsPage> {
     }
   }
 
+  Widget _ringToggle(String title, String subtitle, String pref, bool Function() get, void Function(bool) set) =>
+      SwitchListTile(
+        dense: true,
+        title: Text(title, style: const TextStyle(fontSize: 13)),
+        subtitle: Text(subtitle, style: const TextStyle(fontSize: 11, color: Colors.white38)),
+        value: get(),
+        activeColor: Colors.teal,
+        onChanged: (v) async {
+          setState(() => set(v));
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool(pref, v);
+        },
+      );
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -407,6 +436,13 @@ class _ScanRingsPageState extends State<_ScanRingsPage> {
             await prefs.setBool('show_ring_labels', v);
           },
         ),
+        _settingsSectionHeader('More rings'),
+        _ringToggle('Museum pick-up range', 'Cargo Rain crates and artifacts', 'show_museum_ring',
+            () => kShowMuseumRing, (v) => kShowMuseumRing = v),
+        _ringToggle('Artifact reveal range', 'Archaeological Center', 'show_reveal_ring',
+            () => kShowRevealRing, (v) => kShowRevealRing = v),
+        _ringToggle('Mafia attack range', 'Mafia HQ', 'show_mafia_ring',
+            () => kShowMafiaRing, (v) => kShowMafiaRing = v),
         _settingsSectionHeader('Ring Colors & Opacity'),
         _ringSection('Drone range', 'drone', _droneColor, _droneOpacity),
         _ringSection('TC scan radius', 'scan', _scanColor, _scanOpacity),
@@ -677,8 +713,10 @@ class _NumbersDisplayPageState extends State<_NumbersDisplayPage> {
 // ── App Appearance settings page ───────────────────────────────────────────────
 
 const _kSeedPresetColors = [
-  Colors.teal, Colors.blue, Colors.purple, Colors.green,
-  Colors.orange, Colors.red, Colors.pink, Colors.indigo, Colors.cyan,
+  Colors.teal, Colors.cyan, Colors.lightBlue, Colors.blue, Colors.indigo, Colors.deepPurple,
+  Colors.purple, Colors.pink, Colors.red, Color(0xFFB71C1C), Colors.deepOrange, Colors.orange,
+  Colors.amber, Color(0xFFFFD700), Colors.lime, Colors.lightGreen, Colors.green, Color(0xFF1B5E20),
+  Colors.brown, Colors.blueGrey, Color(0xFF9E9E9E),
 ];
 
 class _AppAppearancePage extends StatefulWidget {
@@ -1012,6 +1050,9 @@ Future<void> loadNumDecimalsPrefs() async {
   if (localC != null) kLocalRingColor = Color(localC);
   kLocalRingOpacity = (prefs.getDouble('local_ring_opacity') ?? 0.70).clamp(0.0, 1.0);
   kShowRingLabels = prefs.getBool('show_ring_labels') ?? true;
+  kShowMuseumRing = prefs.getBool('show_museum_ring') ?? false;
+  kShowRevealRing = prefs.getBool('show_reveal_ring') ?? false;
+  kShowMafiaRing = prefs.getBool('show_mafia_ring') ?? false;
   final raw = prefs.getString('heatmap_scheme') ?? 'classic';
   kHeatmapScheme = kHeatmapSchemes.contains(raw) ? raw : 'classic';
   heatmapSchemeNotifier.value = kHeatmapScheme;

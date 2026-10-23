@@ -5,7 +5,7 @@ import '../models/player_provider.dart';
 import '../services/game_api.dart';
 import '../widgets/async_view.dart';
 import '../widgets/top_banner.dart';
-import 'dm_screen.dart';
+import 'achievements_screen.dart';
 
 /// Public profile of a player ([pid]), or your own statistics when [pid] is null.
 class ProfileScreen extends StatefulWidget {
@@ -173,15 +173,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _itemSection('Luxury items', p['luxuryItems'], 'qty', prefix: '×'),
             if (!isMe) ...[
               const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  icon: const Icon(Icons.mail_outline),
-                  label: const Text('Send private message'),
-                  onPressed: () => DmScreen.open(context, p['pid'] as String, p['name'] as String? ?? ''),
-                ),
-              ),
-              const SizedBox(height: 12),
+
               const Text('Contacts', style: TextStyle(color: Colors.white54, fontSize: 12)),
               const SizedBox(height: 6),
               Wrap(spacing: 6, runSpacing: 6, children: [
@@ -192,14 +184,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ]),
             ],
             const SizedBox(height: 16),
-            const Text('Achievements', style: TextStyle(color: Colors.white54, fontSize: 12)),
+            Row(children: [
+              const Expanded(child: Text('Achievements', style: TextStyle(color: Colors.white54, fontSize: 12))),
+              if (isMe)
+                TextButton.icon(
+                  icon: const Icon(Icons.star_outline, size: 16),
+                  label: const Text('All achievements'),
+                  onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const AchievementsScreen())),
+                ),
+            ]),
             const SizedBox(height: 6),
             if (ach.isEmpty)
               const Text('No achievements yet', style: TextStyle(color: Colors.white38))
             else
               ...ach.map((a) => ListTile(
                     dense: true,
-                    leading: const Icon(Icons.emoji_events, color: Colors.amber),
+                    leading: const Icon(Icons.star, color: Colors.amber),
                     title: Text(a['title'] as String? ?? ''),
                     subtitle: Text((a['ts'] as String? ?? '').split('T').first),
                   )),

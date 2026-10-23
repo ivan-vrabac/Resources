@@ -8,6 +8,7 @@ import '../constants.dart';
 import '../services/game_api.dart';
 import 'async_view.dart';
 import 'top_banner.dart';
+import '../screens/settings_screen.dart' show kShowMuseumRing;
 
 /// Holiday crate art: the week (Mon–Sun) containing Christmas, Easter Sunday or Halloween uses
 /// its own crate set; otherwise the regular cargo box / container art.
@@ -117,8 +118,8 @@ class CargoController extends ChangeNotifier {
         context: context,
         backgroundColor: const Color(0xFF1A1A2E),
         builder: (_) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const ListTile(title: Text('Stacked cargo (100 crates)'),
-              subtitle: Text('Can only be collected by truck (in range) or drone (remote).')),
+          ListTile(title: Text('Stacked cargo (${fmtNum((crate['count'] as num? ?? 100).toInt())} crates)'),
+              subtitle: const Text('Needs one truck per crate (in range, not used up) or one drone per crate (remote, used up).')),
           ListTile(
             leading: const ItemIcon(124),
             title: Text('Truck (you have ${fmtQty(info['trucks'] as num? ?? 0)})'),
@@ -168,6 +169,7 @@ class CargoController extends ChangeNotifier {
       return;
     }
     final n = (p.data['crates'] as num).toInt(), st = (p.data['stacks'] as num).toInt();
+    final loose = (p.data['loose'] as num? ?? n).toInt(), inStacks = (p.data['stackCrates'] as num? ?? 0).toInt();
     final need = (p.data['trucksNeeded'] as num).toInt(), have = (p.data['trucks'] as num).toInt();
     if (n + st == 0) {
       AppNotify.show(context, 'No cargo within ${(p.data['range'] as num).round()} m');
@@ -177,10 +179,11 @@ class CargoController extends ChangeNotifier {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Collect cargo by truck'),
-        content: Text('Use ${min(need, have)}/$have trucks to collect cargo nearby?\n\n'
-            '$n crate${n == 1 ? '' : 's'}${st > 0 ? ' and $st stack${st == 1 ? '' : 's'}' : ''} within '
-            '${(p.data['range'] as num).round()} m'
-            '${need > have ? '\nYou need $need trucks to take everything at once.' : ''}'),
+        content: Text('Use ${fmtNum(min(need, have))}/${fmtNum(have)} trucks to collect cargo nearby?\n\n'
+            '${fmtNum(loose)} crate${loose == 1 ? '' : 's'}'
+            '${st > 0 ? ' and $st stack${st == 1 ? '' : 's'} (${fmtNum(inStacks)} crates)' : ''} within '
+            '${(p.data['range'] as num).round()} m · one truck per crate'
+            '${need > have ? '\nYou need ${fmtNum(need)} trucks to take everything at once.' : ''}'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           FilledButton(onPressed: have < 1 ? null : () => Navigator.pop(ctx, true), child: const Text('Collect')),
@@ -200,7 +203,7 @@ class CargoController extends ChangeNotifier {
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Collected ${r.data['collected']} crate${r.data['collected'] == 1 ? '' : 's'}'),
+        title: Text('Collected ${fmtNum((r.data['collected'] as num).toInt())} crate${r.data['collected'] == 1 ? '' : 's'}'),
         content: SizedBox(
           width: double.maxFinite,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -282,7 +285,7 @@ class CargoLayers extends StatelessWidget {
     return ListenableBuilder(
       listenable: controller,
       builder: (ctx, __) => Stack(children: [
-        if (controller.showRing && pos != null)
+        if (kShowMuseumRing && pos != null)
           CircleLayer(circles: [
             CircleMarker(
               point: pos!,
@@ -325,6 +328,16 @@ class _CratePainter extends CustomPainter {
         canvas.drawRect(dst, Paint()..color = const Color(0xCC6D4C2F));
       } else {
         canvas.drawImageRect(img, Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()), dst, paint);
+      }
+      // stacks: how many crates they hold, right above the stack
+      if (c['stacked'] == true) {
+        final tp = TextPainter(
+          text: TextSpan(text: fmtNum((c['count'] as num? ?? 100).toInt()), style: const TextStyle(
+              color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold,
+              shadows: [Shadow(color: Colors.black, blurRadius: 3)])),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        tp.paint(canvas, Offset(dst.center.dx - tp.width / 2, dst.top - tp.height - 1));
       }
     }
   }
@@ -424,6 +437,7 @@ class _CargoPanel extends StatefulWidget {
 class _CargoPanelState extends State<_CargoPanel> {
   double _count = 10;
   bool _stacked = false;
+  int _stacks = 1;
   bool _busy = false;
 
   Future<void> _drop() async {
@@ -435,13 +449,15 @@ class _CargoPanelState extends State<_CargoPanel> {
     setState(() => _busy = true);
     final rid = '${DateTime.now().microsecondsSinceEpoch}${Random().nextInt(1 << 30)}';
     final r = await GameApi.call('/api/v1/cargo/drop', widget.sid, {
-      if (_stacked) 'stacks': _count.round() else 'count': _count.round(),
+      if (_stacked) ...{'stacked': 1, 'stacks': _stacks, 'count': _count.round()} else 'count': _count.round(),
       'lat': pos.latitude, 'lng': pos.longitude, 'rid': rid,
     });
     if (!mounted) return;
     setState(() => _busy = false);
     if (r.ok) {
-      AppNotify.show(context, _stacked ? 'Dropped ${_count.round()} cargo stacks' : 'Cargo Rain! ${_count.round()} crates dropped');
+      AppNotify.show(context, _stacked
+          ? 'Dropped ${fmtNum(_count.round())} crates in $_stacks stack${_stacks == 1 ? '' : 's'}'
+          : 'Cargo Rain! ${_count.round()} crates dropped');
       await widget.controller.refreshInfo(widget.sid);
       widget.onDropped();
       if (mounted) Navigator.pop(context);
@@ -457,9 +473,13 @@ class _CargoPanelState extends State<_CargoPanel> {
     final stackUnlocked = c.info['stackUnlocked'] == true;
     final stackSize = (c.info['stackSize'] as num? ?? 100).toInt();
     final maxNormal = min(100, stock);
-    final maxStacks = min(10, stock ~/ stackSize);
-    final maxVal = (_stacked ? maxStacks : maxNormal).toDouble();
-    if (_count > maxVal) _count = max(1, maxVal);
+    final maxStackCrates = (stock ~/ stackSize) * stackSize;          // steps of 100, as many as you have
+    final maxVal = (_stacked ? maxStackCrates : maxNormal).toDouble();
+    final minVal = _stacked ? stackSize.toDouble() : 1.0;
+    if (_count > maxVal) _count = max(minVal, maxVal);
+    if (_count < minVal) _count = minVal;
+    final maxStacksNow = max(1, min((c.info['maxStacks'] as num? ?? 5).toInt(), _count.round() ~/ stackSize));
+    if (_stacks > maxStacksNow) _stacks = maxStacksNow;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -473,40 +493,52 @@ class _CargoPanelState extends State<_CargoPanel> {
           const SizedBox(height: 4),
           Text('Collection range ${c.collectRange.round()} m (Museum level ${c.info['museum'] ?? 0})',
               style: const TextStyle(color: Colors.white54, fontSize: 12)),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            title: const Text('Show collection ring on the map'),
-            value: c.showRing,
-            onChanged: (_) => setState(c.toggleRing),
-          ),
+          const Text('The pick-up ring can be shown in Settings › Scan Rings.',
+              style: TextStyle(color: Colors.white38, fontSize: 11)),
           const Divider(),
           if (stackUnlocked)
             SegmentedButton<bool>(
               segments: const [
                 ButtonSegment(value: false, label: Text('Crates')),
-                ButtonSegment(value: true, label: Text('Stacks of 100')),
+                ButtonSegment(value: true, label: Text('Stacked')),
               ],
               selected: {_stacked},
-              onSelectionChanged: (s) => setState(() { _stacked = s.first; _count = 1; }),
+              onSelectionChanged: (s) => setState(() { _stacked = s.first; _count = s.first ? 100 : 1; _stacks = 1; }),
             )
           else
             Text('Stacked Cargo Rain unlocks at Haulage Firm level ${c.info['stackHaulageLevel'] ?? 5}.',
                 style: const TextStyle(color: Colors.white54, fontSize: 12)),
-          if (maxVal >= 1) ...[
+          if (maxVal >= minVal) ...[
             Slider(
-              value: _count.clamp(1, maxVal),
-              min: 1, max: maxVal < 1 ? 1 : maxVal,
-              divisions: maxVal > 1 ? maxVal.round() - 1 : null,
-              label: _count.round().toString(),
-              onChanged: maxVal > 1 ? (v) => setState(() => _count = v) : null,
+              value: _count.clamp(minVal, maxVal),
+              min: minVal, max: maxVal,
+              divisions: _stacked ? max(1, ((maxVal - minVal) / stackSize).round())
+                                  : (maxVal > 1 ? maxVal.round() - 1 : null),
+              label: fmtNum(_count.round()),
+              onChanged: maxVal > minVal ? (v) => setState(() =>
+                  _count = _stacked ? (v / stackSize).round() * stackSize.toDouble() : v) : null,
             ),
+            if (_stacked)
+              Row(children: [
+                const Text('Split into', style: TextStyle(color: Colors.white70)),
+                const SizedBox(width: 8),
+                for (var n = 1; n <= 5; n++)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: ChoiceChip(
+                      label: Text('$n'),
+                      selected: _stacks == n,
+                      onSelected: n <= maxStacksNow ? (_) => setState(() => _stacks = n) : null,
+                    ),
+                  ),
+                const Text('stacks', style: TextStyle(color: Colors.white70)),
+              ]),
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
                 icon: const Icon(Icons.water_drop_outlined),
                 label: Text(_stacked
-                    ? 'Drop ${_count.round()} stack${_count.round() == 1 ? '' : 's'} (${_count.round() * stackSize} crates)'
+                    ? 'Drop ${fmtNum(_count.round())} crates in $_stacks stack${_stacks == 1 ? '' : 's'}'
                     : 'Drop ${_count.round()} crate${_count.round() == 1 ? '' : 's'} here'),
                 onPressed: _busy ? null : _drop,
               ),

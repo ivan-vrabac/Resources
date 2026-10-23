@@ -1,3 +1,4 @@
+import '../services/game_api.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../constants.dart';
@@ -245,11 +246,6 @@ class _SpecialBuildingCardState extends State<_SpecialBuildingCard> {
                           fontWeight: FontWeight.bold),
                     ),
                   ),
-                  if (!_isMaxLevel) ...[
-                    const SizedBox(width: 6),
-                    Text('→ Lv ${widget.currentLevel + 1}',
-                        style: const TextStyle(color: Colors.white38, fontSize: 11)),
-                  ],
                 ] else
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -264,6 +260,11 @@ class _SpecialBuildingCardState extends State<_SpecialBuildingCard> {
             ])),
             if (_isMaxLevel)
               const Icon(Icons.star, color: Colors.amber, size: 22),
+            IconButton(
+              tooltip: 'Information',
+              icon: const Icon(Icons.info_outline, color: Colors.white70),
+              onPressed: () => showBuildingInfo(context, widget.itemId),
+            ),
           ]),
           const SizedBox(height: 10),
           Text(desc, style: const TextStyle(color: Colors.white54, fontSize: 12)),
@@ -303,7 +304,9 @@ class _SpecialBuildingCardState extends State<_SpecialBuildingCard> {
                   context,
                   MaterialPageRoute(builder: (_) => const CasinoScreen()),
                 ),
-                style: FilledButton.styleFrom(backgroundColor: Colors.purple.shade700),
+                // high-contrast play button
+                style: FilledButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black,
+                    textStyle: const TextStyle(fontWeight: FontWeight.bold)),
               ),
             ),
           ],
@@ -409,3 +412,68 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) => Text(text.toUpperCase(),
       style: const TextStyle(fontSize: 11, color: Colors.white38, letterSpacing: 1.2));
 }
+
+/// Information sheet: what the building gives at every level and what each level costs (from
+/// the server's own formulas, /api/v1/buildings/info).
+Future<void> showBuildingInfo(BuildContext context, int itemId) async {
+  final sid = context.read<PlayerProvider>().sid;
+  final r = await GameApi.call('/api/v1/buildings/info', sid);
+  if (!context.mounted) return;
+  if (!r.ok) {
+    AppNotify.show(context, r.message ?? 'Information unavailable', isError: true);
+    return;
+  }
+  final b = (r.data['buildings'] as List).cast<Map<String, dynamic>>().firstWhere(
+      (x) => (x['itemID'] as num).toInt() == itemId, orElse: () => const {});
+  if (b.isEmpty) return;
+  final levels = (b['levels'] as List).cast<Map<String, dynamic>>();
+  final labels = levels.isEmpty ? <String>[]
+      : (levels.first['effects'] as List).cast<Map<String, dynamic>>().map((e) => e['label'] as String).toList();
+  final cur = (b['level'] as num? ?? 0).toInt();
+  await showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: const Color(0xFF1A1A2E),
+    builder: (ctx) => DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.75,
+      builder: (_, scroll) => ListView(controller: scroll, padding: const EdgeInsets.all(16), children: [
+        Text(b['name'] as String, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 4),
+        Text(b['desc'] as String? ?? '', style: const TextStyle(color: Colors.white60, fontSize: 12)),
+        const SizedBox(height: 12),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            headingRowHeight: 36,
+            dataRowMinHeight: 32,
+            dataRowMaxHeight: 52,
+            columnSpacing: 18,
+            columns: [
+              const DataColumn(label: Text('Level')),
+              for (final l in labels) DataColumn(label: Text(l, style: const TextStyle(fontSize: 12))),
+              const DataColumn(label: Text('Cost')),
+            ],
+            rows: [
+              for (final l in levels)
+                DataRow(
+                  color: WidgetStatePropertyAll((l['level'] as num).toInt() == cur
+                      ? Colors.teal.withValues(alpha: 0.25) : null),
+                  cells: [
+                    DataCell(Text('${l['level']}', style: TextStyle(
+                        fontWeight: (l['level'] as num).toInt() == cur ? FontWeight.bold : FontWeight.normal))),
+                    for (final e in (l['effects'] as List).cast<Map<String, dynamic>>())
+                      DataCell(Text(e['value'] as String, style: const TextStyle(fontSize: 12))),
+                    DataCell(Text(['ꞓ${fmtNum(l['credits'] as num)}',
+                      for (final res in (l['res'] as Map).entries) '${fmtNum(res.value as num)} ${itemName(int.parse(res.key as String))}',
+                    ].join('\n'), style: const TextStyle(fontSize: 11, color: Colors.white70))),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ]),
+    ),
+  );
+}
+

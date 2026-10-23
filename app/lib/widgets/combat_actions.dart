@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
+import '../constants.dart' show itemName;
 import '../models/player_provider.dart';
 import '../services/game_api.dart';
 import 'async_view.dart';
@@ -49,14 +51,8 @@ class CombatActions {
           ),
         ),
         const SizedBox(width: 8),
-        Expanded(
-          child: FilledButton.icon(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade800),
-            icon: const Icon(Icons.gpp_bad_outlined, size: 16),
-            label: const Text('Attack'),
-            onPressed: pos == null ? null : () => _attack(context, t, pos, onChanged),
-          ),
-        ),
+        Expanded(child: _AttackButton(mineId: t['mID'] as String, onPressed: pos == null ? null
+            : () => _attack(context, t, pos, onChanged))),
       ]),
     );
   }
@@ -198,9 +194,14 @@ class _AttackDialogState extends State<_AttackDialog> {
           if (!exact)
             const Text('Estimate — a Mafia HQ level 10 shows the exact numbers.',
                 style: TextStyle(fontSize: 11, color: Colors.white54)),
-          Text('Loot if successful: up to ${fmtQty(target['lootEstimate'] as num? ?? 0)}'
-              ' (halved for each successful attack you made in the last 24 h)',
-              style: const TextStyle(fontSize: 12, color: Colors.white70)),
+          Row(children: [
+            if (target['lootItem'] != null) ItemIcon((target['lootItem'] as num).toInt(), size: 26),
+            const SizedBox(width: 6),
+            Expanded(child: Text('Loot if successful: up to ${fmtQty(target['lootEstimate'] as num? ?? 0)} '
+                '${target['lootItem'] != null ? itemName((target['lootItem'] as num).toInt()) : ''}'
+                ' (halved for each successful attack you made in the last 24 h), maybe kits or tech upgrades',
+                style: const TextStyle(fontSize: 12, color: Colors.white70))),
+          ]),
           const Text('Every attack damages the mine 10–70 points depending on the force sent (less if repelled). '
               'A mine can be attacked once every 24 hours.', style: TextStyle(fontSize: 11, color: Colors.white54)),
           const SizedBox(height: 8),
@@ -237,8 +238,26 @@ class _ResultDialog extends StatelessWidget {
       content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('Units returned: ${left.reduce((a, b) => a + b)} of ${sent.reduce((a, b) => a + b)}'),
         Text(r['destroyed'] == true ? 'The mine was demolished.' : 'Damage: ${r['damage']} points → ${r['condition']}%'),
-        if (ok) Text('Loot: ${fmtQty(r['loot'] as num? ?? 0)}'
-            '${(r['lootHalvings'] as num? ?? 0) > 0 ? ' (halved ${r['lootHalvings']}× for recent attacks)' : ''}'),
+        if (ok && r['lootItem'] != null)
+          ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: ItemIcon((r['lootItem'] as num).toInt(), size: 32),
+            title: Text(itemName((r['lootItem'] as num).toInt())),
+            subtitle: (r['lootHalvings'] as num? ?? 0) > 0
+                ? Text('halved ${r['lootHalvings']}× for your recent attacks', style: const TextStyle(fontSize: 11))
+                : null,
+            trailing: Text('+${fmtQty(r['loot'] as num? ?? 0)}', style: const TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        if (ok)
+          for (final sp in ((r['specials'] as List?) ?? const []).cast<Map<String, dynamic>>())
+            ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: ItemIcon((sp['itemID'] as num).toInt(), size: 32),
+              title: Text(itemName((sp['itemID'] as num).toInt())),
+              trailing: Text('+${sp['qty']}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.amberAccent)),
+            ),
         if (!ok && deserters > 0) Text('Deserters joined the defender: $deserters'),
       ]),
       actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
@@ -305,3 +324,48 @@ class _DefenceDialogState extends State<_DefenceDialog> {
     );
   }
 }
+
+/// Attack button that knows the mine's 24 h cooldown: greyed out with the time left instead of
+/// letting the player tap and get refused.
+class _AttackButton extends StatefulWidget {
+  final String mineId;
+  final VoidCallback? onPressed;
+  const _AttackButton({required this.mineId, required this.onPressed});
+  @override
+  State<_AttackButton> createState() => _AttackButtonState();
+}
+
+class _AttackButtonState extends State<_AttackButton> {
+  DateTime? _next;
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    GameApi.call('/api/v1/combat/info', context.read<PlayerProvider>().sid, {'mineID': widget.mineId}).then((r) {
+      final n = r.ok ? ((r.data['target'] as Map?)?['nextAttackAt'] as String?) : null;
+      if (!mounted || n == null) return;
+      setState(() => _next = DateTime.parse(n.endsWith('Z') ? n : '${n}Z'));
+      _tick = Timer.periodic(const Duration(seconds: 30), (_) { if (mounted) setState(() {}); });
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final left = _next?.difference(DateTime.now().toUtc());
+    final cooling = left != null && !left.isNegative;
+    return FilledButton.icon(
+      style: FilledButton.styleFrom(backgroundColor: Colors.red.shade800),
+      icon: Icon(cooling ? Icons.timer_outlined : Icons.gpp_bad_outlined, size: 16),
+      label: FittedBox(child: Text(cooling ? 'Next attack in ${left.inHours}h ${left.inMinutes % 60}m' : 'Attack')),
+      onPressed: cooling ? null : widget.onPressed,
+    );
+  }
+}
+

@@ -19,6 +19,7 @@ class _WarehouseTabState extends State<WarehouseTab> {
   bool _loading = false;
   Map<int, Map<String, dynamic>> _recipes = {};   // recyclable found objects (Recycling Plant)
   int _plantLevel = 0;
+  double _plantYield = 0, _obelisk = 0, _yield = 0;
 
   @override
   void initState() {
@@ -33,6 +34,9 @@ class _WarehouseTabState extends State<WarehouseTab> {
     final rec = await GameApi.call('/api/v1/cargo/recycling', sid);
     if (rec.ok) {
       _plantLevel = (rec.data['plantLevel'] as num? ?? 0).toInt();
+      _plantYield = (rec.data['plantYield'] as num? ?? 0).toDouble();
+      _obelisk = (rec.data['obeliskBonus'] as num? ?? 0).toDouble();
+      _yield = (rec.data['yield'] as num? ?? 0).toDouble();
       _recipes = {for (final r in (rec.data['recipes'] as List).cast<Map<String, dynamic>>()) (r['itemID'] as num).toInt(): r};
     }
     if (mounted && result != null && result['err'] == 0) {
@@ -156,6 +160,9 @@ class _WarehouseTabState extends State<WarehouseTab> {
         title: Text('Recycle ${itemName(itemId)}'),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Recycle $qty of $owned', style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text('Yield: plant ${(_plantYield * 100).round()}%'
+              '${_obelisk > 0 ? ' × Shadow Obelisk +${_obelisk.round()}%' : ''} = ${(_yield * 100).toStringAsFixed(1)}%',
+              style: const TextStyle(fontSize: 12, color: Colors.lightGreenAccent)),
           if (owned > 1)
             Slider(value: qty.toDouble(), min: 1, max: owned.toDouble(), onChanged: (v) => set(() => qty = v.round())),
           const Text('You get about', style: TextStyle(color: Colors.white54, fontSize: 12)),
@@ -211,7 +218,7 @@ class _WarehouseTabState extends State<WarehouseTab> {
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('Warehouse  Lv $_whLevel',
+                    Text('Level $_whLevel',
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                     const SizedBox(height: 4),
                     LinearProgressIndicator(

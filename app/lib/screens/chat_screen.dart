@@ -307,11 +307,15 @@ class _ChatScreenState extends State<ChatScreen> {
     context.read<PlayerProvider>().clearChatMentions();
     final myHid = context.read<PlayerProvider>().player?.hid ?? '';
 
+    // same colour as the bottom bar; no title (it's obviously the chat) — only a slim bar for
+    // the back button (opened from More) or the muted-players list
+    final bg = Theme.of(context).colorScheme.surface;
+    final showBar = ModalRoute.of(context)?.canPop == true || _mutedHids.isNotEmpty;
     return Scaffold(
-      backgroundColor: const Color(0xFF0D0D1A),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0D0D1A),
-        title: const Text('Chat', style: TextStyle(color: Colors.white)),
+      backgroundColor: bg,
+      appBar: !showBar ? null : AppBar(
+        backgroundColor: bg,
+        toolbarHeight: 36,
         actions: [
           if (_mutedHids.isNotEmpty)
             IconButton(

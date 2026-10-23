@@ -38,11 +38,16 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
   @override
   void dispose() {
     _tabs.dispose();
+    _listScroll.dispose();
     super.dispose();
   }
 
+  final _listScroll = ScrollController();
+
+  /// Refreshes values in place: the spinner only shows on the very first load, so the list (and
+  /// your scroll position) stays when you come back from an item.
   Future<void> _load() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() { _loading = _items.isEmpty; _error = null; });
     final res = await Future.wait([
       GameApi.call('/api/v1/market/overview', _sid),
       GameApi.call('/api/v1/market/mine', _sid),
@@ -77,15 +82,6 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
         Tab(text: 'My orders (${_orders.length})'),
         const Tab(text: 'History'),
       ]),
-      Padding(
-        padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
-        child: Row(children: [
-          const Icon(Icons.local_shipping_outlined, size: 14, color: Colors.white54),
-          const SizedBox(width: 4),
-          Text('Transport tax ${(_taxRate * 100).round()}% (Haulage Firm)',
-              style: const TextStyle(fontSize: 11, color: Colors.white54)),
-        ]),
-      ),
       Expanded(
         child: AsyncView(
           loading: _loading,
@@ -95,7 +91,17 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
             // ── Market items ──
             RefreshIndicator(
               onRefresh: _load,
-              child: ListView(children: [
+              child: ListView(key: const PageStorageKey('market_items'), controller: _listScroll, children: [
+                // tax line scrolls away with the list (above the filter)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                  child: Row(children: [
+                    const Icon(Icons.local_shipping_outlined, size: 14, color: Colors.white54),
+                    const SizedBox(width: 4),
+                    Text('Transport tax ${(_taxRate * 100).round()}% (Haulage Firm)',
+                        style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                  ]),
+                ),
                 Padding(
                   padding: const EdgeInsets.all(8),
                   child: TextField(
@@ -213,6 +219,7 @@ class _MarketItemScreenState extends State<MarketItemScreen> {
   }
 
   Future<void> _load() async {
+    // values refresh in place (no spinner after the first load)
     final r = await GameApi.call('/api/v1/market/book', _sid, {'itemID': widget.itemId});
     if (!mounted) return;
     setState(() {
@@ -254,9 +261,10 @@ class _MarketItemScreenState extends State<MarketItemScreen> {
         taxRate: (b['taxRate'] as num).toDouble(),
         credits: (b['credits'] as num).toDouble() + ((mine?['escrow'] as num?) ?? 0),
         freeSpace: ((b['freeSpace'] as num) + (mine != null ? (mine['qty'] as num) : 0)).toInt(),
-        initialPrice: (mine?['price'] as num?)?.toDouble() ?? topOther?.toDouble() ?? (b['systemSell'] as num?)?.toDouble() ?? 1,
+        initialPrice: (mine?['price'] as num?)?.toDouble() ?? _suggest(topOther, b),
         initialQty: (mine?['qty'] as num?)?.toInt(),
         maxPrice: (b['systemBuy'] as num?)?.toDouble(),
+        minPrice: (b['systemSell'] as num?)?.toDouble(),
         editing: mine != null,
       ),
     );
@@ -267,6 +275,15 @@ class _MarketItemScreenState extends State<MarketItemScreen> {
         : await GameApi.call('/api/v1/market/edit', _sid,
             {'orderID': mine['id'], 'qty': res.$1, 'price': res.$2, 'rid': _rid()});
     await _done(r, mine == null ? 'Buy order placed' : 'Buy order updated');
+  }
+
+  /// Suggested bid: 1 credit above the highest offer (or the system BID price), but never above
+  /// the system ASK price (150 %) — the server refuses anything higher.
+  double _suggest(num? topOther, Map<String, dynamic> b) {
+    final base = (topOther ?? b['systemSell'] as num? ?? 0).toDouble();
+    final ask = (b['systemBuy'] as num?)?.toDouble();
+    final s = base + 1;
+    return ask != null && s > ask ? ask : s;
   }
 
   Future<void> _cancelMine(Map<String, dynamic> mine) async {
@@ -489,11 +506,11 @@ class _QtyDialogState extends State<_QtyDialog> {
 class _OrderDialog extends StatefulWidget {
   final int itemId, freeSpace;
   final double taxRate, credits, initialPrice;
-  final double? maxPrice;
+  final double? maxPrice, minPrice;
   final int? initialQty;
   final bool editing;
   const _OrderDialog({required this.itemId, required this.taxRate, required this.credits, required this.freeSpace,
-      required this.initialPrice, this.initialQty, this.maxPrice, this.editing = false});
+      required this.initialPrice, this.initialQty, this.maxPrice, this.minPrice, this.editing = false});
   @override
   State<_OrderDialog> createState() => _OrderDialogState();
 }
@@ -531,7 +548,8 @@ class _OrderDialogState extends State<_OrderDialog> {
     final value = (_q * _price).round();
     final tax = (value * widget.taxRate).round();
     final m = _maxQty;
-    final tooHigh = widget.maxPrice != null && _price > widget.maxPrice!;
+    final tooHigh = widget.maxPrice != null && _price > widget.maxPrice! + 1e-9;
+    final tooLow = widget.minPrice != null && _price < widget.minPrice! - 1e-9;
     return AlertDialog(
       title: Text(widget.editing ? 'Edit buy order' : 'Place buy order'),
       content: SingleChildScrollView(
@@ -548,7 +566,7 @@ class _OrderDialogState extends State<_OrderDialog> {
             decoration: InputDecoration(
               labelText: 'Price per unit',
               helperText: '${fmtCredits(unitWithTax)} per unit incl. ${(widget.taxRate * 100).round()}% tax',
-              errorText: tooHigh ? 'Above the system price — buy from the system instead' : null,
+              errorText: tooHigh ? 'Above the system ASK price.' : tooLow ? 'Below the system BID price.' : null,
             ),
             onChanged: (t) => setState(() {
               _price = double.tryParse(t) ?? 0;
@@ -579,7 +597,7 @@ class _OrderDialogState extends State<_OrderDialog> {
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
         FilledButton(
-          onPressed: _q <= 0 || _price <= 0 || tooHigh ? null : () => Navigator.pop(context, (_q, _price)),
+          onPressed: _q <= 0 || _price <= 0 || tooHigh || tooLow ? null : () => Navigator.pop(context, (_q, _price)),
           child: Text(widget.editing ? 'Update' : 'Place order'),
         ),
       ],

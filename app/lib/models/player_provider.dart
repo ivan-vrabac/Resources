@@ -73,8 +73,21 @@ class PlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  int? _creditsNow;   // balance right after a known spend, until the next full refresh arrives
+
+  /// Credits to show (updated instantly after spending, then replaced by the server's value).
+  int get credits => _creditsNow ?? _player?.credits ?? 0;
+
+  /// Show a spend (or a gain, negative) immediately; the next refresh brings the exact balance.
+  void adjustCredits(int spent) {
+    if (_player == null) return;
+    _creditsNow = credits - spent;
+    notifyListeners();
+  }
+
   void setPlayer(Player p, {String? sid}) {
     _player = p;
+    _creditsNow = null;
     if (sid != null) _sid = sid;
     notifyListeners();
   }

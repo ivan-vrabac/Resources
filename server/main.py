@@ -2181,7 +2181,8 @@ async def scanner_payscan(request: Request):
         _scan_tokens[prospect_token] = {
             "hid": hid, "lat": lat, "lng": lng,
             "player_lat": player_lat, "player_lng": player_lng,
-            "item_ids": item_ids_found, "expires": time.time() + 300,
+            # owner 2026-10-20: the WIP hex stays buildable until the scan is reset (2 h safety limit)
+            "item_ids": item_ids_found, "expires": time.time() + 7200,
         }
         _player_tokens[hid] = prospect_token
     else:
@@ -3144,7 +3145,9 @@ async def factory_get_data(request: Request):
                 "owned": sb_id in owned_types,
                 "currentLvl": next((f["level"] for f in facts if f["item_id"] == sb_id), 0),
             })
-    return zlib_resp({"err": 0, "factories": factory_list, "catalog": catalog, "specialCatalog": special_catalog})
+        boost_days = round(5 * (1 - artifact_effect(conn, hid, 175) / 100), 2)    # Thor's Crucible
+    return zlib_resp({"err": 0, "factories": factory_list, "catalog": catalog, "specialCatalog": special_catalog,
+                      "boostCooldownDays": boost_days})
 
 @app.post("/flut23/factoryBuy.php")
 async def factory_buy(request: Request):
@@ -4439,7 +4442,7 @@ SYSTEM_HELPERS = _types.SimpleNamespace(
     award_xp=award_xp, add_proto=add_proto, level_from_xp=level_from_xp, push=_push_to_player,
     mine_stats=mine_stats, mine_rows=mine_rows,
     MINE_TYPES=MINE_TYPES, SPECIAL_BUILDINGS=SPECIAL_BUILDINGS, HQ_BOOST_RADIUS=HQ_BOOST_RADIUS,
-    HQ_BOOST_FACTORS=HQ_BOOST_FACTORS, FACTORY_TYPES=FACTORY_TYPES,
+    HQ_BOOST_FACTORS=HQ_BOOST_FACTORS, FACTORY_TYPES=FACTORY_TYPES, TC_CONFIG=TC_CONFIG,
     DRONE_SCAN_RANGES=DRONE_SCAN_RANGES, new_id=new_id, SYSTEM_PRICES=SYSTEM_PRICES,
     LEVEL_UP_HOOKS=LEVEL_UP_HOOKS, CASINO_FIVE_HOOKS=CASINO_FIVE_HOOKS, OUTPUT_HOOKS=OUTPUT_HOOKS,
 )

@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart' hide Path;
 import '../services/game_api.dart';
 import 'async_view.dart';
 import 'top_banner.dart';
+import '../screens/settings_screen.dart' show kShowRevealRing;
 
 /// Artifact detector on the map. Every scan uses up one Artifact Detector (server rule): the
 /// result (a yellow triangle towards the nearest artifact, or the artifact itself once within the
@@ -123,7 +124,7 @@ class ArchaeologyLayers extends StatelessWidget {
         final c = controller;
         if (!c.active || pos == null) return const SizedBox.shrink();
         return Stack(children: [
-          if (c.showRing && c.revealRange > 0)
+          if (kShowRevealRing && c.revealRange > 0)
             CircleLayer(circles: [
               CircleMarker(point: pos!, radius: c.revealRange, useRadiusInMeter: true,
                   color: Colors.yellow.withValues(alpha: 0.05),
@@ -222,18 +223,15 @@ class DetectorButton extends StatelessWidget {
         shape: const CircleBorder(),
         child: InkWell(
           customBorder: const CircleBorder(),
-          onTap: () => controller.scan(context),
-          onLongPress: controller.active ? controller.toggleRing : null,
+          onTap: controller.scanning ? null : () => controller.scan(context),
           child: SizedBox(
             width: 46, height: 46,
             child: Tooltip(
-              message: 'Scan for artifacts (uses 1 Artifact Detector)'
-                  '${controller.active ? ' · long-press: reveal ring' : ''}',
+              message: 'Scan for artifacts (uses 1 Artifact Detector)',
               child: Stack(alignment: Alignment.center, clipBehavior: Clip.none, children: [
-                controller.scanning
-                    ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
-                    : Image.asset('assets/mapmarkers/artifactscanicon.png', width: 30, height: 30,
-                        errorBuilder: (_, __, ___) => const Icon(Icons.track_changes, color: Colors.yellowAccent)),
+                // steady icon (no spinner / flashing while a scan runs)
+                Image.asset('assets/mapmarkers/artifactscanicon.png', width: 30, height: 30, gaplessPlayback: true,
+                    errorBuilder: (_, __, ___) => const Icon(Icons.track_changes, color: Colors.yellowAccent)),
                 if (controller.detectorsLeft != null)
                   Positioned(
                     right: -2, top: -2,

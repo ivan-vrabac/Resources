@@ -182,7 +182,9 @@ class _MinesTabState extends State<MinesTab> {
     setState(() { _bulkBusy = false; _massMode = false; _selected.clear(); });
     AppNotify.show(context,
         'Repaired $repaired mine${repaired == 1 ? '' : 's'}${failed > 0 ? ', $failed failed' : ''}');
-    context.read<PlayerProvider>().refresh();
+    context.read<PlayerProvider>()
+      ..adjustCredits(((r?['cost'] as num?) ?? 0).toInt())   // show the new balance right away
+      ..refresh();
   }
 
   Future<void> _bulkRepairKit(List<Mine> toRepair, int kitsAvailable) async {
@@ -258,7 +260,7 @@ class _MinesTabState extends State<MinesTab> {
             const SizedBox(width: 8),
             Expanded(child: selected.length > 1
               ? _HoldFilledButton(
-                  label: 'Demolish All',
+                  label: 'Hold to Confirm',
                   onTriggered: () => Navigator.pop(context, true),
                 )
               : FilledButton(
@@ -280,7 +282,9 @@ class _MinesTabState extends State<MinesTab> {
       AppNotify.show(context, r?['msg'] ?? 'Demolish failed', isError: true);
     } else {
       AppNotify.show(context, 'Demolished ${r['deleted']} mines. Refund: ꞓ${r['refund']}');
-      context.read<PlayerProvider>().refresh();
+      context.read<PlayerProvider>()
+        ..adjustCredits(-((r['refund'] as num?) ?? 0).toInt())
+        ..refresh();
     }
   }
 
@@ -806,7 +810,9 @@ class _MineTileState extends State<_MineTile> {
       _snack(r?['msg'] ?? 'Repair failed');
     } else {
       _snack('Repaired! Cost: ꞓ${r['cost']}');
-      context.read<PlayerProvider>().refresh();
+      context.read<PlayerProvider>()
+        ..adjustCredits(((r['cost'] as num?) ?? 0).toInt())
+        ..refresh();
     }
   });
 

@@ -14,3 +14,15 @@ def test_tiers_unlock_once_and_progress():
     again = call("/api/v1/achievements", sid)
     assert again["new"] == [] and again["stars"] == r["stars"]
     assert len(r["achievements"]) == 18 and r["maxStars"] == 54
+
+
+
+def test_special_building_info_table():
+    hid, sid, _ = new_player("binfo")
+    set_building(hid, 65, 4)
+    r = call("/api/v1/buildings/info", sid)
+    museum = next(b for b in r["buildings"] if b["itemID"] == 65)
+    assert museum["level"] == 4 and len(museum["levels"]) == 10
+    eff = {e["label"]: e["value"] for e in museum["levels"][9]["effects"]}
+    assert eff["Pick-up range (cargo, artifacts)"] == "300 m"
+    assert any(e["label"] == "Pick-up range (cargo, artifacts)" and e["value"] == "150 m" for e in museum["current"])
