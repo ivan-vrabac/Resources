@@ -36,7 +36,7 @@ def main() -> int:
     if problem:
         print(problem)
         return 1
-    row = conn.execute("SELECT hID FROM players WHERE company_name=?", (name,)).fetchone()
+    row = conn.execute("SELECT hID FROM players WHERE lower(company_name)=?", (name,)).fetchone()
     if not row:
         print(f"no such company: {name}")
         return 1

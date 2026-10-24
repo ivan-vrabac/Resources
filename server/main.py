@@ -1204,6 +1204,11 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_mines_lat_lng ON mines(lat, lng)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_hq_lat_lng ON hq(lat, lng)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_mines_owner ON mines(owner_hid)")
+        # names keep their capitals but are unique without regard to case (owner 2026-10-24)
+        try:
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_players_name_ci ON players(lower(company_name))")
+        except sqlite3.IntegrityError:
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_players_name_ci2 ON players(lower(company_name))")
         # also created by systems/combat.py; needed here because mine_rows() joins it
         conn.execute("""CREATE TABLE IF NOT EXISTS mine_defence (
             mine_id TEXT PRIMARY KEY, dogs INTEGER NOT NULL DEFAULT 0, staff INTEGER NOT NULL DEFAULT 0,
@@ -1237,6 +1242,8 @@ def new_id() -> str:
     return uuid.uuid4().hex
 
 def norm_name(name: str) -> str:
+    """Lookup key of a company name: names are case-insensitive (owner 2026-10-24) but stored and
+    shown exactly as the player typed them; compare with lower(company_name) = norm_name(...)."""
     return name.strip().lower()
 
 async def read_form(request: Request) -> tuple[bytes, dict]:
@@ -1917,7 +1924,7 @@ async def auth_session(request: Request):
                         status_code=429, media_type="application/json")
     problem = auth.password_problem(password)
     with get_db() as conn:
-        row = conn.execute("SELECT hID FROM players WHERE company_name=?", (canon,)).fetchone()
+        row = conn.execute("SELECT hID FROM players WHERE lower(company_name)=?", (canon,)).fetchone()
         created = False
         if row and mode == "register":
             return json_resp({"error": "name_taken",
@@ -1932,7 +1939,7 @@ async def auth_session(request: Request):
             if problem:
                 return json_resp({"error": "weak_password", "message": problem})
             hid = new_hid()
-            conn.execute("INSERT INTO players(hID,company_name,credits,wa) VALUES(?,?,?,100)", (hid, canon, STARTING_CREDITS))
+            conn.execute("INSERT INTO players(hID,company_name,credits,wa) VALUES(?,?,?,100)", (hid, name, STARTING_CREDITS))
             auth.set_password(conn, hid, password)
             created = True
         else:
@@ -1999,7 +2006,7 @@ async def player_login(request: Request):
     raw_name = (form.get("userEmail") or "").strip()
     key = norm_name(raw_name)
     with get_db() as conn:
-        row = conn.execute("SELECT hID FROM players WHERE company_name=?", (key,)).fetchone()
+        row = conn.execute("SELECT hID FROM players WHERE lower(company_name)=?", (key,)).fetchone()
         # Once a player has set a password, name-only login can't open the account.
         if row and auth.secure() and auth.get_hash(conn, row["hID"]) is not None:
             row = None
@@ -2018,13 +2025,13 @@ async def player_new(request: Request):
     if not canon:
         return plain_resp("")
     with get_db() as conn:
-        ex = conn.execute("SELECT hID FROM players WHERE company_name=?", (canon,)).fetchone()
+        ex = conn.execute("SELECT hID FROM players WHERE lower(company_name)=?", (canon,)).fetchone()
         if ex:
             if auth.secure() and auth.get_hash(conn, ex["hID"]) is not None:
                 return plain_resp("")  # password-protected account
             return plain_resp(ex["hID"])
         hid = new_hid()
-        conn.execute("INSERT INTO players(hID,company_name,credits) VALUES(?,?,?)", (hid, canon, STARTING_CREDITS))
+        conn.execute("INSERT INTO players(hID,company_name,credits) VALUES(?,?,?)", (hid, display or email, STARTING_CREDITS))
         conn.commit()
     log_entry({"ts": utcnow_iso(), "endpoint": "playerNew", "name": canon, "hID": hid})
     return plain_resp(hid)

@@ -92,10 +92,15 @@ def install(api) -> None:
         canon = h.norm_name(new)
         with econ.tx(conn):
             p = conn.execute("SELECT company_name, name_changes FROM players WHERE hID=?", (hid,)).fetchone()
-            if canon == p["company_name"]:
+            if new == p["company_name"]:
                 raise econ.GameError("same_name", "That is already your name")
-            if conn.execute("SELECT 1 FROM players WHERE company_name=?", (canon,)).fetchone():
+            if conn.execute("SELECT 1 FROM players WHERE lower(company_name)=? AND hID<>?", (canon, hid)).fetchone():
                 raise econ.GameError("name_taken", "That company name is taken")
+            if canon == h.norm_name(p["company_name"]):
+                # only the capitals change (owner 2026-10-24: names keep their capitals): free
+                conn.execute("UPDATE players SET company_name=? WHERE hID=?", (new, hid))
+                h.add_proto(conn, hid, "rename", {"from": p["company_name"], "to": new, "costGD": 0})
+                return {"err": 0, "name": new, "costGD": 0, "nextCostGD": rename_cost(p["name_changes"])}
             cost = rename_cost(p["name_changes"])
             if cost:
                 try:
@@ -103,9 +108,9 @@ def install(api) -> None:
                 except econ.GameError:
                     raise econ.GameError("insufficient_items", f"A name change costs {cost} Giant Diamonds")
             conn.execute("UPDATE players SET company_name=?, name_changes=COALESCE(name_changes,0)+1 WHERE hID=?",
-                         (canon, hid))
-            h.add_proto(conn, hid, "rename", {"from": p["company_name"], "to": canon, "costGD": cost})
-        return {"err": 0, "name": canon, "costGD": cost, "nextCostGD": rename_cost((p["name_changes"] or 0) + 1)}
+                         (new, hid))
+            h.add_proto(conn, hid, "rename", {"from": p["company_name"], "to": new, "costGD": cost})
+        return {"err": 0, "name": new, "costGD": cost, "nextCostGD": rename_cost((p["name_changes"] or 0) + 1)}
 
     @api.endpoint("/api/v1/account/delete")
     def delete(conn, hid, form):

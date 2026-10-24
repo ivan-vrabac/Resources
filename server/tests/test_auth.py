@@ -170,7 +170,7 @@ def test_other_players_internal_ids_not_exposed():
     lb = json.loads(zlib.decompress(client.post("/flut23/leaderboard.php", data={"sid": b["sid"]}).content))
     blob = json.dumps([markers, hqs, lb])
     assert a["hID"] not in blob
-    assert any(m["ownerName"] == "omicron corp" for m in markers)
+    assert any(m["ownerName"] == "Omicron Corp" for m in markers)        # shown as typed
     # the owner still sees their own id (old clients compare it)
     own = json.loads(zlib.decompress(client.post("/flut23/mineLoadMarkers.php",
                                                  data={**box, "sid": a["sid"]}).content))
