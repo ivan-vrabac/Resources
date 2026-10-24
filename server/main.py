@@ -1032,7 +1032,7 @@ CASINO_FIVE_HOOKS = []   # fn(conn, symbol, spinner_hid) -> dict | None, inside 
 
 SCAN_COST_DIVISOR = 10      # (pre-revamp scan formula, unused)
 # Owner 2026-10-23: start with enough for about six clay pits; scans are free below level 5
-# (economy.FREE_SCAN_LEVEL), so a new company can always get going.
+# until a Tech Center is built (economy.scan_cost), so a new company can always get going.
 STARTING_CREDITS = 250000
 
 def record_daily_activity(conn, hid: str):
@@ -2272,8 +2272,8 @@ async def scanner_payscan(request: Request):
             with econ.tx(conn):
                 tc_level = building_level(conn, hid, 116)
                 mine_count = conn.execute("SELECT COUNT(*) FROM mines WHERE owner_hid=?", (hid,)).fetchone()[0]
-                # owner 2026-10-23: free below level 5, then 25 × level² × (1 + 10 % per Tech Center level)
-                scan_cost = economy.scan_cost(row["level"] or 1, tc_level)
+                # free until level 5 or the first Tech Center, then by mine count and Tech Center level
+                scan_cost = economy.scan_cost(row["level"] or 1, tc_level, mine_count)
                 drone_range = None
                 scan_dist = haversine_m(player_lat, player_lng, lat, lng)
                 if not is_drone and scan_dist > LOCAL_CONSTRUCTION_RANGE_M + GPS_TOLERANCE_M:

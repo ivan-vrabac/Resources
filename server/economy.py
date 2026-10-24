@@ -172,10 +172,12 @@ def wh_upgrade_cost(level: int) -> int:
 FREE_SCAN_LEVEL = 5          # scans are free below this player level (a new company can't go broke)
 
 
-def scan_cost(level: int, tc_level: int) -> int:
-    if level < FREE_SCAN_LEVEL:
+def scan_cost(level: int, tc_level: int, mine_count: int) -> int:
+    """Owner 2026-10-24: free until level 5 or the first Tech Center, then 20 × (mines + 1) × (1 + TC level);
+    the player level itself doesn't raise the price."""
+    if level < FREE_SCAN_LEVEL and tc_level < 1:
         return 0
-    return int(round(25 * level ** 2 * (1 + 0.1 * tc_level), -1))
+    return int(round(20 * (mine_count + 1) * (1 + tc_level), -1))
 
 
 # ── XP and levels ────────────────────────────────────────────────────────────

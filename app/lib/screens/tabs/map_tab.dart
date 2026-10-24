@@ -1417,9 +1417,10 @@ class _MapTabState extends State<MapTab> {
     final tcLevel = player?.tcLevel ?? 0;
     final scanRadius = kTcScanRadius[tcLevel.clamp(0, kTcScanRadius.length - 1)].toDouble();
     final mineCount = player?.mineCount ?? 0;
-    // same as the server (economy.scan_cost): free below level 5, then 25 × level² × (1 + 10 % per TC level)
+    // same as the server (economy.scan_cost): free below level 5 until a Tech Center is built,
+    // then 20 × (mines + 1) × (1 + TC level)
     final lvlNow = player?.level ?? 1;
-    final scanCost = lvlNow < 5 ? 0 : ((25 * lvlNow * lvlNow * (1 + 0.1 * tcLevel)) / 10).round() * 10;
+    final scanCost = lvlNow < 5 && tcLevel < 1 ? 0 : 20 * (mineCount + 1) * (1 + tcLevel);
 
     // Selected resource's scan result (for mine build icon)
     final selectedResult = _lastResults.cast<Map<String, dynamic>?>()
