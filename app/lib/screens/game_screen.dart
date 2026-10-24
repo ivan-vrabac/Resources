@@ -69,7 +69,7 @@ final Map<GameTabId, _TabMeta> tabMeta = {
   GameTabId.stats: _TabMeta(label: 'Stats', icon: Icons.bar_chart_outlined,
       build: () => const ProfileScreen(embedded: true), needsScaffold: true),
   GameTabId.social: _TabMeta(label: 'Social', icon: Icons.connect_without_contact,
-      build: () => const SocialScreen()),
+      build: () => const SocialScreen(), needsScaffold: true),     // back arrow when opened from More
 };
 
 class GameScreen extends StatefulWidget {
