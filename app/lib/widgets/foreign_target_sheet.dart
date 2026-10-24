@@ -35,7 +35,7 @@ class ForeignTargetSheet extends StatelessWidget {
               style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
             )),
             if (cond != null)
-              Text('${cond.ceil()}%', style: TextStyle(
+              Text('${cond.toStringAsFixed(2)}%', style: TextStyle(fontWeight: FontWeight.bold,
                   color: cond > 60 ? Colors.green : cond > 30 ? Colors.orange : Colors.red)),
           ]),
           const SizedBox(height: 4),

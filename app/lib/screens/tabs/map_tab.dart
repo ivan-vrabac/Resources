@@ -1309,7 +1309,8 @@ class _MapTabState extends State<MapTab> {
     if (nearest == null) return false;
     final stack = _markers.cast<Map<String, dynamic>>().where((m) =>
         m['type'] != 'hq' && m['wip'] != true &&
-        m['lat'] == nearest!['lat'] && m['lng'] == nearest['lng']).toList();
+        m['lat'] == nearest!['lat'] && m['lng'] == nearest['lng']).toList()
+      ..sort((a, b) => (a['cond'] as num? ?? 100).compareTo(b['cond'] as num? ?? 100));   // lowest first
     if (stack.length < 2) return false;
     final picked = await showAppSheet<Map<String, dynamic>>(
       context: context,
@@ -1322,11 +1323,17 @@ class _MapTabState extends State<MapTab> {
         ...stack.map((m) {
           final img = resImagePath((m['resID'] as num? ?? 0).toInt());
           final own = m['isMine'] == true;
+          final cond = (m['cond'] as num? ?? 100).toDouble();
           return ListTile(
             leading: img != null ? Image.asset(img, width: 28, height: 28) : const Icon(Icons.terrain),
             title: Text(kMineNames[(m['itemID'] as num? ?? 0).toInt()] ?? 'Mine'),
             subtitle: Text(own ? 'Your mine' : (m['ownerName'] as String? ?? '')),
-            trailing: own ? const Icon(Icons.star, color: Colors.greenAccent, size: 18) : null,
+            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+              if (own) const Padding(padding: EdgeInsets.only(right: 6),
+                  child: Icon(Icons.star, color: Colors.greenAccent, size: 18)),
+              Text('${cond.toStringAsFixed(2)}%', style: TextStyle(fontWeight: FontWeight.bold,
+                  color: cond >= 80 ? Colors.greenAccent : cond >= 50 ? Colors.amber : Colors.redAccent)),
+            ]),
             onTap: () => Navigator.of(ctx).pop(m),
           );
         }),
@@ -1608,6 +1615,9 @@ class _MapTabState extends State<MapTab> {
                       return lat >= vBounds!.south - 0.005 && lat <= vBounds.north + 0.005 &&
                              lng >= vBounds.west  - 0.01  && lng <= vBounds.east  + 0.01;
                     }).toList();
+              // lowest condition drawn last: on a shared hex its health bar is the one on top
+              double condOf(dynamic m) => (m['cond'] as num? ?? 100).toDouble();
+              visibleMines.sort((a, b) => condOf(b).compareTo(condOf(a)));
               return MarkerLayer(
                 markers: visibleMines.map((m) {
                   final lat    = (m['lat'] as num).toDouble();

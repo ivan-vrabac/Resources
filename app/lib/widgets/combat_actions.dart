@@ -51,7 +51,7 @@ class CombatActions {
     final why = pos == null
         ? 'Waiting for GPS'
         : cond > 99.0
-            ? 'Condition ${cond.toStringAsFixed(2)}%, maintenance from 99.00% down'
+            ? 'Condition ${cond.toStringAsFixed(2)}%'
             : d! > range
                 ? 'Too far: ${d.round()} m, your boss range is ${range.round()} m'
                 : null;
