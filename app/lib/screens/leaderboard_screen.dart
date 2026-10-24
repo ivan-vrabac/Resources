@@ -48,7 +48,7 @@ Widget _row(BuildContext context, Map<String, dynamic> r, {Widget? middle, requi
         Expanded(
           flex: 5,
           child: Text(r['name'] as String? ?? '—', overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 13, color: isMe ? AppColors.accent : Colors.white,
+              style: TextStyle(fontSize: 13, color: isMe ? AppColors.accent : AppColors.fg,
                   fontWeight: isMe ? FontWeight.bold : FontWeight.normal)),
         ),
         if (middle != null) Expanded(flex: 4, child: middle),
@@ -61,6 +61,19 @@ Widget _row(BuildContext context, Map<String, dynamic> r, {Widget? middle, requi
     ),
   );
 }
+
+/// Column titles above a board (owner 2026-10-24): Rank · Player · middle column · value.
+Widget _infoRow(String middle, String value) => Container(
+      height: 26,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: Row(children: [
+        SizedBox(width: 38, child: Text('Rank', textAlign: TextAlign.right, style: TextStyle(fontSize: 11, color: AppColors.t54))),
+        const SizedBox(width: 8),
+        Expanded(flex: 5, child: Text('Player', style: TextStyle(fontSize: 11, color: AppColors.t54))),
+        Expanded(flex: 4, child: Text(middle, style: TextStyle(fontSize: 11, color: AppColors.t54))),
+        SizedBox(width: 92, child: Text(value, textAlign: TextAlign.right, style: TextStyle(fontSize: 11, color: AppColors.t54))),
+      ]),
+    );
 
 abstract class _BoardState<T extends StatefulWidget> extends State<T> with AutomaticKeepAliveClientMixin {
   Map<String, dynamic>? data;
@@ -146,15 +159,9 @@ class _OverallBoardState extends _BoardState<_OverallBoard> {
     super.build(context);
     return AsyncView(loading: loading && data == null, error: error, onRetry: load, builder: () {
       final rows = (data!['rows'] as List).cast<Map<String, dynamic>>();
-      return list(rows, (r) {
-        final code = r['country'] as String? ?? '';
-        return _row(context, r, value: fmtNum((r['score'] as num).toInt()), middle: Row(children: [
-          if (code.isNotEmpty)
-            Padding(padding: const EdgeInsets.only(right: 6), child: Image.asset('assets/images_countryflags/$code.png',
-                width: 18, height: 12, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox(width: 18))),
-          Text('Lv ${r['level']}', style: TextStyle(color: AppColors.t38, fontSize: 11)),
-        ]));
-      }, header: controls());
+      return list(rows, (r) => _row(context, r, value: fmtNum((r['score'] as num).toInt()),
+          middle: Text('${r['level']}', style: TextStyle(color: AppColors.t70, fontSize: 12))),
+          header: Column(mainAxisSize: MainAxisSize.min, children: [controls(), _infoRow('Level', 'Points')]));
     });
   }
 }
@@ -176,10 +183,13 @@ class _LuxuryBoardState extends _BoardState<_LuxuryBoard> {
       final rows = (data!['rows'] as List).cast<Map<String, dynamic>>();
       return list(rows, (r) {
         final n = (r['itemCount'] as num? ?? 0).toInt();     // just how many luxury items
-        return _row(context, r, value: fmtNum((r['points'] as num).toInt()), unit: 'LP',
-            middle: Text('$n luxury item${n == 1 ? '' : 's'}', style: TextStyle(fontSize: 12, color: AppColors.t70)));
-      }, header: controls(note: 'Your luxury points: ${fmtNum((data!['myPoints'] as num).toInt())}'
-          '${data!['myRank'] != null ? ' · #${data!['myRank']}' : ''}'));
+        return _row(context, r, value: fmtNum((r['points'] as num).toInt()),
+            middle: Text('$n', style: TextStyle(fontSize: 12, color: AppColors.t70)));
+      }, header: Column(mainAxisSize: MainAxisSize.min, children: [
+        controls(note: 'Your luxury points: ${fmtNum((data!['myPoints'] as num).toInt())}'
+            '${data!['myRank'] != null ? ' · #${data!['myRank']}' : ''}'),
+        _infoRow('Luxury items', 'Luxury points'),
+      ]));
     });
   }
 }
@@ -205,9 +215,8 @@ class _ResourceBoardState extends _BoardState<_ResourceBoard> {
       final rows = (data!['rows'] as List).cast<Map<String, dynamic>>();
       final options = ((data!['options'] as Map)[_kind] as List).cast<int>();
       final item = (data!['item'] as num).toInt();
-      return list(rows, (r) => _row(context, r, value: fmtNum((r['perHour'] as num).round()), unit: '/h',
-          middle: Text('${r['count']} ${_kind == 'mine' ? 'mines' : 'factories'}',
-              style: TextStyle(color: AppColors.t38, fontSize: 11))),
+      return list(rows, (r) => _row(context, r, value: fmtNum((r['perHour'] as num).round()),
+          middle: Text('${r['count']}', style: TextStyle(color: AppColors.t70, fontSize: 12))),
           header: Column(mainAxisSize: MainAxisSize.min, children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
@@ -236,6 +245,7 @@ class _ResourceBoardState extends _BoardState<_ResourceBoard> {
             ]),
           ),
           controls(),
+          _infoRow(_kind == 'mine' ? 'Mines' : 'Level', 'Output / h'),
           ]));
     });
   }

@@ -474,7 +474,7 @@ class _CostRow extends StatelessWidget {
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         if (imgId != null)
-          Image.asset('assets/images_res/res$imgId.png', width: 14, height: 14,
+          Image.asset(resAsset(imgId), width: 14, height: 14,
               errorBuilder: (_, __, ___) => const SizedBox())
         else if (icon != null)
           Icon(icon, size: 14, color: ok ? AppColors.accent : Colors.redAccent),
@@ -542,10 +542,7 @@ Future<void> showBuildingInfo(BuildContext context, int itemId) async {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
                 Text('Level $lvl', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                if (lvl == cur) ...[
-                  const SizedBox(width: 8),
-                  Text('current', style: TextStyle(color: cs.primary, fontSize: 12)),
-                ],
+
               ]),
               const SizedBox(height: 6),
               for (final e in eff)
@@ -567,7 +564,7 @@ Future<void> showBuildingInfo(BuildContext context, int itemId) async {
                     ]),
                   for (final e in res)
                     Row(mainAxisSize: MainAxisSize.min, children: [
-                      Image.asset('assets/images_res/res${e.key}.png', width: 18, height: 18,
+                      Image.asset(resAsset(int.parse(e.key as String)), width: 18, height: 18,
                           errorBuilder: (_, __, ___) => const SizedBox(width: 18)),
                       const SizedBox(width: 4),
                       Text('${fmtNum(e.value as num)} ${itemName(int.parse(e.key as String))}',

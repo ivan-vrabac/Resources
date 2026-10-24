@@ -271,8 +271,9 @@ def test_notification_kinds_defaults_and_limits():
     hid, sid, _ = new_player("rvq")
     r = call("/api/v1/notify/prefs", sid)
     by = {k["kind"]: k for k in r["kinds"]}
-    assert set(by) == {"outbid", "auction_won", "order_filled", "factory_done", "accident"}
-    assert by["outbid"]["maxPerDay"] == 0 and by["auction_won"]["maxPerDay"] == 0          # auctions: unlimited
+    assert set(by) == {"outbid", "auction_won", "order_filled", "factory_done", "accident",
+                       "mine_warning", "mine_destroyed", "wh_almost", "wh_full"}
+    assert by["outbid"]["maxPerDay"] == 0 and by["auction_won"]["maxPerDay"] == 1      # outbid unlimited, won 1/day
     assert by["accident"]["maxPerDay"] > 0
     r = call("/api/v1/notify/set", sid, kind="accident", enabled=1, maxPerDay=0)            # unlimited allowed
     assert {k["kind"]: k for k in r["kinds"]}["accident"]["maxPerDay"] == 0

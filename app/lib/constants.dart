@@ -66,15 +66,18 @@ const Map<int, int> kMineResource = {
 // mine item_id → base units per hour at level 1, 100% quality/condition, no tech
 // = official max_rate / 5 (linear level scaling: output = base * level)
 const Map<int, int> kMineBaseRate = {
-  4: 306, 5: 108, 9: 102, 11: 61, 16: 61, 17: 77, 18: 408, 19: 128,
-  21: 102, 27: 82, 50: 56, 54: 153, 82: 255, 89: 408, 168: 102,
+  // economy revamp 2026-10-23: srs.txt output per hour at 100 % quality (server: economy.MINES)
+  4: 1530, 5: 542, 9: 510, 11: 306, 16: 306, 17: 383, 18: 2040, 19: 638,
+  21: 510, 27: 408, 50: 281, 54: 765, 82: 1275, 89: 2040, 168: 510,
 };
 
 // mine item_id → build cost (credits)
 const Map<int, int> kMineBuildCost = {
-  4: 2000, 5: 2000, 9: 3000, 11: 8000, 16: 4000, 17: 5000,
-  18: 15000, 19: 10000, 21: 2500, 27: 6000, 50: 7000, 54: 2500,
-  82: 50000, 89: 20000, 168: 25000,
+  // economy revamp: costs.txt base cost / 25 (server: economy.mine_base_cost); the demolish refund
+  // is 10 % of this base cost
+  4: 40000, 5: 200000, 9: 2000000, 11: 4000000, 16: 24000000, 17: 400000,
+  18: 60000000, 19: 50000000, 21: 100000, 27: 16000000, 50: 40000000, 54: 8000000,
+  82: 80000000, 89: 32000000, 168: 72000000,
 };
 
 // mine level → upgrade cost (level is the TARGET level)
@@ -417,8 +420,17 @@ const Set<int> _kResImageIds = {
   160,161,163,164,165,166,167,169,170,171,172,173,174,175,176,177,
 };
 
-String? resImagePath(int id) =>
-    _kResImageIds.contains(id) ? 'assets/images_res/res$id.png' : null;
+/// Items whose picture has a different number in the original artwork (owner 2026-10-24):
+/// Plastics → res58, Old Tires → res57, Watch Dogs → res96, Security Staff → res98, Elite Force → res99.
+const Map<int, int> kItemImageOverride = {57: 58, 56: 57, 95: 96, 97: 98, 98: 99};
+
+/// Asset path of an item's picture (always use this, never 'res$id' directly).
+String resAsset(int id) => 'assets/images_res/res${kItemImageOverride[id] ?? id}.png';
+
+String? resImagePath(int id) {
+  final img = kItemImageOverride[id] ?? id;
+  return _kResImageIds.contains(img) ? 'assets/images_res/res$img.png' : null;
+}
 
 /// Decodes all resource images into Flutter's image cache.
 /// Call once during the splash screen so every tab shows images instantly.

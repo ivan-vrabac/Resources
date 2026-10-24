@@ -104,7 +104,7 @@ def install(api) -> None:
             raise econ.GameError("restricted", f"{RESTRICTED[item_id]} can't be traded on the market")
         if item_id in LUXURY_ITEMS:
             raise econ.GameError("restricted", "Luxury items are only sold at auctions")
-        if item_id in h.SPECIAL_BUILDINGS or item_id in h.MINE_TYPES or item_id <= 1:
+        if item_id in h.SPECIAL_BUILDINGS or item_id in h.MINE_TYPES or item_id in h.FACTORY_TYPES or item_id <= 1:
             raise econ.GameError("restricted", "This can't be traded")
 
     def my_tax(conn, hid) -> float:
@@ -222,7 +222,8 @@ def install(api) -> None:
                 e["bestAsk"], e["askQty"] = r[3], r[4]
         mine = {r[0]: r[1] for r in conn.execute("SELECT item_id, qty FROM warehouse WHERE hid=? AND qty > 0", (hid,))}
         for iid, q in mine.items():
-            if iid in RESTRICTED or iid in LUXURY_ITEMS or iid in ARTIFACTS or iid in h.SPECIAL_BUILDINGS:
+            if iid in RESTRICTED or iid in LUXURY_ITEMS or iid in ARTIFACTS or iid in h.SPECIAL_BUILDINGS \
+                    or iid in h.FACTORY_TYPES or iid in h.MINE_TYPES:
                 continue
             items.setdefault(iid, {"itemID": iid, "systemSell": None, "systemBuy": None})
         for iid, e in items.items():

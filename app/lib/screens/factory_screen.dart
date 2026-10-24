@@ -661,10 +661,9 @@ class _FactoryTileState extends State<_FactoryTile> {
                     ? const ColorFilter.matrix([
                         0.3,0,0,0,0, 0,0.3,0,0,0, 0,0,0.3,0,0, 0,0,0,0.6,0])
                     : const ColorFilter.mode(Colors.transparent, BlendMode.dst),
-                child: Image.asset('assets/images/2x/factoryboost.png', width: 36, height: 36,
-                    errorBuilder: (_, __, ___) =>
-                        Icon(Icons.rocket_launch, size: 28,
-                            color: isProducing ? AppColors.accent : Colors.white24)),
+                // own icon so the appearance colours apply (owner 2026-10-24)
+                child: Icon(Icons.rocket_launch, size: 30,
+                    color: isProducing ? AppColors.accent : AppColors.fg.withValues(alpha: 0.25)),
               ),
             ),
           ]),
@@ -926,7 +925,7 @@ class _CatalogTile extends StatelessWidget {
 
   Widget _costRow(String itemIdStr, String qty, bool ok) {
     final id = int.tryParse(itemIdStr) ?? 0;
-    final imgPath = id == 1 ? 'assets/images_res/res1.png' : resImagePath(id);
+    final imgPath = id == 1 ? null : resImagePath(id);        // credits: the credit icon, not a picture
     return Padding(
       padding: const EdgeInsets.only(bottom: 3),
       child: Row(children: [
@@ -1231,7 +1230,7 @@ class _BoostSheet extends StatelessWidget {
       }
       return 'Boost on cooldown';
     }
-    return 'Instantly collect ~${fmtNum(out7days)} units (7-day output)  •  ${_fmtDays(kBoostCooldownDays)} cooldown';
+    return 'Instantly collect 7 days of output.';
   }
 
   @override

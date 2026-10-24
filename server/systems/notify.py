@@ -18,10 +18,14 @@ from . import int_arg
 KINDS = {
     # kind: (label, default max per day, 0 = unlimited)
     "outbid":       ("Outbid at an auction", 0),
-    "auction_won":  ("Auction won", 0),
+    "auction_won":  ("Auction won", 1),
     "order_filled": ("Buy order fulfilled", 20),
     "factory_done": ("Factory production finished", 10),
     "accident":     ("Accidents (fire, strike, disease, earthquake)", 5),
+    "mine_warning": ("Mine close to destruction", 1),
+    "mine_destroyed": ("Mine destroyed", 1),
+    "wh_almost":    ("Warehouse almost full (80 %)", 1),
+    "wh_full":      ("Warehouse full", 1),
 }
 CHOICES = (1, 3, 5, 10, 20, 50, 0)
 

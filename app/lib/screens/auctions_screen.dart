@@ -227,9 +227,12 @@ class _AuctionsScreenState extends State<AuctionsScreen> {
                       Flexible(
                         child: GestureDetector(
                           onTap: leader?['pid'] == null ? null : () => ProfileScreen.open(context, leader!['pid'] as String),
+                          // you: in the app colour; other players: plain text (owner 2026-10-24)
                           child: Text(a['youLead'] == true ? 'you' : (leader?['name'] as String? ?? ''),
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.lightBlueAccent, decoration: TextDecoration.underline)),
+                              style: a['youLead'] == true
+                                  ? TextStyle(color: AppColors.accent, fontWeight: FontWeight.bold)
+                                  : null),
                         ),
                       ),
                     ])

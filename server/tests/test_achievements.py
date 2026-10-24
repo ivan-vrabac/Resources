@@ -29,5 +29,5 @@ def test_special_building_info_table():
     lvl1 = {e["label"]: e["value"] for e in museum["levels"][0]["effects"]}
     assert "Giant Diamond" not in lvl1["Objects that can be found"]
     hq = call("/api/v1/hq/info", sid)
-    assert len(hq["levels"]) == 10 and hq["levels"][9]["effects"][0]["value"] == "+900%"
+    assert len(hq["levels"]) == 10 and hq["levels"][9]["effects"][0]["value"] == "×10"
     assert any(e["label"] == "Pick-up range (cargo, artifacts)" and e["value"] == "150 m" for e in museum["current"])

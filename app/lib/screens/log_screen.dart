@@ -69,7 +69,7 @@ class _LogScreenState extends State<LogScreen> {
     'scan','newmine','demolish','repair','repairkit','lagerupgrade','hq',
     'buyfactory','factcollect','marketsell','marketbuy','marketsold',
     'mineupgrade','techupgrade','accident','strikesettled',
-    'loanrequested','loancancelled','loanfunded','loanlent','loanrepaid','loanforgiven',
+    'loanrequested','loancancelled','loanfunded','loanlent','loanrepaid','loanforgiven','levelup',
   }.contains(t);
 
   List<dynamic> get _filtered {
@@ -201,6 +201,7 @@ class _LogScreenState extends State<LogScreen> {
       case 'mineupgrade': return Icons.upgrade;
       case 'techupgrade': return Icons.settings_suggest;
       case 'accident': return Icons.warning_amber;
+      case 'levelup': return Icons.military_tech;
       case 'strikesettled': return Icons.handshake_outlined;
       case 'loanrequested': case 'loancancelled': case 'loanfunded': case 'loanlent': case 'loanrepaid':
       case 'loanforgiven': return Icons.account_balance_wallet_outlined;
@@ -251,6 +252,7 @@ class _LogScreenState extends State<LogScreen> {
           ? 'Repaid your loan in full (ꞓ${fmtNum((data['total'] as num? ?? 0).toInt())})'
           : 'A loan you gave was repaid in full (ꞓ${fmtNum((data['total'] as num? ?? 0).toInt())})';
       case 'loanforgiven': return 'Loan forgiven after the grace period';
+      case 'levelup': return 'Level up: ${data['from']} → ${data['to']}';
       case 'strikesettled': return data['how'] == 'pay'
           ? 'Strike ended: workers paid ꞓ${fmtNum((data['paid'] as num? ?? 0).toInt())}'
           : 'Strike broken up by ${data['units'] ?? ''} security staff';

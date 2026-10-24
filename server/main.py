@@ -970,6 +970,7 @@ def add_xp(conn, hid: str, xp_gain: int):
         new_level = level_from_xp(row["xp"])
         if new_level > row["level"]:
             conn.execute("UPDATE players SET level=? WHERE hID=?", (new_level, hid))
+            add_proto(conn, hid, "levelup", {"from": row["level"], "to": new_level})
             for hook in LEVEL_UP_HOOKS:   # e.g. Cargo Rain rewards (systems/cargo.py)
                 hook(conn, hid, row["level"], new_level)
 
@@ -2411,7 +2412,7 @@ async def mine_new(request: Request):
             if is_remote:
                 econ.emit(conn, "remote_build", hid, {"mID": mid}, public=False)
             # XP: the build cost minus what demolishing would give back (+ the drone used remotely)
-            award_sink(conn, hid, credits=actual_cost * (1 - economy.DEMOLISH_REFUND),
+            award_sink(conn, hid, credits=actual_cost - mt["cost"] * economy.DEMOLISH_REFUND,
                        res={DRONE_ITEM_ID: 1} if is_remote else None)
             add_proto(conn, hid, "newmine", {"mID": mid, "itemID": item_id, "lat": lat, "lng": lng, "remote": is_remote})
     except econ.GameError as e:
@@ -2605,9 +2606,8 @@ async def mine_delete(request: Request):
     return zlib_resp({"err": 0, "refund": refund})
 
 def demolish_refund(mine) -> int:
-    """10 % of what was paid for the mine (older mines without a record: of the base cost)."""
-    paid = mine["paid"] if "paid" in mine.keys() and mine["paid"] else MINE_TYPES.get(mine["item_id"], {}).get("cost", 0)
-    return int(paid * economy.DEMOLISH_REFUND)
+    """10 % of the mine type's BASE cost (owner 2026-10-24: not of the scaled price that was paid)."""
+    return int(MINE_TYPES.get(mine["item_id"], {}).get("cost", 0) * economy.DEMOLISH_REFUND)
 
 @app.post("/flut23/mineBulkDelete.php")
 async def mine_bulk_delete(request: Request):
@@ -3882,50 +3882,24 @@ def _notification_sweeper():
                         except Exception:
                             pass
 
-                    can_mine_warn  = not prefs_row or prefs_row["mine_warning"]
-                    can_mine_destr = not prefs_row or prefs_row["mine_destroyed"]
-
-                    if can_mine_destr and destr_mines:
-                        last_destr_at = prefs_row["last_destr_at"] if prefs_row else None
-                        if not last_destr_at or (now - datetime.datetime.fromisoformat(last_destr_at)).total_seconds() >= 86400:
-                            n = len(destr_mines)
-                            body = f"{n} mine{'s have' if n > 1 else ' has'} been destroyed."
-                            _push_to_player(conn, hid, "Mine Destroyed", body)
-                            conn.execute("UPDATE notif_prefs SET last_destr_at=? WHERE hid=?", (now_iso, hid))
-                            conn.execute(
-                                "INSERT OR IGNORE INTO notif_prefs(hid, last_destr_at) VALUES(?,?)", (hid, now_iso))
-
-                    if can_mine_warn and warn_mines:
-                        last_warn_at = prefs_row["last_warn_at"] if prefs_row else None
-                        if not last_warn_at or (now - datetime.datetime.fromisoformat(last_warn_at)).total_seconds() >= 86400:
-                            n = len(warn_mines)
-                            body = f"{n} mine{'s are' if n > 1 else ' is'} approaching destruction. Repair soon."
-                            _push_to_player(conn, hid, "Mine Condition Warning", body)
-                            conn.execute("UPDATE notif_prefs SET last_warn_at=? WHERE hid=?", (now_iso, hid))
-                            conn.execute(
-                                "INSERT OR IGNORE INTO notif_prefs(hid, last_warn_at) VALUES(?,?)", (hid, now_iso))
-
-                    # ── Warehouse almost full (80%) / full ──────────────────────
-                    can_wh_almost = not prefs_row or prefs_row["wh_almost_full"]
-                    can_wh_full   = not prefs_row or prefs_row["wh_full"]
-
+                    # owner 2026-10-24: these alerts are notification kinds with a daily maximum too
+                    # (systems/notify.py); the sweeper only detects, notify() decides and counts
+                    note = getattr(SYSTEM_HELPERS, "notify", None)
+                    if not note:
+                        continue
+                    if destr_mines:
+                        n = len(destr_mines)
+                        note(hid, "mine_destroyed", "Mine destroyed", f"{n} mine{'s have' if n > 1 else ' has'} been destroyed.")
+                    if warn_mines:
+                        n = len(warn_mines)
+                        note(hid, "mine_warning", "Mine condition warning",
+                             f"{n} mine{'s are' if n > 1 else ' is'} close to destruction. Repair soon.")
                     if cap > 0:
                         usage_pct = wh_used / cap
-                        if can_wh_full and usage_pct >= 1.0:
-                            last_full_at = prefs_row["last_wh_full_at"] if prefs_row else None
-                            if not last_full_at or (now - datetime.datetime.fromisoformat(last_full_at)).total_seconds() >= 86400:
-                                _push_to_player(conn, hid, "Warehouse Full", "Warehouse is full. Production is being lost.")
-                                conn.execute("UPDATE notif_prefs SET last_wh_full_at=? WHERE hid=?", (now_iso, hid))
-                                conn.execute(
-                                    "INSERT OR IGNORE INTO notif_prefs(hid, last_wh_full_at) VALUES(?,?)", (hid, now_iso))
-                        elif can_wh_almost and usage_pct >= 0.80:
-                            last_almost_at = prefs_row["last_wh_almost_at"] if prefs_row else None
-                            if not last_almost_at or (now - datetime.datetime.fromisoformat(last_almost_at)).total_seconds() >= 86400:
-                                used_pct = round(usage_pct * 100)
-                                _push_to_player(conn, hid, "Warehouse Almost Full", f"Warehouse is {used_pct}% full.")
-                                conn.execute("UPDATE notif_prefs SET last_wh_almost_at=? WHERE hid=?", (now_iso, hid))
-                                conn.execute(
-                                    "INSERT OR IGNORE INTO notif_prefs(hid, last_wh_almost_at) VALUES(?,?)", (hid, now_iso))
+                        if usage_pct >= 1.0:
+                            note(hid, "wh_full", "Warehouse full", "Your warehouse is full. Production is being lost.")
+                        elif usage_pct >= 0.80:
+                            note(hid, "wh_almost", "Warehouse almost full", f"Your warehouse is {round(usage_pct * 100)}% full.")
                 conn.commit()
         except Exception:
             pass

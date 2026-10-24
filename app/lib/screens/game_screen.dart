@@ -28,6 +28,7 @@ import 'settings_screen.dart';
 import 'login_screen.dart';
 
 import '../app_colors.dart';
+import '../widgets/popups.dart';
 class _TabMeta {
   final String label;
   final IconData icon;
@@ -77,6 +78,29 @@ class GameScreen extends StatefulWidget {
 }
 
 class _GameScreenState extends State<GameScreen> {
+  int? _seenLevel;    // level-up popup (owner 2026-10-24)
+
+  void _checkLevelUp(int? level) {
+    if (level == null) return;
+    final before = _seenLevel;
+    _seenLevel = level;
+    if (before == null || level <= before) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showAppDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          icon: Icon(Icons.military_tech, size: 48, color: AppColors.accent),
+          title: Text('Level $level!'),
+          content: Text(level - before > 1
+              ? 'You climbed ${level - before} levels. New mines, factories and rewards may be unlocked.'
+              : 'You reached level $level. New mines, factories and rewards may be unlocked.'),
+          actions: [FilledButton(onPressed: () => popIfCurrent(ctx), child: const Text('Great'))],
+        ),
+      );
+    });
+  }
+
   TabConfig _config = const TabConfig(kDefaultBottomTabs);
   bool _configLoaded = false;
   late PageController _pageCtrl;
@@ -239,6 +263,7 @@ class _GameScreenState extends State<GameScreen> {
 
     final cs   = Theme.of(context).colorScheme;
     final prov = context.watch<PlayerProvider>();
+    _checkLevelUp(prov.player?.level);
 
     return Scaffold(
       body: SafeArea(

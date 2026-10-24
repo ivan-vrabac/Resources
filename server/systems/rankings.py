@@ -99,7 +99,7 @@ def install(api) -> None:
         for r in conn.execute(f"SELECT hid, item_id, level FROM factories WHERE item_id IN ({q})", ids):
             v = acc.setdefault(r[0], [0.0, 0])
             v[0] += rate[r[1]] * (r[2] or 1)
-            v[1] += 1
+            v[1] += r[2] or 1                     # factory level (owner 2026-10-24), not how many
         rows = sorted(((round(v[0], 1), v[1], hid) for hid, v in acc.items()), reverse=True)[:MAX_ROWS]
         return rows
 

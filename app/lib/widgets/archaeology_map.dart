@@ -8,7 +8,6 @@ import 'package:latlong2/latlong.dart' hide Path;
 import '../services/game_api.dart';
 import 'async_view.dart';
 import 'top_banner.dart';
-import '../screens/settings_screen.dart' show kShowRevealRing;
 
 import '../app_colors.dart';
 import 'popups.dart';
@@ -128,12 +127,6 @@ class ArchaeologyLayers extends StatelessWidget {
         final c = controller;
         if (!c.active || pos == null) return const SizedBox.shrink();
         return Stack(children: [
-          if (kShowRevealRing && c.revealRange > 0)
-            CircleLayer(circles: [
-              CircleMarker(point: pos!, radius: c.revealRange, useRadiusInMeter: true,
-                  color: Colors.yellow.withValues(alpha: 0.05),
-                  borderColor: Colors.yellowAccent.withValues(alpha: 0.7), borderStrokeWidth: 1.2),
-            ]),
           MarkerLayer(markers: [
             if (c.bearing != null && c.revealed == null)
               Marker(

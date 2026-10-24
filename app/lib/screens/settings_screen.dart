@@ -110,9 +110,13 @@ Color  kLocalRingColor   = Colors.blueAccent;
 double kLocalRingOpacity = 0.70;
 bool   kShowRingLabels   = true;
 // optional range rings (Settings > Scan Rings): Museum pick-up, artifact reveal, Mafia attack
-bool   kShowMuseumRing   = false;
-bool   kShowRevealRing   = false;
-bool   kShowMafiaRing    = false;
+// building rings: always shown when you have the building (owner 2026-10-24), only their look is set
+Color  kMuseumRingColor   = Colors.amberAccent;
+double kMuseumRingOpacity = 0.80;
+Color  kRevealRingColor   = Colors.yellowAccent;
+double kRevealRingOpacity = 0.70;
+Color  kMafiaRingColor    = Colors.redAccent;
+double kMafiaRingOpacity  = 0.80;
 
 const List<String> kHeatmapSchemes      = ['classic', 'cold', 'contrast'];
 const List<String> kHeatmapSchemeLabels = ['Classic', 'Cold', 'Contrast'];
@@ -438,6 +442,9 @@ class _ScanRingsPageState extends State<_ScanRingsPage> {
       setState(() {
         if (key == 'drone') { _droneColor = color; kDroneRingColor = color; }
         else if (key == 'scan') { _scanColor = color; kScanRingColor = color; }
+        else if (key == 'museum') { kMuseumRingColor = color; }
+        else if (key == 'reveal') { kRevealRingColor = color; }
+        else if (key == 'mafia') { kMafiaRingColor = color; }
         else { _localColor = color; kLocalRingColor = color; }
       });
       await prefs.setInt('${key}_ring_color', color.toARGB32());
@@ -446,25 +453,14 @@ class _ScanRingsPageState extends State<_ScanRingsPage> {
       setState(() {
         if (key == 'drone') { _droneOpacity = opacity; kDroneRingOpacity = opacity; }
         else if (key == 'scan') { _scanOpacity = opacity; kScanRingOpacity = opacity; }
+        else if (key == 'museum') { kMuseumRingOpacity = opacity; }
+        else if (key == 'reveal') { kRevealRingOpacity = opacity; }
+        else if (key == 'mafia') { kMafiaRingOpacity = opacity; }
         else { _localOpacity = opacity; kLocalRingOpacity = opacity; }
       });
       await prefs.setDouble('${key}_ring_opacity', opacity);
     }
   }
-
-  Widget _ringToggle(String title, String subtitle, String pref, bool Function() get, void Function(bool) set) =>
-      SwitchListTile(
-        dense: true,
-        title: Text(title, style: const TextStyle(fontSize: 13)),
-        subtitle: Text(subtitle, style: TextStyle(fontSize: 11, color: AppColors.t38)),
-        value: get(),
-        activeColor: AppColors.accent,
-        onChanged: (v) async {
-          setState(() => set(v));
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setBool(pref, v);
-        },
-      );
 
   @override
   Widget build(BuildContext context) {
@@ -483,17 +479,13 @@ class _ScanRingsPageState extends State<_ScanRingsPage> {
             await prefs.setBool('show_ring_labels', v);
           },
         ),
-        _settingsSectionHeader('More rings'),
-        _ringToggle('Museum pick-up range', 'Cargo Rain crates and artifacts', 'show_museum_ring',
-            () => kShowMuseumRing, (v) => kShowMuseumRing = v),
-        _ringToggle('Artifact reveal range', 'Archaeological Center', 'show_reveal_ring',
-            () => kShowRevealRing, (v) => kShowRevealRing = v),
-        _ringToggle('Mafia attack range', 'Mafia HQ', 'show_mafia_ring',
-            () => kShowMafiaRing, (v) => kShowMafiaRing = v),
         _settingsSectionHeader('Ring Colors & Opacity'),
         _ringSection('Drone range', 'drone', _droneColor, _droneOpacity),
         _ringSection('TC scan radius', 'scan', _scanColor, _scanOpacity),
         _ringSection('Local Range', 'local', _localColor, _localOpacity),
+        _ringSection('Museum pick-up range (with a Museum)', 'museum', kMuseumRingColor, kMuseumRingOpacity),
+        _ringSection('Artifact reveal range (with an Archaeological Center)', 'reveal', kRevealRingColor, kRevealRingOpacity),
+        _ringSection('Mafia attack range (with a Mafia HQ)', 'mafia', kMafiaRingColor, kMafiaRingOpacity),
       ]),
     );
   }
@@ -1020,7 +1012,7 @@ class _NotificationsPage extends StatefulWidget {
 }
 
 class _NotificationsPageState extends State<_NotificationsPage> {
-  late bool _enabled, _mineWarning, _mineDestroyed, _whFull;
+  late bool _enabled;
   // server-side kinds with a daily maximum (systems/notify.py); 0 = unlimited
   List<Map<String, dynamic>> _kinds = [];
   List<int> _choices = const [1, 3, 5, 10, 20, 50, 0];
@@ -1046,9 +1038,6 @@ class _NotificationsPageState extends State<_NotificationsPage> {
     super.initState();
     _loadKinds();
     _enabled      = kNotifEnabled;
-    _mineWarning  = kNotifMineWarning;
-    _mineDestroyed = kNotifMineDestroyed;
-    _whFull       = kNotifWarehouseFull;
   }
 
   Future<void> _set(String key, bool v) async {
@@ -1074,41 +1063,10 @@ class _NotificationsPageState extends State<_NotificationsPage> {
           },
         ),
         _settingsSectionHeader('Event Types'),
-        SwitchListTile(
-          dense: true,
-          title: const Text('Mine destruction warning'),
-          subtitle: Text('~24 hours before a mine is destroyed',
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+          child: Text('Each kind can be switched off and limited per day (or Unlimited).',
               style: TextStyle(fontSize: 11, color: AppColors.t38)),
-          value: _enabled && _mineWarning,
-          activeColor: Colors.orange,
-          onChanged: _enabled ? (v) async {
-            setState(() { _mineWarning = v; kNotifMineWarning = v; });
-            await _set('notif_mine_warning', v);
-          } : null,
-        ),
-        SwitchListTile(
-          dense: true,
-          title: const Text('Mine destroyed'),
-          subtitle: Text('When a mine reaches 0 condition',
-              style: TextStyle(fontSize: 11, color: AppColors.t38)),
-          value: _enabled && _mineDestroyed,
-          activeColor: Colors.redAccent,
-          onChanged: _enabled ? (v) async {
-            setState(() { _mineDestroyed = v; kNotifMineDestroyed = v; });
-            await _set('notif_mine_destroyed', v);
-          } : null,
-        ),
-        SwitchListTile(
-          dense: true,
-          title: const Text('Warehouse full'),
-          subtitle: Text('When storage is full and production is being lost',
-              style: TextStyle(fontSize: 11, color: AppColors.t38)),
-          value: _enabled && _whFull,
-          activeColor: Colors.amber,
-          onChanged: _enabled ? (v) async {
-            setState(() { _whFull = v; kNotifWarehouseFull = v; });
-            await _set('notif_wh_full', v);
-          } : null,
         ),
         for (final k in _kinds)
           ListTile(
@@ -1161,9 +1119,16 @@ Future<void> loadNumDecimalsPrefs() async {
   if (localC != null) kLocalRingColor = Color(localC);
   kLocalRingOpacity = (prefs.getDouble('local_ring_opacity') ?? 0.70).clamp(0.0, 1.0);
   kShowRingLabels = prefs.getBool('show_ring_labels') ?? true;
-  kShowMuseumRing = prefs.getBool('show_museum_ring') ?? false;
-  kShowRevealRing = prefs.getBool('show_reveal_ring') ?? false;
-  kShowMafiaRing = prefs.getBool('show_mafia_ring') ?? false;
+  for (final (key, setC, setO) in [
+    ('museum', (Color c) => kMuseumRingColor = c, (double o) => kMuseumRingOpacity = o),
+    ('reveal', (Color c) => kRevealRingColor = c, (double o) => kRevealRingOpacity = o),
+    ('mafia', (Color c) => kMafiaRingColor = c, (double o) => kMafiaRingOpacity = o),
+  ]) {
+    final c = prefs.getInt('${key}_ring_color');
+    if (c != null) setC(Color(c));
+    final o = prefs.getDouble('${key}_ring_opacity');
+    if (o != null) setO(o.clamp(0.0, 1.0));
+  }
   final raw = prefs.getString('heatmap_scheme') ?? 'classic';
   kHeatmapScheme = kHeatmapSchemes.contains(raw) ? raw : 'classic';
   heatmapSchemeNotifier.value = kHeatmapScheme;

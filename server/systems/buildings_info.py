@@ -75,7 +75,7 @@ def install(api) -> None:
         levels = []
         for lvl in range(1, 11):
             levels.append({"level": lvl, "res": {str(k): v for k, v in h.HQ_UPGRADE_REQS.get(lvl, {}).items()},
-                           "effects": [{"label": "Mine boost", "value": f"+{round((h.HQ_BOOST_FACTORS[lvl] - 1) * 100)}%"},
+                           "effects": [{"label": "Mine boost", "value": f"×{h.HQ_BOOST_FACTORS[lvl]:g}"},
                                        {"label": "Boost range", "value": f"{h.HQ_BOOST_RADIUS[lvl]} m"}]})
         return {"err": 0, "level": cur[0] if cur else 0, "levels": levels,
                 "bonusLevels": "At level 10 the HQ gets bonus levels 1 to 6, one for every 10,000 luxury points."}

@@ -8,6 +8,7 @@ import '../screens/settings_screen.dart'
     show kNotifEnabled, kNotifMineWarning, kNotifMineDestroyed, kNotifWarehouseFull;
 
 class NotificationService {
+  static const bool _serverSendsAlerts = true;
   static const _androidChannel = AndroidNotificationChannel(
     'vresources_game', // channel ID kept stable so existing installs keep their settings
     Branding.appName,
@@ -38,7 +39,10 @@ class NotificationService {
   static Future<void> scheduleMineNotifications(Player player) async {
     if (!_initialized) return;
     await _plugin.cancelAll();
-    if (!kNotifEnabled) return;
+    // owner 2026-10-24: mine and warehouse alerts now come from the server like every other
+    // notification (on/off and a daily maximum in Settings › Notifications), so the phone no
+    // longer schedules its own copies.
+    if (_serverSendsAlerts || !kNotifEnabled) return;
 
     final prefs = await SharedPreferences.getInstance();
     final now = DateTime.now();

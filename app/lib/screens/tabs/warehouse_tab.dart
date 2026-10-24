@@ -56,11 +56,14 @@ class _WarehouseTabState extends State<WarehouseTab> {
   }
 
   /// Same as the server (economy.wh_upgrade_cost): 12 500 × L² × 1.03^L, rounded to 100.
-  static int _upgradeCost(int level) => ((12500 * level * level * pow(1.03, level)) / 100).round() * 100;
+  // computed as a double: at very high levels the price no longer fits a whole number (it was shown as -100)
+  static double _upgradeCost(int level) => ((12500 * level * level * pow(1.03, level)) / 100).roundToDouble() * 100;
+  static const double _kMaxCredits = 9e18;
+  static String _price(double c) => c >= _kMaxCredits ? 'more than any balance can hold' : 'ꞓ${fmtNum(c.round())}';
   static int _capAtLevel(int level) => 5000 * level * level;
 
   int _maxAffordableLevels(int credits) {
-    int total = 0;
+    double total = 0;
     int n = 0;
     while (true) {
       final cost = _upgradeCost(_whLevel + n);
@@ -76,7 +79,7 @@ class _WarehouseTabState extends State<WarehouseTab> {
     final credits = context.read<PlayerProvider>().player?.credits ?? 0;
     final maxLevels = _maxAffordableLevels(credits);
     if (maxLevels == 0) {
-      AppNotify.show(context, 'You need ꞓ${fmtNum(_upgradeCost(_whLevel))} for the next level', isError: true);
+      AppNotify.show(context, 'The next level costs ${_price(_upgradeCost(_whLevel))}', isError: true);
       return;
     }
 
@@ -85,8 +88,8 @@ class _WarehouseTabState extends State<WarehouseTab> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) {
-          int totalCost = List.generate(selectedLevels,
-              (i) => _upgradeCost(_whLevel + i)).fold(0, (a, b) => a + b);
+          final totalCost = List.generate(selectedLevels,
+              (i) => _upgradeCost(_whLevel + i)).fold<double>(0, (a, b) => a + b);
           final newLevel = _whLevel + selectedLevels;
           final newCap = _capAtLevel(newLevel);
 
@@ -99,7 +102,7 @@ class _WarehouseTabState extends State<WarehouseTab> {
               Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                 Text('Lv $_whLevel  →  Lv $newLevel',  // ignore: prefer_const_constructors
                     style: TextStyle(fontSize: 16, color: AppColors.accent)),
-                Text('ꞓ${fmtNum(totalCost)}',
+                Text(_price(totalCost),
                     style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 16)),
               ]),
               const SizedBox(height: 4),
@@ -137,7 +140,7 @@ class _WarehouseTabState extends State<WarehouseTab> {
                     _load();
                   }
                 },
-                child: Text('Upgrade $selectedLevels level${selectedLevels > 1 ? 's' : ''}  ꞓ${fmtNum(totalCost)}'),
+                child: Text('Upgrade $selectedLevels level${selectedLevels > 1 ? 's' : ''}  ${_price(totalCost)}'),
               ),
             ]),
           );
@@ -252,14 +255,12 @@ class _WarehouseTabState extends State<WarehouseTab> {
           else
             ...entries.map((e) {
               final id = int.tryParse(e.key) ?? 0;
-              final recyclable = _recipes.containsKey(id);
+              // recycling only with a Recycling Plant (the icon shows it; no extra text)
+              final recyclable = _plantLevel >= 1 && _recipes.containsKey(id);
               return ListTile(
                 dense: true,
                 leading: _ItemIcon(itemId: id),
                 title: Text(itemName(id)),
-                subtitle: recyclable
-                    ? const Text('tap to recycle', style: TextStyle(fontSize: 11, color: Colors.lightGreenAccent))
-                    : null,
                 onTap: recyclable ? () => _recycle(id, e.value.floor()) : null,
                 trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                   if (recyclable) const Padding(padding: EdgeInsets.only(right: 6),

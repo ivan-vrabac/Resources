@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app_colors.dart';
+import '../constants.dart' show resAsset;
 /// Consistent loading / error / empty states for screens backed by a server call.
 class AsyncView extends StatelessWidget {
   final bool loading;
@@ -63,7 +64,7 @@ class ItemIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Image.asset(
-        'assets/images_res/res$itemId.png',
+        resAsset(itemId),
         width: size, height: size, fit: BoxFit.contain,
         errorBuilder: (_, __, ___) => Icon(Icons.inventory_2_outlined, size: size * 0.8, color: AppColors.t38),
       );

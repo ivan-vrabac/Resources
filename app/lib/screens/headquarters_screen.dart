@@ -148,7 +148,7 @@ class _HeadquartersScreenState extends State<HeadquartersScreen> {
                   child: _placing
                       ? const SizedBox(width: 14, height: 14,
                           child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Move HQ (free, once a day)', style: TextStyle(fontSize: 12)),
+                      : const Text('Move HQ', style: TextStyle(fontSize: 12)),
                 ),
               ]),
             ),
@@ -232,8 +232,8 @@ class _HQInfoCard extends StatelessWidget {
                       fontWeight: FontWeight.bold, fontSize: 13)),
             ),
             const SizedBox(height: 6),
-            Text('Employees of a level ${hq.level} headquarters work ${((boostF - 1) * 100).round()}% harder, '
-                'because they hope to work at the HQ one day. Your mines within ${boostR} m, from where '
+            Text('Employees near a level ${hq.level} headquarters work ${boostF.toStringAsFixed(1)}× as hard, '
+                'because they hope to work at the HQ one day. Your mines within ${boostR.round()} m, from where '
                 'the building can be seen, get this boost.',
                 style: TextStyle(color: AppColors.t60, fontSize: 12)),
           ])),
@@ -1207,10 +1207,7 @@ Future<void> showHqInfo(BuildContext context) async {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
                 Text('Level $lvl', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                if (lvl == cur) ...[
-                  const SizedBox(width: 8),
-                  Text('current', style: TextStyle(color: cs.primary, fontSize: 12)),
-                ],
+
               ]),
               const SizedBox(height: 6),
               for (final e in eff)
@@ -1225,7 +1222,7 @@ Future<void> showHqInfo(BuildContext context) async {
                 Wrap(spacing: 8, runSpacing: 6, children: [
                   for (final e in res)
                     Row(mainAxisSize: MainAxisSize.min, children: [
-                      Image.asset('assets/images_res/res${e.key}.png', width: 18, height: 18,
+                      Image.asset(resAsset(int.parse(e.key as String)), width: 18, height: 18,
                           errorBuilder: (_, __, ___) => const SizedBox(width: 18)),
                       const SizedBox(width: 4),
                       Text('${fmtNum(e.value as num)} ${itemName(int.parse(e.key as String))}',

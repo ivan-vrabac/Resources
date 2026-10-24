@@ -8,7 +8,6 @@ import '../constants.dart';
 import '../services/game_api.dart';
 import 'async_view.dart';
 import 'top_banner.dart';
-import '../screens/settings_screen.dart' show kShowMuseumRing;
 
 import '../app_colors.dart';
 import 'popups.dart';
@@ -293,17 +292,6 @@ class CargoLayers extends StatelessWidget {
     return ListenableBuilder(
       listenable: controller,
       builder: (ctx, __) => Stack(children: [
-        if (kShowMuseumRing && pos != null)
-          CircleLayer(circles: [
-            CircleMarker(
-              point: pos!,
-              radius: controller.collectRange,
-              useRadiusInMeter: true,
-              color: Colors.amber.withValues(alpha: 0.06),
-              borderColor: Colors.amberAccent.withValues(alpha: 0.8),
-              borderStrokeWidth: 1.5,
-            ),
-          ]),
         if (controller.crates.isNotEmpty)
           MobileLayerTransformer(
             child: CustomPaint(

@@ -122,7 +122,8 @@ def rating_of(conn, hid, now):
     late = sum(1 for r in rows if r["status"] == "repaid" and not r["on_time"])
     forgiven = [r for r in rows if r["status"] == "forgiven"]
     overdue = sum(1 for r in rows if r["status"] in ("active", "overdue") and r["due_at"] and r["due_at"] < iso)
-    score = (max(0.0, min(5.0, math.log10(income + 1) - 4)) * 10 + min(20.0, age / 3)
+    # income on a log scale fitted to this economy: 100 k a month = 0, 10 B a month = 50 points
+    score = (max(0.0, min(5.0, math.log10(income + 1) - 5)) * 10 + min(20.0, age / 3)
              + min(25, on_time * 5) + late - 40 * len(forgiven))
     score = round(max(0.0, min(100.0, score)), 1)
     # below the lowest step without any default: not rated yet (owner 2026-10-23: "D" said "in default")
@@ -261,8 +262,16 @@ def install(api) -> None:
         limit = int((LIMIT_SHARE * det["income30d"] + WAREHOUSE_SHARE * wh_value) * row[3]) if row else 0
         reason = None
         balance = econ.credits_of(conn, hid)
+        # owner 2026-10-24: a new loan waits for the remaining term of a running one
+        due = conn.execute("SELECT MAX(due_at) FROM loans WHERE borrower=? AND status='active' "
+                           "AND repaid < principal+interest", (hid,)).fetchone()[0]
+        running = max(1, -(-int((datetime.datetime.fromisoformat(due) - now).total_seconds()) // 86400)) \
+            if due and due > now.isoformat() else 0
         if balance < 0:
             reason = "Your balance is negative. Get back above zero first"
+        elif running:
+            reason = (f"Your current loan runs {running} more day{'s' if running != 1 else ''}. "
+                      "You can borrow again when it is repaid or due")
         elif det["ageDays"] < MIN_AGE_DAYS:
             reason = f"Loans unlock after {MIN_AGE_DAYS} days of play"
         elif det["overdue"]:
@@ -353,7 +362,7 @@ def install(api) -> None:
 
     @api.endpoint("/api/v1/loans/request", feature="LOANS")
     def request_loan(conn, hid, form):
-        principal = int_arg(form, "principal", None, MIN_PRINCIPAL, 10**13)
+        principal = int_arg(form, "principal", None, MIN_PRINCIPAL, econ.MAX_CREDITS)
         term = int_arg(form, "termDays", 14, 1, 365)
         if not MIN_TERM <= term <= MAX_TERM:
             raise econ.GameError("bad_input", f"Choose a term of {MIN_TERM} to {MAX_TERM} days")

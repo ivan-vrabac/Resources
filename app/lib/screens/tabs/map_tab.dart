@@ -15,7 +15,8 @@ import '../../branding.dart';
 import '../../constants.dart';
 import '../../models/player.dart';
 import '../../models/player_provider.dart';
-import '../../screens/settings_screen.dart' show kCloudOpacity, kShowMafiaRing,
+import '../../screens/settings_screen.dart' show kCloudOpacity, kMafiaRingColor, kMafiaRingOpacity,
+    kMuseumRingColor, kMuseumRingOpacity, kRevealRingColor, kRevealRingOpacity,
     kDroneRingColor, kDroneRingOpacity,
     kScanRingColor, kScanRingOpacity,
     kLocalRingColor, kLocalRingOpacity,
@@ -1334,9 +1335,12 @@ class _MapTabState extends State<MapTab> {
         ? kDroneScanRanges[(drResearchLevel - 1).clamp(0, kDroneScanRanges.length - 1)]
         : 0;
     final hasDrone = kDroneOverride || (player?.lager['117'] ?? 0.0) >= 1;
-    final mafiaLevel = (player?.factories
-        .firstWhere((f) => (f['itemID'] as int? ?? 0) == 86,
+    int bLevel(int id) => (player?.factories
+        .firstWhere((f) => (f['itemID'] as int? ?? 0) == id,
             orElse: () => <String, dynamic>{'lvl': 0})['lvl'] as int? ?? 0);
+    final mafiaLevel = bLevel(86);
+    final museumLevel = bLevel(65);
+    final archLevel = bLevel(164);
     final droneRange = hasDrone ? kDroneRange : 0;
     final distToTarget = (_pos != null && _mapCenter != null)
         ? _distM(_pos!, _mapCenter!)
@@ -1459,14 +1463,33 @@ class _MapTabState extends State<MapTab> {
                   borderColor: kDroneRingColor,
                   borderStrokeWidth: 1.5,
                 ),
-              // optional Mafia attack ring (Settings › Scan Rings): 100 m at level 1 … 500 m at 10
-              if (kShowMafiaRing && mafiaLevel >= 1)
+              // owner 2026-10-24: these rings always show when you have the building (formulas as on
+              // the server); colours and opacity in Settings › Scan Rings
+              if (mafiaLevel >= 1)        // Mafia attack range: 100 m at level 1 … 500 m at 10
                 CircleMarker(
                   point: _pos!,
                   radius: 100 + (mafiaLevel.clamp(1, 10) - 1) * 400 / 9,
                   useRadiusInMeter: true,
-                  color: Colors.red.withValues(alpha: 0.05),
-                  borderColor: Colors.redAccent.withValues(alpha: 0.8),
+                  color: kMafiaRingColor.withValues(alpha: kMafiaRingOpacity * 0.12),
+                  borderColor: kMafiaRingColor.withValues(alpha: kMafiaRingOpacity),
+                  borderStrokeWidth: 1.2,
+                ),
+              if (museumLevel >= 1)       // Museum pick-up range (cargo, artifacts): 50 m + 25 m per level
+                CircleMarker(
+                  point: _pos!,
+                  radius: 50.0 + 25.0 * museumLevel.clamp(0, 10),
+                  useRadiusInMeter: true,
+                  color: kMuseumRingColor.withValues(alpha: kMuseumRingOpacity * 0.12),
+                  borderColor: kMuseumRingColor.withValues(alpha: kMuseumRingOpacity),
+                  borderStrokeWidth: 1.2,
+                ),
+              if (archLevel >= 1)         // artifact reveal range: 100 m at level 1 … 300 m at 10
+                CircleMarker(
+                  point: _pos!,
+                  radius: 100.0 + (archLevel.clamp(1, 10) - 1) * 200.0 / 9,
+                  useRadiusInMeter: true,
+                  color: kRevealRingColor.withValues(alpha: kRevealRingOpacity * 0.12),
+                  borderColor: kRevealRingColor.withValues(alpha: kRevealRingOpacity),
                   borderStrokeWidth: 1.2,
                 ),
               CircleMarker(
