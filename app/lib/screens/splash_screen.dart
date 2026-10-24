@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/storage_service.dart';
 import '../services/api_service.dart';
 import '../services/fcm_service.dart';
+import '../services/update_service.dart';
 import '../models/player_provider.dart';
 import '../constants.dart' show precacheResImages;
 import 'login_screen.dart';
@@ -28,6 +29,7 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _init() async {
+    UpdateService.cleanupOldDownloads();       // the update worked: remove its downloaded APK
     // Older installs stored only the player ID; they have no session and must sign in.
     final sid = await StorageService.getSid();
     if (sid == null || sid.isEmpty) {

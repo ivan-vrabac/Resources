@@ -99,5 +99,20 @@ class UpdateService {
     }
   }
 
+  /// After a successful update (the new version is running), delete the downloaded APKs of this
+  /// build and older ones (owner 2026-10-24). A newer one that is not installed yet is kept.
+  static Future<void> cleanupOldDownloads() async {
+    if (!supported) return;
+    try {
+      final dir = await _ch.invokeMethod<String>('updateDir');
+      if (dir == null) return;
+      await for (final f in Directory(dir).list()) {
+        final m = RegExp(r'update-(\d+)\.apk$').firstMatch(f.path);
+        if (f is File && m != null && int.parse(m.group(1)!) <= Branding.buildNumber) {
+          await f.delete();
+        }
+      }
+    } catch (_) {}
+  }
   static String fmtSize(int bytes) => '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
 }
