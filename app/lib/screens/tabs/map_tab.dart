@@ -1004,7 +1004,8 @@ class _MapTabState extends State<MapTab> {
   }
 
   static bool _overlapOpen(dynamic m) {
-    final until = m is Map ? m['overlapUntil'] : null;
+    if (m is! Map || m['isMine'] == true) return false;
+    final until = m['overlapUntil'];
     return until is DateTime && until.isAfter(DateTime.now());
   }
 
@@ -1022,13 +1023,18 @@ class _MapTabState extends State<MapTab> {
       5 * math.pi / 3,  // 300° NW
     ];
 
-    // A friend's mine built in the last 30 s may be built over (server FRIEND_OVERLAP_S): it does
-    // not block, and a target inside its hex snaps onto it.
+    // A hex whose first mine is less than 30 s old may be shared (server SHARED_HEX_S): it does not
+    // block, and a target inside it snaps onto it — never a hex holding one of your own mines.
+    final mineMarkers = _markers.where((m) => m['type'] != 'hq').toList();
+    final ownSpots = {
+      for (final m in mineMarkers) if (m['isMine'] == true) '${m['lat']},${m['lng']}'
+    };
     final open = <LatLng>[];
     final mines = <LatLng>[];
-    for (final m in _markers.where((m) => m['type'] != 'hq')) {
+    for (final m in mineMarkers) {
       final pt = LatLng((m['lat'] as num).toDouble(), (m['lng'] as num).toDouble());
-      (_overlapOpen(m) ? open : mines).add(pt);
+      final shared = _overlapOpen(m) && !ownSpots.contains('${m['lat']},${m['lng']}');
+      (shared ? open : mines).add(pt);
     }
     for (final f in open) {
       if (_distM(f, target) < 15) return f;
@@ -1265,6 +1271,8 @@ class _MapTabState extends State<MapTab> {
       _onForeignTap(tapped);
       return;
     }
+    // Several mines on the same hex (players building together): let the player pick one
+    if (await _pickFromStack(tapped)) return;
     // Own mines within 15m (asked from the server — player data no longer carries
     // every mine), then pick the single closest one. Tie-break by mine ID for
     // determinism at shared borders/vertices.
@@ -1286,7 +1294,63 @@ class _MapTabState extends State<MapTab> {
       final cmp = da.compareTo(db);
       return cmp != 0 ? cmp : a.id.compareTo(b.id);
     });
-    final mine = candidates.first;
+    _openOwnMine(candidates.first);
+  }
+
+  /// The mines on the hex under the tap; with more than one, a picker. True when it handled the tap.
+  Future<bool> _pickFromStack(LatLng tapped) async {
+    Map<String, dynamic>? nearest;
+    double bestD = 15;
+    for (final m in _markers.cast<Map<String, dynamic>>()) {
+      if (m['type'] == 'hq' || m['wip'] == true) continue;
+      final d = _distM(tapped, LatLng((m['lat'] as num).toDouble(), (m['lng'] as num).toDouble()));
+      if (d <= bestD) { bestD = d; nearest = m; }
+    }
+    if (nearest == null) return false;
+    final stack = _markers.cast<Map<String, dynamic>>().where((m) =>
+        m['type'] != 'hq' && m['wip'] != true &&
+        m['lat'] == nearest!['lat'] && m['lng'] == nearest['lng']).toList();
+    if (stack.length < 2) return false;
+    final picked = await showAppSheet<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Text('There are multiple mines on this location',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+        ),
+        ...stack.map((m) {
+          final img = resImagePath((m['resID'] as num? ?? 0).toInt());
+          final own = m['isMine'] == true;
+          return ListTile(
+            leading: img != null ? Image.asset(img, width: 28, height: 28) : const Icon(Icons.terrain),
+            title: Text(kMineNames[(m['itemID'] as num? ?? 0).toInt()] ?? 'Mine'),
+            subtitle: Text(own ? 'Your mine' : (m['ownerName'] as String? ?? '')),
+            trailing: own ? const Icon(Icons.star, color: Colors.greenAccent, size: 18) : null,
+            onTap: () => Navigator.of(ctx).pop(m),
+          );
+        }),
+      ])),
+    );
+    if (picked == null || !mounted) return true;
+    if (picked['isMine'] != true) {
+      showAppSheet(
+        context: context,
+        builder: (_) => ForeignTargetSheet(target: picked, onChanged: _loadMarkers, playerPos: _pos),
+      );
+      return true;
+    }
+    final prov = context.read<PlayerProvider>();
+    final near = await ApiService.getMinesNear(prov.sid, tapped.latitude, tapped.longitude, 15);
+    if (!mounted || near == null) return true;
+    final mine = near.where((x) => x.id == picked['mID']).firstOrNull;
+    if (mine != null) _openOwnMine(mine);
+    return true;
+  }
+
+  void _openOwnMine(Mine mine) {
+    final player = context.read<PlayerProvider>().player;
+    if (player == null) return;
     final gpsPos = _pos;
     final inBossRange = gpsPos != null &&
         _distM(gpsPos, LatLng(mine.lat, mine.lng)) <= player.bossRangeM;
@@ -1602,6 +1666,17 @@ class _MapTabState extends State<MapTab> {
                             ),
                           ),
                         ),
+                        if ((m['stack'] as num? ?? 1) > 1 && markerPx >= 18)
+                          Positioned(
+                            top: 0, right: markerPx * 0.08,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 3),
+                              decoration: BoxDecoration(color: Colors.black87,
+                                  borderRadius: BorderRadius.circular(4)),
+                              child: Text('×${m['stack']}', style: TextStyle(color: Colors.white,
+                                  fontSize: (markerPx * 0.16).clamp(8.0, 12.0), fontWeight: FontWeight.bold)),
+                            ),
+                          ),
                         if (_overlapOpen(m))
                           _OverlapCountdown(until: m['overlapUntil'] as DateTime,
                               size: markerH * 0.7, onDone: () { if (mounted) setState(() {}); }),

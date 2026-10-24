@@ -2220,28 +2220,26 @@ async def player_get_data(request: Request):
 # ── Scanner ─────────────────────────────────────────────────────────────────────
 
 LOCAL_CONSTRUCTION_RANGE_M = 100   # metres from player position to hex center for local build
-# owner 2026-10-24: friends building together may overlap a friend's mine for this long after it was
-# built (both had the build popup open); after that, and always for your own mines, overlap is refused
-FRIEND_OVERLAP_S = 30
+# owner 2026-10-24: players building together may put their mines on exactly the same hex for this
+# long after the first mine there was built (anyone, not only friends); after that, and always when
+# one of the mines on the hex is your own, overlap is refused
+SHARED_HEX_S = 30
+SHARED_HEX_M = 1.0             # "the same hex": centres closer than this
 
 
-def friend_hids(conn, hid) -> set:
-    """Players who are friends with `hid` in either direction."""
-    return {r[0] for r in conn.execute(
-        "SELECT target_hid FROM contacts WHERE owner_hid=? AND kind='friend' "
-        "UNION SELECT owner_hid FROM contacts WHERE target_hid=? AND kind='friend'", (hid, hid))}
+def _age_s(created_at, now) -> float:
+    try:
+        return (now - datetime.datetime.fromisoformat(created_at).replace(tzinfo=None)).total_seconds()
+    except (TypeError, ValueError):
+        return float("inf")
 
 
-def friend_overlap_left(m, hid, friends, now=None) -> float:
-    """Seconds left in which `hid` may still build over mine `m` (0 = not allowed)."""
-    if m["owner_hid"] == hid or m["owner_hid"] not in friends or not m["created_at"]:
+def shared_hex_left(stack, hid, now=None) -> float:
+    """Seconds left in which `hid` may still build on a hex holding the mines `stack` (0 = not allowed)."""
+    if not stack or any(m["owner_hid"] == hid for m in stack):
         return 0.0
     now = now or datetime.datetime.utcnow()
-    try:
-        age = (now - datetime.datetime.fromisoformat(m["created_at"]).replace(tzinfo=None)).total_seconds()
-    except ValueError:
-        return 0.0
-    return max(0.0, FRIEND_OVERLAP_S - age)
+    return max(0.0, SHARED_HEX_S - max(_age_s(m["created_at"], now) for m in stack))
 GPS_TOLERANCE_M = 15               # allowance for GPS jitter between the app's check and the request
 DRONE_RANGE_M              = 5000  # maximum remote construction range
 
@@ -2424,18 +2422,21 @@ async def mine_new(request: Request):
             # Hex-aware proximity check against ALL mines (inside the write lock: no concurrent insert)
             dlat = 40 / 111320.0
             dlng = dlat / max(0.01, math.cos(math.radians(lat)))
-            friends = None
+            stack = []
             for m in conn.execute("SELECT lat,lng,owner_hid,created_at FROM mines "
                                   "WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?",
                                   (lat - dlat, lat + dlat, lng - dlng, lng + dlng)):
-                if haversine_m(lat, lng, m["lat"], m["lng"]) < hex_min_dist(lat, lng, m["lat"], m["lng"]) - 0.1:
-                    if m["owner_hid"] != hid:
-                        if friends is None:
-                            friends = friend_hids(conn, hid)
-                        if friend_overlap_left(m, hid, friends) > 0:
-                            continue
+                d = haversine_m(lat, lng, m["lat"], m["lng"])
+                if d < SHARED_HEX_M:
+                    stack.append(m)
+                elif d < hex_min_dist(lat, lng, m["lat"], m["lng"]) - 0.1:
                     raise econ.GameError("overlap", "Building failed: this spot overlaps an existing mine. "
                                                     "Move the crosshair to a free hex.")
+            if stack and shared_hex_left(stack, hid) <= 0:
+                if any(m["owner_hid"] == hid for m in stack):
+                    raise econ.GameError("overlap", "Building failed: you already have a mine on this hex.")
+                raise econ.GameError("overlap", f"Building failed: this hex can be shared only within "
+                                                f"{SHARED_HEX_S} s of the first mine on it.")
             actual_cost = mine_scaled_cost(mt["cost"], mine_count)
             try:
                 econ.debit(conn, hid, actual_cost, "mine_build")
@@ -2618,12 +2619,15 @@ async def mine_load_markers(request: Request):
             "LIMIT 1000",
             (lat1, lat2, lng1, lng2)).fetchall()
         refs = public_refs(conn, {m["owner_hid"] for m in mines}, hid)
-        friends = friend_hids(conn, hid) if hid else set()
     markers = []
     now = datetime.datetime.utcnow()
+    stacks = {}                    # mines on the same hex (SHARED_HEX_S window)
+    for m in mines:
+        stacks.setdefault((round(m["lat"], 6), round(m["lng"], 6)), []).append(m)
     for m in mines:
         mt = MINE_TYPES.get(m["item_id"], {})
-        left = friend_overlap_left(m, hid, friends, now)
+        stack = stacks[(round(m["lat"], 6), round(m["lng"], 6))]
+        left = shared_hex_left(stack, hid, now) if hid else 0.0
         markers.append({
             "mID":       m["mine_id"],
             "ownerHID":  refs[m["owner_hid"]],   # public id for other players (see public_refs)
@@ -2635,8 +2639,9 @@ async def mine_load_markers(request: Request):
             "cond":      current_condition(m),      # real, decayed condition (server-side)
             "lvl":       m["level"],
             "isMine":    m["owner_hid"] == hid,
-            # seconds left to build over this friend's new mine (FRIEND_OVERLAP_S)
+            # seconds left to build on this hex too (SHARED_HEX_S); how many mines share it
             **({"overlapLeft": round(left, 1)} if left > 0 else {}),
+            **({"stack": len(stack)} if len(stack) > 1 else {}),
         })
     return zlib_resp(markers)
 
