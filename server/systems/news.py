@@ -31,6 +31,7 @@ from . import int_arg, social
 
 PAGE = 30
 NEWS_HOURS = 24          # the news listing shows the last 24 hours only
+ALL_LIMIT = 200          # at most this many stories on the one-page app view
 CATEGORIES = ("world", "awards", "casino", "auctions", "archaeology", "combat", "players", "cargo", "quests")
 MINES_24H_THRESHOLDS = (100, 1000, 10000)
 CRATES_THRESHOLDS = (1000, 10000, 100000)
@@ -415,9 +416,10 @@ def install(api) -> None:
         if before:
             sql += " AND id<?"
             args.append(before)
-        rows = conn.execute(sql + " ORDER BY id DESC LIMIT ?", (*args, PAGE + 1)).fetchall()
-        more = len(rows) > PAGE
-        rows = rows[:PAGE]
+        page = ALL_LIMIT if form.get("all") == "1" else PAGE      # all=1: the whole day on one page
+        rows = conn.execute(sql + " ORDER BY id DESC LIMIT ?", (*args, page + 1)).fetchall()
+        more = len(rows) > page
+        rows = rows[:page]
         return {"err": 0, "items": render(conn, rows, hid), "more": more,
                 "next": rows[-1]["id"] if more and rows else None, "categories": CATEGORIES}
 

@@ -228,8 +228,12 @@ class _AuctionsScreenState extends State<AuctionsScreen> {
                         child: GestureDetector(
                           onTap: leader?['pid'] == null ? null : () => ProfileScreen.open(context, leader!['pid'] as String),
                           // you: in the app colour; other players: plain text (owner 2026-10-24)
-                          child: Text(a['youLead'] == true ? 'you' : (leader?['name'] as String? ?? ''),
-                              overflow: TextOverflow.ellipsis,
+                          // the full company name, also your own (owner 2026-10-24: no "you"), never cut off
+                          child: Text(
+                              a['youLead'] == true
+                                  ? (context.read<PlayerProvider>().player?.name ?? (leader?['name'] as String? ?? ''))
+                                  : (leader?['name'] as String? ?? ''),
+                              softWrap: true,
                               style: a['youLead'] == true
                                   ? TextStyle(color: AppColors.accent, fontWeight: FontWeight.bold)
                                   : null),

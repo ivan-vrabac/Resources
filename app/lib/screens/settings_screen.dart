@@ -429,7 +429,7 @@ class _ScanRingsPageState extends State<_ScanRingsPage> {
             await prefs.setBool('show_ring_labels', v);
           },
         ),
-        _settingsSectionHeader('Ring color, opacity and style'),
+        _settingsSectionHeader('Rings: show, color, opacity, fill'),
         for (final e in kRingDefaults.entries) _ringSection(e.value.$1, e.key),
       ]),
     );
@@ -445,7 +445,7 @@ class _ScanRingsPageState extends State<_ScanRingsPage> {
           Expanded(child: Text(label, style: TextStyle(fontSize: 12, color: AppColors.t70))),
           TextButton(
             style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-            onPressed: () => _edit(key, (x) { x.color = d.color; x.opacity = d.opacity; x.fill = d.fill; x.pattern = d.pattern; }),
+            onPressed: () => _edit(key, (x) { x.color = d.color; x.opacity = d.opacity; x.fill = d.fill; x.show = d.show; }),
             child: const Text('Default', style: TextStyle(fontSize: 11)),
           ),
         ]),
@@ -468,22 +468,11 @@ class _ScanRingsPageState extends State<_ScanRingsPage> {
           ),
         ]),
         Row(children: [
+          Text('Show', style: TextStyle(fontSize: 12, color: AppColors.t70)),
+          Switch(value: l.show, activeColor: l.color, onChanged: (v) => _edit(key, (x) => x.show = v)),
+          const SizedBox(width: 12),
           Text('Fill', style: TextStyle(fontSize: 12, color: AppColors.t70)),
           Switch(value: l.fill, activeColor: l.color, onChanged: (v) => _edit(key, (x) => x.fill = v)),
-          const SizedBox(width: 12),
-          Text('Line', style: TextStyle(fontSize: 12, color: AppColors.t70)),
-          const SizedBox(width: 8),
-          Expanded(
-            child: DropdownButton<String>(
-              isExpanded: true,
-              value: l.pattern,
-              items: [
-                for (final p in kRingPatterns)
-                  DropdownMenuItem(value: p, child: Text(kRingPatternNames[p]!, style: const TextStyle(fontSize: 12))),
-              ],
-              onChanged: (v) { if (v != null) _edit(key, (x) => x.pattern = v); },
-            ),
-          ),
         ]),
         const Divider(height: 12),
       ]),

@@ -1417,7 +1417,7 @@ class _MapTabState extends State<MapTab> {
           ),
 
           // Rings around the player (owner 2026-10-24): look per ring in Settings › Scan Rings
-          // (colour, opacity, fill, line style); building rings only with the building.
+          // (show, colour, opacity, fill); building rings only with the building.
           if (_pos != null) ...[
             Builder(builder: (ctx) {
               final hf = player?.haulageLevel ?? 0;
@@ -1429,23 +1429,37 @@ class _MapTabState extends State<MapTab> {
                 if (archLevel >= 1) ('reveal', 100.0 + (archLevel.clamp(1, 10) - 1) * 200.0 / 9, 'Reveal range'),
                 ('local', 100.0, 'Local range'),
               ];
+              rings.removeWhere((r) => !kRingLooks[r.$1]!.show);
               final refLat = _pos!.latitude * math.pi / 180;
               final ppm = (256 * math.pow(2, _mapZoom)) /
                   (40075017.0 * math.cos(refLat).abs().clamp(0.001, 1.0));
-              Marker lbl(String text, double radiusM, Color c) => Marker(
-                point: LatLng(_pos!.latitude + radiusM / 111320.0, _pos!.longitude),
-                width: 110, height: 14,
-                alignment: Alignment.topCenter,
-                child: Center(child: Text(text, style: TextStyle(color: c, fontSize: 9,
-                    shadows: const [Shadow(color: Colors.black, blurRadius: 2)]))),
-              );
+              // labels never overlap (owner 2026-10-24): each one sits on its ring at the first angle
+              // (top, bottom, the diagonals, the sides) where it doesn't touch a label already placed
+              final placed = <Rect>[];
+              final labels = <Marker>[];
+              const angles = [90.0, 270.0, 60.0, 120.0, 240.0, 300.0, 30.0, 150.0, 210.0, 330.0, 0.0, 180.0];
+              for (final r in [...rings]..sort((a, b) => a.$2.compareTo(b.$2))) {
+                final rpx = r.$2 * ppm;
+                if (!kShowRingLabels || rpx <= 40) continue;
+                final w = r.$3.length * 5.2 + 8, h = 13.0;
+                for (final deg in angles) {
+                  final a = deg * math.pi / 180;
+                  final rect = Rect.fromCenter(center: Offset(rpx * math.cos(a), -rpx * math.sin(a)), width: w, height: h);
+                  if (placed.any((p) => p.inflate(2).overlaps(rect))) continue;
+                  placed.add(rect);
+                  labels.add(Marker(
+                    point: LatLng(_pos!.latitude + r.$2 * math.sin(a) / 111320.0,
+                        _pos!.longitude + r.$2 * math.cos(a) / (111320.0 * math.cos(refLat).abs().clamp(0.001, 1.0))),
+                    width: w, height: h,
+                    child: Center(child: Text(r.$3, maxLines: 1, style: TextStyle(color: kRingLooks[r.$1]!.color, fontSize: 9,
+                        shadows: const [Shadow(color: Colors.black, blurRadius: 2)]))),
+                  ));
+                  break;
+                }
+              }
               return Stack(children: [
                 PolygonLayer(polygons: [for (final r in rings) ringPolygon(_pos!, r.$2, r.$1)]),
-                if (kShowRingLabels)
-                  MarkerLayer(markers: [
-                    for (final r in rings)
-                      if (r.$2 * ppm > 40) lbl(r.$3, r.$2, kRingLooks[r.$1]!.color),
-                  ]),
+                if (labels.isNotEmpty) MarkerLayer(markers: labels),
               ]);
             }),
             // TC scan ring around the crosshair: reads the live camera every frame (plain pans
@@ -1454,6 +1468,7 @@ class _MapTabState extends State<MapTab> {
               final cam = MapCamera.of(ctx);
               final c = cam.center;
               final d = _distM(_pos!, c);
+              if (!kRingLooks['scan']!.show) return const SizedBox.shrink();
               if (!(d <= 100 || (droneRange > 0 && d <= droneRange))) return const SizedBox.shrink();
               return PolygonLayer(polygons: [ringPolygon(c, scanRadius, 'scan')]);
             }),

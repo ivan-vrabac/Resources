@@ -106,8 +106,11 @@ def _derive_prices() -> dict:
         if prod in FIXED_PRICES:
             p[prod] = FIXED_PRICES[prod]
             continue
-        cost = sum(p[i] * q for i, q in inp.items()) + cr
-        p[prod] = round(cost / out * margin(unlock), 2)
+        # the margin is on the resources only; production credits pass through at cost (owner
+        # 2026-10-24 audit: with the margin on the credits too, buying every input from the system
+        # at 150 % and selling the product back paid off for credit-heavy recipes, a money loop)
+        cost = sum(p[i] * q for i, q in inp.items())
+        p[prod] = round((cost * margin(unlock) + cr) / out, 2)
     return p
 
 
@@ -258,11 +261,14 @@ OTHER_PRICES = {
     95: 5_000, 97: 50_000, 98: 100_000, 102: 10_000, 103: 100_000, 104: 200_000,
     # archaeologists: 70-100 go into every recovery (about half a detector's worth)
     167: 100_000,
-    # artifacts: a find takes about a dozen detector scans (≈ 21 M each), split by how rare the
-    # kind is (weights 30/10/20/15/5/20 %), so billions; they are also invested by the hundred
-    172: 1_000_000_000, 173: 3_000_000_000, 174: 1_500_000_000, 175: 2_000_000_000, 176: 6_000_000_000,
-    177: 1_500_000_000,
 }
+
+
+# Artifacts have no system price (owner 2026-10-24): the system neither sells nor buys them, so
+# money can't replace hunting; players trade them among themselves (buy orders, no floor/ceiling).
+# What a find is worth in detector scans (about a dozen scans of ≈ 18 M, split by rarity), for reference:
+ARTIFACT_VALUE = {172: 1_000_000_000, 173: 3_000_000_000, 174: 1_500_000_000, 175: 2_000_000_000,
+                  176: 6_000_000_000, 177: 1_500_000_000}
 
 
 def system_prices() -> dict:

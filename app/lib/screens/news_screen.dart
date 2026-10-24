@@ -31,9 +31,7 @@ class _NewsScreenState extends State<NewsScreen> {
   };
 
   final _items = <Map<String, dynamic>>[];
-  String _cat = '';
-  bool _loading = true, _more = false, _loadingMore = false;
-  int? _next;
+  bool _loading = true;
   String? _error;
 
   String get _sid => context.read<PlayerProvider>().sid;
@@ -44,22 +42,17 @@ class _NewsScreenState extends State<NewsScreen> {
     _load();
   }
 
-  Future<void> _load({bool append = false}) async {
-    if (append) setState(() => _loadingMore = true);
-    final r = await GameApi.call('/api/v1/news', _sid, {
-      'category': _cat,
-      if (append && _next != null) 'before': _next,
-    });
+  /// One page: everything from the last 24 hours (owner 2026-10-24: no filters, no paging).
+  Future<void> _load() async {
+    final r = await GameApi.call('/api/v1/news', _sid, {'all': 1});
     if (!mounted) return;
     setState(() {
       _loading = false;
-      _loadingMore = false;
       _error = r.ok ? null : r.message;
       if (r.ok) {
-        if (!append) _items.clear();
-        _items.addAll((r.data['items'] as List).cast<Map<String, dynamic>>());
-        _more = r.data['more'] == true;
-        _next = (r.data['next'] as num?)?.toInt();
+        _items
+          ..clear()
+          ..addAll((r.data['items'] as List).cast<Map<String, dynamic>>());
       }
     });
   }
@@ -103,21 +96,6 @@ class _NewsScreenState extends State<NewsScreen> {
               style: TextStyle(fontSize: 11, color: AppColors.t54, letterSpacing: 0.5)),
         ]),
       ),
-      SizedBox(
-        height: 44,
-        child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 8), children: [
-          for (final e in _labels.entries)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 5),
-              child: ChoiceChip(
-                label: Text(e.value, style: const TextStyle(fontSize: 12)),
-                visualDensity: VisualDensity.compact,
-                selected: _cat == e.key,
-                onSelected: (_) { setState(() { _cat = e.key; _loading = true; }); _load(); },
-              ),
-            ),
-        ]),
-      ),
       Expanded(
         child: AsyncView(
           loading: _loading,
@@ -131,14 +109,6 @@ class _NewsScreenState extends State<NewsScreen> {
                     child: Text('No news in the last 24 hours.\nBig wins, discoveries and earthquakes appear here.',
                         textAlign: TextAlign.center, style: TextStyle(color: AppColors.t54))),
               for (var i = 0; i < _items.length; i++) _tile(_items[i], top: i == 0),
-              if (_more)
-                Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: OutlinedButton(
-                    onPressed: _loadingMore ? null : () => _load(append: true),
-                    child: Text(_loadingMore ? 'Loading…' : 'More from today'),
-                  ),
-                ),
             ]),
           ),
         ),

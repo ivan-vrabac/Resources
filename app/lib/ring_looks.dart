@@ -4,34 +4,30 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// How a map ring looks (owner 2026-10-24): colour, opacity, filled or not, line style.
+/// How a map ring looks (owner 2026-10-24): shown or hidden, colour, opacity, filled or not.
+/// Rings are always plain circles (owner: no dotted/dashed lines).
 class RingLook {
+  bool show;
   Color color;
   double opacity;
   bool fill;
-  String pattern;      // solid, dotted, dashed, dotdash, dashdashdot
-  RingLook(this.color, this.opacity, {this.fill = true, this.pattern = 'solid'});
+  RingLook(this.color, this.opacity, {this.fill = true, this.show = true});
 }
-
-const kRingPatterns = ['solid', 'dotted', 'dashed', 'dotdash', 'dashdashdot'];
-const kRingPatternNames = {
-  'solid': 'Solid', 'dotted': 'Dotted', 'dashed': 'Dashed', 'dotdash': 'Dot-dash', 'dashdashdot': 'Dash-dash-dot',
-};
 
 /// Ring keys → (title in settings, default look).
 final Map<String, (String, RingLook)> kRingDefaults = {
   'drone':  ('Drone range', RingLook(Colors.orange, 0.5)),
   'scan':   ('Tech Center scan radius', RingLook(Colors.teal, 0.5)),
   'local':  ('Local range', RingLook(Colors.blueAccent, 0.7)),
-  'boss':   ('Boss range (Haulage Firm: trucks, free repairs)', RingLook(Colors.grey, 0.8, fill: false, pattern: 'dotdash')),
-  'museum': ('Museum pick-up range', RingLook(Colors.yellow, 0.8, fill: false, pattern: 'dashed')),
-  'reveal': ('Artifact reveal range', RingLook(Colors.purpleAccent, 0.8, fill: false, pattern: 'dotted')),
-  'mafia':  ('Mafia attack range', RingLook(Colors.redAccent, 0.8, fill: false, pattern: 'dashdashdot')),
+  'boss':   ('Boss range (Haulage Firm: trucks, free repairs)', RingLook(Colors.grey, 0.8, fill: false)),
+  'museum': ('Museum pick-up range', RingLook(Colors.yellow, 0.8, fill: false)),
+  'reveal': ('Artifact reveal range', RingLook(Colors.purpleAccent, 0.8, fill: false)),
+  'mafia':  ('Mafia attack range', RingLook(Colors.redAccent, 0.8, fill: false)),
 };
 
 final Map<String, RingLook> kRingLooks = {
   for (final e in kRingDefaults.entries)
-    e.key: RingLook(e.value.$2.color, e.value.$2.opacity, fill: e.value.$2.fill, pattern: e.value.$2.pattern),
+    e.key: RingLook(e.value.$2.color, e.value.$2.opacity, fill: e.value.$2.fill, show: e.value.$2.show),
 };
 
 /// Colours offered for rings (more than before: yellow and grey included).
@@ -49,8 +45,8 @@ Future<void> loadRingLooks() async {
     if (o != null) e.value.opacity = o.clamp(0.0, 1.0);
     final f = p.getBool('${e.key}_ring_fill');
     if (f != null) e.value.fill = f;
-    final pt = p.getString('${e.key}_ring_pattern');
-    if (pt != null && kRingPatterns.contains(pt)) e.value.pattern = pt;
+    final sh = p.getBool('${e.key}_ring_show');
+    if (sh != null) e.value.show = sh;
   }
 }
 
@@ -60,18 +56,10 @@ Future<void> saveRingLook(String key) async {
   await p.setInt('${key}_ring_color', l.color.toARGB32());
   await p.setDouble('${key}_ring_opacity', l.opacity);
   await p.setBool('${key}_ring_fill', l.fill);
-  await p.setString('${key}_ring_pattern', l.pattern);
+  await p.setBool('${key}_ring_show', l.show);
 }
 
-StrokePattern strokePattern(String p) => switch (p) {
-      'dotted' => const StrokePattern.dotted(spacingFactor: 2.5),
-      'dashed' => StrokePattern.dashed(segments: const [12, 7]),
-      'dotdash' => StrokePattern.dashed(segments: const [2, 6, 12, 6]),
-      'dashdashdot' => StrokePattern.dashed(segments: const [12, 5, 12, 5, 2, 5]),
-      _ => const StrokePattern.solid(),
-    };
-
-/// A ring of `radiusM` metres around `c` as a polygon (fill + patterned border).
+/// A ring of `radiusM` metres around `c` as a polygon (fill + plain border).
 Polygon ringPolygon(LatLng c, double radiusM, String key) {
   final look = kRingLooks[key]!;
   const n = 120;
@@ -86,6 +74,5 @@ Polygon ringPolygon(LatLng c, double radiusM, String key) {
     color: look.fill ? look.color.withValues(alpha: look.opacity * 0.12) : null,
     borderColor: look.color.withValues(alpha: look.opacity.clamp(0.15, 1.0)),
     borderStrokeWidth: 1.6,
-    pattern: strokePattern(look.pattern),
   );
 }

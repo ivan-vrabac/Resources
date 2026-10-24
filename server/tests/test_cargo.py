@@ -190,7 +190,7 @@ def test_recycling_found_objects():
     set_building(hid, 58, 10)                                                       # 100 % yield
     r = call(C + "recycle", sid, itemID=41, qty=100)
     outs = {o["itemID"]: o["qty"] for o in r["outputs"]}
-    assert qty(hid, 41) == 0 and outs == {2: 200, 10: 40, 20: 120, 3: 120, 53: 120}  # fossils → 5 resources
+    assert qty(hid, 41) == 0 and outs == {2: 200, 10: 2, 20: 120, 3: 120, 53: 2}  # fossils → 5 resources
     assert all(float(v).is_integer() for v in outs.values())
     info = call(C + "recycling", sid)
     assert {x["itemID"] for x in info["recipes"]} >= {41, 74, 115, 120}

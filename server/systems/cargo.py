@@ -101,10 +101,12 @@ QTY = {56: (1, 20), 57: (1, 20), 41: (1, 20), 55: (1, 10), 40: (1, 10), 70: (5, 
 # sources and are a documented proposal: input → [(output, units of output per input unit)].
 # The units are split evenly over the outputs, then × the Recycling Plant yield.
 RECYCLE = {
-    41: [(2, 10), (10, 2), (20, 6), (3, 6), (53, 6)],   # fossils → clay, crude oil, limestone, gravel, quartz sand (srs.txt)
+    # owner 2026-10-24 audit: crude oil and quartz sand cut (2 / 6 → 0.1): bought from the system and
+    # recycled, fossils returned 10× their price (used oil 3×)
+    41: [(2, 10), (10, 0.1), (20, 6), (3, 6), (53, 0.1)],   # fossils → clay, crude oil, limestone, gravel, quartz sand (srs.txt)
     120: [(70, 3), (74, 2), (78, 2), (77, 2)],          # drone wreckage → scrap metal, used oil, e-scrap, plastic scrap
     115: [(70, 0.5), (77, 0.5)],                         # waste glass → scrap metal, plastic scrap
-    74: [(70, 0.5), (10, 0.5)],                          # used oil → scrap metal, crude oil (srs.txt)
+    74: [(70, 0.5), (10, 0.1)],                          # used oil → scrap metal, crude oil (srs.txt)
     77: [(74, 0.5)],                                     # plastic scrap → used oil
     43: [(77, 5)],                                       # maintenance kit → plastic scrap
     # coins: about their own value in Tech Upgrades at 100 % yield (economy revamp 2026-10-23)

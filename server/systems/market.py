@@ -220,9 +220,11 @@ def install(api) -> None:
                 e["bestBid"], e["bidQty"] = r[2], r[4]
             else:
                 e["bestAsk"], e["askQty"] = r[3], r[4]
+        for iid in ARTIFACTS:      # players-only items: always listed so buyers can place orders
+            items.setdefault(iid, {"itemID": iid, "systemSell": None, "systemBuy": None})
         mine = {r[0]: r[1] for r in conn.execute("SELECT item_id, qty FROM warehouse WHERE hid=? AND qty > 0", (hid,))}
         for iid, q in mine.items():
-            if iid in RESTRICTED or iid in LUXURY_ITEMS or iid in ARTIFACTS or iid in h.SPECIAL_BUILDINGS \
+            if iid in RESTRICTED or iid in LUXURY_ITEMS or iid in h.SPECIAL_BUILDINGS \
                     or iid in h.FACTORY_TYPES or iid in h.MINE_TYPES:
                 continue
             items.setdefault(iid, {"itemID": iid, "systemSell": None, "systemBuy": None})

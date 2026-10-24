@@ -47,6 +47,9 @@ CELL_DEG = 0.02
 SITE_CHANCE = 0.35
 PERIOD_S = 24 * 3600
 GONE_AFTER_FIRST_S = 15 * 60
+# owner 2026-10-24: after a recovery the area (that cell and the 8 around it, about 6 × 6 km) has
+# nothing for that player for 12 hours, also across the daily rollover (no camping at home)
+AREA_COOLDOWN_S = 12 * 3600
 
 
 def detect_range(level: int) -> float:
@@ -122,6 +125,24 @@ def sites_near(lat, lng, radius_m, period):
                 if s["dist"] <= radius_m:
                     out.append(s)
     return sorted(out, key=lambda s: s["dist"])
+
+
+def cell_of(site_id: str):
+    cx, cy, _ = site_id.split(":")
+    return int(cx), int(cy)
+
+
+def cooling_cells(conn, hid, now: datetime.datetime) -> set:
+    """Cells where this player recovered an artifact in the last 12 hours, with their neighbours."""
+    since = (now - datetime.timedelta(seconds=AREA_COOLDOWN_S)).isoformat()
+    out = set()
+    for (sid,) in conn.execute("SELECT site_id FROM artifact_recoveries WHERE hid=? AND ts>=?", (hid, since)):
+        try:
+            cx, cy = cell_of(sid)
+        except ValueError:
+            continue
+        out.update((cx + dx, cy + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1))
+    return out
 
 
 def bearing_deg(lat1, lng1, lat2, lng2) -> float:
@@ -245,7 +266,8 @@ def install(api) -> None:
         left = int(lv["detectors"]) - 1
         sites = sites_near(lat, lng, lv["detectRange"], period_of(econ.utcnow()))
         done = unavailable(conn, hid, [s["id"] for s in sites])
-        sites = [s for s in sites if s["id"] not in done]
+        cooling = cooling_cells(conn, hid, econ.utcnow())
+        sites = [s for s in sites if s["id"] not in done and cell_of(s["id"]) not in cooling]
         if not sites:
             return {"err": 0, "found": False, "detectRange": lv["detectRange"], "detectorsLeft": left}
         s = sites[0]
@@ -279,6 +301,8 @@ def install(api) -> None:
             econ.require_within(lat, lng, site["lat"], site["lng"], lv["pickupRange"], "artifact")
             if site_id in unavailable(conn, hid, [site_id]):
                 raise econ.GameError("gone", "You already recovered this artifact, or it is gone")
+            if (int(cx), int(cy)) in cooling_cells(conn, hid, econ.utcnow()):
+                raise econ.GameError("cooldown", "You found an artifact in this area less than 12 hours ago")
             need = lv["archaeologistsNeeded"]
             econ.take(conn, hid, ARCHAEOLOGISTS, need, "artifact_recovery", site_id)
             h.award_sink(conn, hid, res={ARCHAEOLOGISTS: need})
