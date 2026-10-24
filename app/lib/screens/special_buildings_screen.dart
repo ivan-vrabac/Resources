@@ -336,7 +336,7 @@ class _SpecialBuildingCardState extends State<_SpecialBuildingCard> {
     return CollapsibleCard(
       open: widget.open,
       onToggle: widget.onToggle,
-      image: 'assets/images_res/res${kSpecialBuildingImageId[widget.itemId] ?? widget.itemId}.png',
+      image: resAsset(widget.itemId),
       name: name,
       level: !_owned ? 'Not built' : _isMaxLevel ? '' : 'Level ${widget.currentLevel}',   // maxed: just the star
       trailing: _isMaxLevel ? const Icon(Icons.star, color: Colors.amber, size: 20) : null,

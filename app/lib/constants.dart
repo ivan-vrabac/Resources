@@ -148,11 +148,6 @@ const List<int> kTcScanRadius = [150, 200, 250, 300, 350, 400, 500, 600, 750, 90
 // same as the server (DRONE_SCAN_RANGES): at most 10 km
 const List<int> kDroneScanRanges = [500, 1000, 1500, 2000, 3000, 4000, 5000, 6500, 8000, 10000];
 
-// Image ID overrides for special buildings (building item_id → display image id)
-const Map<int, int> kSpecialBuildingImageId = {
-  58: 59,  // Recycling Plant building → res59.png
-  61: 62,  // Casino building → res62.png
-};
 
 // Special buildings: item_id → config
 // res keys MUST be strings (e.g. '24') to match lager map string keys
@@ -421,8 +416,13 @@ const Set<int> _kResImageIds = {
 };
 
 /// Items whose picture has a different number in the original artwork (owner 2026-10-24):
-/// Plastics → res58, Old Tires → res57, Watch Dogs → res96, Security Staff → res98, Elite Force → res99.
-const Map<int, int> kItemImageOverride = {57: 58, 56: 57, 95: 96, 97: 98, 98: 99};
+/// Plastics → res58, Old Tires → res57, Glass → res60, Watch Dogs → res96, Security Staff → res98, Elite Force → res99;
+/// factories: Recycling Plant → res59, Glazier's Workshop → res61, Casino → res62, Plastic Factory → res63,
+/// Drone Factory → res64, Battery Factory → res95, Army Camp → res97, Arms Factory → res101.
+const Map<int, int> kItemImageOverride = {
+  57: 58, 56: 57, 59: 60, 95: 96, 97: 98, 98: 99,
+  58: 59, 60: 61, 61: 62, 62: 63, 63: 64, 94: 95, 96: 97, 99: 101,
+};
 
 /// Asset path of an item's picture (always use this, never 'res$id' directly).
 String resAsset(int id) => 'assets/images_res/res${kItemImageOverride[id] ?? id}.png';

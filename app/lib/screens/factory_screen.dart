@@ -437,7 +437,7 @@ class _FactoryScreenState extends State<FactoryScreen> {
               margin: const EdgeInsets.only(bottom: 6),
               child: ListTile(
                 dense: true,
-                leading: SizedBox(width: 32, height: 32, child: Image.asset('assets/images_res/res${f['itemID']}.png',
+                leading: SizedBox(width: 32, height: 32, child: Image.asset(resAsset(f['itemID'] as int),
                     errorBuilder: (_, __, ___) => const Icon(Icons.factory_outlined))),
                 title: Text(itemName(f['itemID'] as int)),
                 subtitle: out is int ? Text('Produces ${itemName(out)}') : null,
@@ -635,8 +635,7 @@ class _FactoryTileState extends State<_FactoryTile> {
         upgRes.entries.every((e) =>
             (lager[e.key] ?? 0) >= (e.value as num).toDouble());
     final ft = kFactoryTypes[itemId];
-    final outputItemId = ft?['produces'] as int?;
-    final outputImgPath = outputItemId != null ? resImagePath(outputItemId) : null;
+    final factoryImgPath = resImagePath(itemId);
 
     final baseOut = ft?['out'] as int? ?? 0;
     final baseHrs = ft?['hrs'] as int? ?? 1;
@@ -650,8 +649,8 @@ class _FactoryTileState extends State<_FactoryTile> {
         padding: const EdgeInsets.all(12),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-            if (outputImgPath != null)
-              Image.asset(outputImgPath, width: 48, height: 48, fit: BoxFit.contain,
+            if (factoryImgPath != null)
+              Image.asset(factoryImgPath, width: 48, height: 48, fit: BoxFit.contain,
                   errorBuilder: (_, __, ___) => Icon(Icons.factory, size: 40, color: AppColors.accent))
             else
               Icon(Icons.factory, size: 40, color: AppColors.accent),
@@ -861,6 +860,7 @@ class _CatalogTile extends StatelessWidget {
     final name = item['name'] as String;
     final cost = (item['cost'] as num).toInt();
     final produces = item['produces'] as int;
+    final factoryImgPath = resImagePath((item['itemID'] as num).toInt());
     final minLvl = item['minLvl'] as int;
     final needs = item['needs'] as Map<String, dynamic>? ?? {};
     final buildRes = item['buildRes'] as Map<String, dynamic>? ?? {};
@@ -879,22 +879,32 @@ class _CatalogTile extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Expanded(child: Text(name, style: const TextStyle(fontWeight: FontWeight.bold))),
-            if (!levelOk)
-              Text('Lv $minLvl required',
-                  style: const TextStyle(color: Colors.red, fontSize: 11)),
-          ]),
-          const SizedBox(height: 4),
-          Row(children: [
-            if (resImagePath(produces) != null)
-              Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: SizedBox(width: 16, height: 16,
-                    child: Image.asset(resImagePath(produces)!, fit: BoxFit.contain)),
-              ),
-            Text('Produces: ${itemName(produces)}',
-                style: TextStyle(color: AppColors.t54, fontSize: 12)),
+          Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+            if (factoryImgPath != null)
+              Image.asset(factoryImgPath, width: 48, height: 48, fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => Icon(Icons.factory, size: 40, color: AppColors.accent))
+            else
+              Icon(Icons.factory, size: 40, color: AppColors.accent),
+            const SizedBox(width: 10),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Expanded(child: Text(name, style: const TextStyle(fontWeight: FontWeight.bold))),
+                if (!levelOk)
+                  Text('Lv $minLvl required',
+                      style: const TextStyle(color: Colors.red, fontSize: 11)),
+              ]),
+              const SizedBox(height: 4),
+              Row(children: [
+                if (resImagePath(produces) != null)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: SizedBox(width: 16, height: 16,
+                        child: Image.asset(resImagePath(produces)!, fit: BoxFit.contain)),
+                  ),
+                Text('Produces: ${itemName(produces)}',
+                    style: TextStyle(color: AppColors.t54, fontSize: 12)),
+              ]),
+            ])),
           ]),
           if (needs.isNotEmpty) ...[
             const SizedBox(height: 6),
