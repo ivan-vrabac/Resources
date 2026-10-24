@@ -16,15 +16,15 @@ import '../services/game_api.dart';
 import '../app_colors.dart';
 import '../widgets/popups.dart';
 const Map<int, Map<int, int>> kHqUpgradeReqs = {
-  2:  {2: 750000,  3: 750000,  8: 750000,  20: 750000},
-  3:  {7: 1500000, 13: 1500000, 22: 1500000, 24: 1500000},
-  4:  {10: 2000000, 12: 2000000, 26: 2000000, 53: 2000000},
-  5:  {28: 3000000, 30: 3000000, 36: 3000000, 38: 3000000},
-  6:  {32: 4000000, 49: 4000000, 90: 4000000, 92: 4000000},
-  7:  {57: 5000000, 59: 5000000, 67: 5000000, 93: 5000000},
-  8:  {14: 10000000, 15: 10000000, 51: 10000000, 81: 10000000},
-  9:  {35: 25000000, 66: 25000000, 75: 25000000, 79: 25000000},
-  10: {30: 50000000, 59: 50000000, 84: 50000000, 87: 50000000},
+  2:  {2: 460000, 3: 33000, 8: 3100, 20: 61000},
+  3:  {7: 180000, 13: 30000, 22: 75000, 24: 160000},
+  4:  {10: 6200, 12: 1000, 26: 2100, 53: 7800},
+  5:  {28: 26000, 30: 3100, 36: 1200, 38: 12000},
+  6:  {32: 870, 49: 3800, 90: 35000, 92: 1100},
+  7:  {57: 500000, 59: 34000, 67: 1500, 93: 610},
+  8:  {14: 130000, 15: 47000, 51: 8000, 81: 59000},
+  9:  {35: 400000, 66: 36000, 75: 15000, 79: 19000},
+  10: {30: 370000, 59: 590000, 84: 540, 87: 53000},
 };
 
 const List<double> kHqBoostRadius = [115, 130, 145, 160, 175, 190, 205, 220, 235, 250];
@@ -363,14 +363,6 @@ class _DepositDialogState extends State<_DepositDialog> {
     return min(have, remaining);
   }
 
-  void _fillAll() {
-    setState(() {
-      for (final id in widget.reqs.keys) {
-        _amounts[id] = _maxAmount(id);
-      }
-    });
-  }
-
   Future<void> _deposit() async {
     final toDeposit = {
       for (final e in _amounts.entries) if (e.value > 0) e.key: e.value
@@ -406,14 +398,6 @@ class _DepositDialogState extends State<_DepositDialog> {
       ]),
       content: SingleChildScrollView(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-            TextButton(
-              onPressed: _fillAll,
-              style: TextButton.styleFrom(visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero),
-              child: const Text('Fill all', style: TextStyle(fontSize: 12)),
-            ),
-          ]),
           ...widget.reqs.entries.map((e) {
             final id = e.key;
             final need = e.value.toDouble();
