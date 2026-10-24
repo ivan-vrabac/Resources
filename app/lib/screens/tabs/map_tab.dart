@@ -1292,21 +1292,21 @@ class _MapTabState extends State<MapTab> {
     final lvl        = player?.level ?? 1;
     final center     = _pos ?? const LatLng(45.815, 15.982);
 
-    const kDroneOverride = false;
     final drResearchLevel = (player?.factories
         .firstWhere((f) => (f['itemID'] as int? ?? 0) == 119,
             orElse: () => <String, dynamic>{'lvl': 0})['lvl'] as int? ?? 0);
     final kDroneRange = drResearchLevel > 0
         ? kDroneScanRanges[(drResearchLevel - 1).clamp(0, kDroneScanRanges.length - 1)]
         : 0;
-    final hasDrone = kDroneOverride || (player?.lager['117'] ?? 0.0) >= 1;
     int bLevel(int id) => (player?.factories
         .firstWhere((f) => (f['itemID'] as int? ?? 0) == id,
             orElse: () => <String, dynamic>{'lvl': 0})['lvl'] as int? ?? 0);
     final mafiaLevel = bLevel(86);
     final museumLevel = bLevel(65);
     final archLevel = bLevel(164);
-    final droneRange = hasDrone ? kDroneRange : 0;
+    // owner 2026-10-24: the drone range comes from Drone Research alone; without drones the drone
+    // scan is shown greyed ("You have: 0 drones"), never as "Out of range"
+    final droneRange = kDroneRange;
     final distToTarget = (_pos != null && _mapCenter != null)
         ? _distM(_pos!, _mapCenter!)
         : double.infinity;
@@ -1336,8 +1336,15 @@ class _MapTabState extends State<MapTab> {
     // Build button: a scan result + token, and the snapped build hex inside your local/drone range
     final snapForBuild = _lastScanPos != null ? _snapBuildPos(_lastScanPos!) : null;
     final hexDist = (_pos != null && snapForBuild != null) ? _distM(_pos!, snapForBuild) : double.infinity;
+    // a drone build (outside local range) waits for the drone cooldown (12 h, Astrolabium less)
+    final remoteWait = player?.remoteNext?.difference(DateTime.now().toUtc());
+    final remoteCooling = remoteWait != null && !remoteWait.isNegative;
+    final remoteSpot = hexDist > 100 && droneRange > 0 && hexDist <= droneRange;
     final buildReady = selectedResult != null && _prospectToken != null &&
-        (hexDist <= 100 || (droneRange > 0 && hexDist <= droneRange));
+        (hexDist <= 100 || (remoteSpot && !remoteCooling));
+    final buildWaitText = selectedResult != null && _prospectToken != null && remoteSpot && remoteCooling
+        ? '${remoteWait.inHours}h ${(remoteWait.inMinutes % 60).toString().padLeft(2, '0')}m'
+        : null;
     final hasActiveSelection = _lastScanPos != null;
     final browseBase = _mapCenter ?? _pos ?? const LatLng(45.815, 15.982);
     final browseSnapPos = canBuild ? _snapBuildPos(browseBase) : null;
@@ -2048,10 +2055,20 @@ class _MapTabState extends State<MapTab> {
                               ? Border.all(color: Colors.amber.withValues(alpha: 0.6))
                               : Border.all(color: Colors.white12),
                         ),
-                        child: Center(
-                          child: Icon(Icons.construction, size: 22,
+                        child: Stack(alignment: Alignment.center, children: [
+                          Icon(Icons.construction, size: 22,
                               color: buildReady ? Colors.amber : Colors.white24),
-                        ),
+                          // drone build on cooldown: time to the next drone construction
+                          if (buildWaitText != null)
+                            Positioned(
+                              bottom: 1, left: 1, right: 1,
+                              child: Container(
+                                color: Colors.black54,
+                                child: Text(buildWaitText, textAlign: TextAlign.center, maxLines: 1,
+                                    style: const TextStyle(fontSize: 8, color: Colors.white70)),
+                              ),
+                            ),
+                        ]),
                       ),
                     ),
                   ],
@@ -2065,18 +2082,20 @@ class _MapTabState extends State<MapTab> {
                 child: ValueListenableBuilder<double>(valueListenable: _crosshairDist, builder: (_, liveDist, __) {
                   final inLocalRange = _pos != null && liveDist <= 100;
                   final inDroneRange = _pos != null && droneRange > 0 && liveDist <= droneRange;
+                  final droneCount = (player?.lager['117'] ?? 0.0).toInt();
+                  final droneOnly = inDroneRange && !inLocalRange;
                   final disabled = _scanning || _pos == null ||
-                      (!inLocalRange && !inDroneRange);
+                      (!inLocalRange && !inDroneRange) || (droneOnly && droneCount < 1);
                   final bgColor = inLocalRange
                       ? AppColors.accentDark
                       : inDroneRange
                           ? AppColors.accentDeep
                           : Colors.grey.shade800;
-                  final droneCount = (player?.lager['117'] ?? 0.0).toInt();
+                  // a drone scan uses up 1 Scan Drone, no credits
                   final costLine = (!inLocalRange && !inDroneRange)
                       ? null
-                      : (inDroneRange && !inLocalRange)
-                          ? (droneCount < 1 ? 'Needs a Scan Drone' : 'ꞓ${fmtNum(scanCost * 5)} · drone kept')
+                      : droneOnly
+                          ? (droneCount < 1 ? 'You have: 0 drones' : '1 Scan Drone · you have ${fmtNum(droneCount)}')
                           : (scanCost == 0 ? 'Free' : 'ꞓ${fmtNum(scanCost)}');
                   return SizedBox(
                     height: 66,

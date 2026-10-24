@@ -1022,7 +1022,6 @@ def apply_output_hooks(conn, hid, item_id, qty):
 CASINO_FIVE_HOOKS = []   # fn(conn, symbol, spinner_hid) -> dict | None, inside the roll transaction
 
 SCAN_COST_DIVISOR = 10      # (pre-revamp scan formula, unused)
-DRONE_SCAN_MULT = 5         # a drone scan costs 5 local scans (the drone itself is kept)
 # Owner 2026-10-23: start with enough for about six clay pits; scans are free below level 5
 # (economy.FREE_SCAN_LEVEL), so a new company can always get going.
 STARTING_CREDITS = 250000
@@ -1731,6 +1730,15 @@ def artifact_effect(conn, hid: str, item_id: int) -> float:
 def remote_build_hours(conn, hid: str) -> float:
     return artifact_effect(conn, hid, 172)
 
+def remote_build_next(conn, hid: str):
+    """When the next drone (remote) construction is allowed (ISO, UTC), or None if it is now.
+    The wait is 12 h, 11/10/8 h with the Astrolabium (owner's rule)."""
+    r = conn.execute("SELECT MAX(ts) FROM game_events WHERE hid=? AND type='remote_build'", (hid,)).fetchone()
+    if not r or not r[0]:
+        return None
+    nxt = datetime.datetime.fromisoformat(r[0]) + datetime.timedelta(hours=remote_build_hours(conn, hid))
+    return nxt.isoformat() if nxt > datetime.datetime.utcnow() else None
+
 def _remote_build_wait(hid: str):
     """'3 h 20 min' until the next remote build is allowed, or None."""
     with get_db() as c:
@@ -2170,6 +2178,7 @@ def build_player_data(conn, row, include_mines: bool = True) -> dict:
         "tcLvl":  tc_level,
         "tcMaxQ": tc_max_quality,
         "haulLvl": haul_level,
+        "remoteNext": remote_build_next(conn, hid),     # next drone construction (ISO UTC) or None
         "mines":  mine_list,
         "mineStats": stats,
         "minesOmitted": not include_mines,
@@ -2237,20 +2246,20 @@ async def scanner_payscan(request: Request):
                 check_travel(conn, hid, player_lat, player_lng)
                 if is_drone:
                     dr_level = building_level(conn, hid, 119)
-                    dr_idx = max(0, min(dr_level - 1, len(DRONE_SCAN_RANGES) - 1))
-                    drone_range = DRONE_SCAN_RANGES[dr_idx] if dr_level > 0 else DRONE_SCAN_RANGES[0]
+                    if dr_level < 1:
+                        raise econ.GameError("out_of_range", "Drone scans need a Drone Research building")
+                    drone_range = DRONE_SCAN_RANGES[max(0, min(dr_level - 1, len(DRONE_SCAN_RANGES) - 1))]
                     if scan_dist > drone_range + GPS_TOLERANCE_M:
                         raise econ.GameError("out_of_range", f"Scan spot is {scan_dist / 1000:.1f} km away. Your "
                                                              f"drones reach {drone_range / 1000:.1f} km.")
-                    # rebalance 2026-10-23: the drone is kept; a drone scan costs DRONE_SCAN_MULT × a local scan
-                    if not DRONE_OVERRIDE and econ.qty_of(conn, hid, 117) < 1:
-                        raise econ.GameError("no_drone", "You need a Scan Drone")
-                    scan_cost = scan_cost * DRONE_SCAN_MULT
-                    try:
-                        econ.debit(conn, hid, scan_cost, "drone_scan")
-                    except econ.GameError:
-                        raise econ.GameError("insufficient_credits", f"Not enough credits (need ꞓ{scan_cost:,})")
-                    award_sink(conn, hid, credits=scan_cost)
+                    # owner 2026-10-24: a drone scan uses up one Scan Drone and costs no credits
+                    if not DRONE_OVERRIDE:
+                        try:
+                            econ.take(conn, hid, 117, 1, "drone_scan")
+                        except econ.GameError:
+                            raise econ.GameError("no_drone", "You need a Scan Drone (you have 0)")
+                        award_sink(conn, hid, res={117: 1})
+                    scan_cost = 0
                 else:
                     try:
                         econ.debit(conn, hid, scan_cost, "scan")

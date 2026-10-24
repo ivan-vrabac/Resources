@@ -122,6 +122,8 @@ class Player {
   final HQ? hq;
   final Map<String, double> lager;
   final List<Map<String, dynamic>> factories;
+  /// Next drone (remote) construction allowed at (UTC), null = now. 12 h, less with the Astrolabium.
+  final DateTime? remoteNext;
 
   const Player({
     required this.hid, required this.name, required this.credits,
@@ -135,6 +137,7 @@ class Player {
     required this.mines, required this.hq, required this.lager,
     this.mineStats = const MineStats(),
     this.factories = const [],
+    this.remoteNext,
   });
 
   int get mineCount => mineStats.count > 0 ? mineStats.count : mines.length;
@@ -176,6 +179,9 @@ class Player {
       hq: hq,
       lager: lager,
       factories: factsList,
+      remoteNext: j['remoteNext'] is String
+          ? DateTime.tryParse((j['remoteNext'] as String).endsWith('Z') ? j['remoteNext'] as String : '${j['remoteNext']}Z')
+          : null,
     );
   }
 }
