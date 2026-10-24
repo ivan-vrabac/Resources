@@ -6,8 +6,7 @@ numbers approximate; the calibration below reproduces its worked example exactly
 Units (warehouse items): attack — 102 Attack Dogs, 103 Gangster, 104 Private Army;
 defence — 95 Watch Dogs, 97 Security Staff, 98 Elite Force.
 - Attack value = ATTACK_BASE × (1 + 0.111 × (Mafia HQ level − 1)) → Mafia HQ 5: 7.2 / 72.2 / 144.4.
-- Defence value = DEFENCE_BASE × (1 + 0.1 × Training Camp level) → TC 10: 10 / 100 / 200.
-  The game defines no Training Camp building yet → level 0 for everyone (BLOCKED, see report).
+- Defence value = DEFENCE_BASE × (1 + 0.1 × Army Camp level) → level 10: 10 / 100 / 200.
 - Battle: one-on-one, attacker roll U(1, atk) × level bonus vs defender roll U(1, def) × HQ bonus;
   the loser dies, the winner fights the next. Order: dogs → gangsters → army vs dogs → staff → elite.
   Lower-level attacker bonus: +0.5 % per level below the defender (max +50 %). Defender inside its
@@ -43,7 +42,7 @@ import econ
 from . import cargo, int_arg
 
 MAFIA_HQ = 86
-TRAINING_CAMP = 96          # "Army Camp" — not a defined building yet (level 0)
+TRAINING_CAMP = 96          # "Army Camp" special building
 SERVICE_CENTER = 121
 HAULAGE_FIRM = 123
 ATTACK_UNITS = (102, 103, 104)      # dogs, gangsters, private army
@@ -191,7 +190,7 @@ def install(api) -> None:
         out = {"err": 0, "mafiaLevel": mafia, "attackRange": attack_range(mafia),
                "attackValues": attack_values(mafia),
                "units": {str(u): econ.qty_of(conn, hid, u) for u in ATTACK_UNITS + DEFENCE_UNITS},
-               "trainingCampDefined": False}
+               "trainingCampDefined": True}
         mine_id = (form.get("mineID") or "").strip()
         if mine_id:
             m = mine_or_fail(conn, mine_id)

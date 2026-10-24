@@ -323,6 +323,23 @@ final Map<int, Map<String, dynamic>> kSpecialBuildings = {
       {'credits': 15000000000, 'res': {'70': 2400000,'87': 38000, '79': 55000, '81': 1500}},
     ],
   },
+  96: {
+    'name': 'Army Camp',
+    'desc': 'Trains your defenders. Every level makes your watch dogs, security staff and elite force 10 % stronger when your mines are attacked.',
+    'maxLevel': 10,
+    'costs': [
+      {'credits': 2000000,     'res': {'24': 500,    '20': 500,   '70': 500}},
+      {'credits': 8000000,     'res': {'24': 2000,   '20': 2000,  '70': 2000}},
+      {'credits': 25000000,    'res': {'24': 6000,   '70': 6000,  '87': 50}},
+      {'credits': 70000000,    'res': {'70': 15000,  '87': 200,   '79': 100}},
+      {'credits': 150000000,   'res': {'70': 30000,  '87': 500,   '79': 500}},
+      {'credits': 400000000,   'res': {'70': 75000,  '87': 1200,  '79': 1500}},
+      {'credits': 1000000000,  'res': {'70': 180000, '87': 3000,  '79': 4000,  '81': 50}},
+      {'credits': 2500000000,  'res': {'70': 430000, '87': 7000,  '79': 10000, '81': 200}},
+      {'credits': 6000000000,  'res': {'70': 1000000,'87': 16000, '79': 24000, '81': 600}},
+      {'credits': 15000000000, 'res': {'70': 2400000,'87': 38000, '79': 55000, '81': 1500}},
+    ],
+  },
   72: {
     'name': 'Law Firm',
     'desc': 'Your lawyers soften the consequences of incidents: mine diseases, earthquake damage and factory fires.',

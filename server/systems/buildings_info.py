@@ -51,6 +51,10 @@ def effects(h, item_id: int, lvl: int) -> list:
         return [("Attack range", f"{combat.attack_range(lvl):.0f} m" if lvl else "—"),
                 ("Attack values (dogs / gangsters / army)", f"{a[0]} / {a[1]} / {a[2]}" if lvl else "—"),
                 ("Loot", f"{lvl * combat.LOOT_HOURS_PER_LEVEL} h of output" if lvl else "—")]
+    if item_id == combat.TRAINING_CAMP:
+        d = combat.defence_values(lvl)
+        return [("Defence bonus", f"+{min(10, lvl) * 10}%"),
+                ("Defence values (dogs / security / elite)", f"{d[0]} / {d[1]} / {d[2]}")]
     if item_id == 72:                                               # Law Firm
         cut = f"−{round((1 - protection.law_firm_factor(lvl)) * 100)}%"
         return [("All accident penalties", cut), ("Mine disease duration", cut), ("Earthquake damage", cut),

@@ -283,6 +283,12 @@ SPECIAL_BUILDINGS = {
             {"credits": 15000000000,"res": {70: 2400000, 87: 38000, 79: 55000, 81: 1500}},
         ],
     },
+    96: {
+        "name": "Army Camp",
+        "max_level": 10,
+        "desc": "Trains your defenders. Every level makes your watch dogs, security staff and elite force 10 % stronger when your mines are attacked.",
+        "costs": [],    # from economy.special_costs
+    },
     72: {
         "name": "Law Firm",
         "max_level": 10,
