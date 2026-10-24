@@ -243,17 +243,25 @@ _build_levels(LEVEL_TABLE_60)
 # market price (see FIXED_PRICES).
 OTHER_PRICES = {
     # found objects (Cargo Rain)
-    56: 40, 41: 60, 55: 120, 40: 300, 70: 30, 74: 40, 43: 20_000, 115: 20, 78: 150, 77: 25, 120: 2_000,
-    # tech upgrades (IV is not tradeable)
-    44: 500_000, 45: 1_500_000, 46: 5_000_000,
-    # production boosters
-    158: 1_000_000, 159: 1_000_000, 160: 1_000_000, 161: 1_000_000,
-    # units: watch dogs, security staff, elite force / attack dogs, gangsters, private army
-    95: 1_500, 97: 15_000, 98: 40_000, 102: 2_000, 103: 20_000, 104: 50_000,
-    # archaeologists, artifacts (rarer = dearer)
-    # artifacts: about 3 detectors' worth (a detector ≈ 21 M is used up per scan), rarer = dearer
-    167: 10_000, 172: 60_000_000, 173: 180_000_000, 174: 90_000_000, 175: 120_000_000, 176: 360_000_000,
-    177: 90_000_000,
+    56: 40, 41: 60, 55: 120, 40: 300, 70: 30, 74: 40, 115: 20, 78: 150, 77: 25, 120: 2_000,
+    # Maintenance Kit: replaces one paid repair, and players use it on their dearest mines
+    # (a mid-game mine at 50 % condition costs a few 100 k to repair)
+    43: 250_000,
+    # Tech Upgrades (IV is not tradeable): each unit is +1 % (TU3 +1.5 %) output on one mine for
+    # ever; on a mid-game mine (8 M base cost = 8 M a day) that's 80 k a day, paid back in about a week
+    44: 500_000, 45: 600_000, 46: 900_000,
+    # production boosters (one factory, 8 h, only the batches that fit in those 8 h): priced as the
+    # extra output of a typical mid-game factory (about 1 M of products an hour): +10/20/30/50 %
+    159: 800_000, 160: 1_600_000, 158: 2_400_000, 161: 4_000_000,
+    # units: 1 000 credits per point of defence, 2 000 per point of attack (loot is 10 h of the
+    # target mine's output per Mafia HQ level, so a big mine is worth sending an army)
+    95: 5_000, 97: 50_000, 98: 100_000, 102: 10_000, 103: 100_000, 104: 200_000,
+    # archaeologists: 70-100 go into every recovery (about half a detector's worth)
+    167: 100_000,
+    # artifacts: a find takes about a dozen detector scans (≈ 21 M each), split by how rare the
+    # kind is (weights 30/10/20/15/5/20 %), so billions; they are also invested by the hundred
+    172: 1_000_000_000, 173: 3_000_000_000, 174: 1_500_000_000, 175: 2_000_000_000, 176: 6_000_000_000,
+    177: 1_500_000_000,
 }
 
 

@@ -30,6 +30,7 @@ import protection
 from . import int_arg, social
 
 PAGE = 30
+NEWS_HOURS = 24          # the news listing shows the last 24 hours only
 CATEGORIES = ("world", "awards", "casino", "auctions", "archaeology", "combat", "players", "cargo", "quests")
 MINES_24H_THRESHOLDS = (100, 1000, 10000)
 CRATES_THRESHOLDS = (1000, 10000, 100000)
@@ -405,7 +406,9 @@ def install(api) -> None:
         maybe_sweep(conn)
         before = int_arg(form, "before", 0, 0, 2**62)
         cat = (form.get("category") or "").strip()
-        sql, args = "SELECT * FROM news_items WHERE kind<>'marker'", []
+        # owner 2026-10-24: news is the last 24 hours only, older items are not news any more
+        cutoff = (econ.utcnow() - datetime.timedelta(hours=NEWS_HOURS)).isoformat()
+        sql, args = "SELECT * FROM news_items WHERE kind<>'marker' AND ts>=?", [cutoff]
         if cat in CATEGORIES:
             sql += " AND category=?"
             args.append(cat)

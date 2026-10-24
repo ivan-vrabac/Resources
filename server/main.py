@@ -2691,6 +2691,40 @@ async def mine_maint_kit(request: Request):
             return zlib_resp({"err": 2, "msg": e.message})
     return zlib_resp({"err": 0})
 
+HAULAGE_FIRM_ID = 123
+
+def boss_range_m(hf_level: int) -> float:
+    """The boss range (Haulage Firm): 100 m + 10 m per level, max 200 m. Free repairs and trucks."""
+    return min(200.0, 100.0 + 10.0 * max(0, hf_level))
+
+@app.post("/flut23/mineMaintAFree.php")
+async def mine_maint_free(request: Request):
+    """Free repair while the boss stands next to the mine (within the boss range, GPS validated)."""
+    _, form = await read_form(request)
+    hid = hid_from_sid(form.get("sid", ""))
+    mine_id = form.get("mID", "")
+    with get_db() as conn:
+        try:
+            lat, lng = econ.parse_pos(form)
+            with econ.tx(conn):
+                mine = conn.execute("SELECT * FROM mines WHERE mine_id=? AND owner_hid=?", (mine_id, hid)).fetchone()
+                if not mine:
+                    return zlib_resp({"err": 1})
+                if current_condition(mine) > 99.00:
+                    return zlib_resp({"err": 3, "msg": "Mine condition is too high to repair"})
+                check_travel(conn, hid, lat, lng)
+                rng_m = boss_range_m(building_level(conn, hid, HAULAGE_FIRM_ID))
+                econ.require_within(lat, lng, mine["lat"], mine["lng"], rng_m, "mine")
+                _, destroyed = collect_mine(conn, mine)
+                if destroyed:
+                    return zlib_resp({"err": 1, "msg": "Mine was destroyed (condition too low)"})
+                conn.execute("UPDATE mines SET condition=100, last_coll=? WHERE mine_id=?", (utcnow_iso(), mine_id))
+                add_proto(conn, hid, "repairfree", {"mID": mine_id})
+                econ.emit(conn, "mine_repaired", hid, {"mID": mine_id, "how": "boss"}, public=False)
+        except econ.GameError as e:
+            return zlib_resp({"err": 2, "msg": e.message})
+    return zlib_resp({"err": 0})
+
 _MINE_SORTS = {"output": _SQL_RATE_HR, "quality": "m.quality", "condition": "m.condition"}
 
 @app.post("/flut23/mineList.php")
@@ -3249,14 +3283,18 @@ async def factory_new_order(request: Request):
                     return zlib_resp({"err": 4, "msg": f"not enough credits (ꞓ{credits:,} for {batches} batches)"})
                 award_sink(conn, hid, credits=credits)
                 level_mult = float(max(1, factory["level"]))      # srx.txt: production/h = base × level
-                booster_mult = 1.0
+                # a booster raises only the batches produced while it lasts (owner 2026-10-24: one
+                # booster can't boost an order of a thousand batches)
+                booster_mult, boosted = 1.0, 0
                 if factory["booster_until"] and factory["booster_item"]:
                     try:
-                        if now < datetime.datetime.fromisoformat(factory["booster_until"]):
+                        left_h = (datetime.datetime.fromisoformat(factory["booster_until"]) - now).total_seconds() / 3600
+                        if left_h > 0:
                             booster_mult = WA_BOOSTERS.get(factory["booster_item"], {}).get("boost", 1.0)
+                            boosted = min(batches, int(math.ceil(left_h * level_mult / ft["hrs"] - 1e-9)))
                     except ValueError:
                         pass
-                output = round(ft["out"] * batches * booster_mult, 1)
+                output = round(ft["out"] * (batches + boosted * (booster_mult - 1)), 1)
                 hrs = ft["hrs"] * batches / level_mult
                 start_time, end_time = now.isoformat(), (now + datetime.timedelta(hours=hrs)).isoformat()
                 conn.execute("UPDATE factories SET prod_item=?,prod_amount=?,prod_start=?,prod_end=?,last_active=? "

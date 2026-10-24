@@ -360,6 +360,7 @@ def install(api) -> None:
         lv = levels(conn, hid)
         return {"err": 0, "crates": stock(conn, hid), **lv,
                 "collectRange": collect_range(lv["museum"]),
+                "truckRange": truck_range(lv["haulage"]),
                 "droneRange": drone_range(lv["droneResearch"]),
                 "stackUnlocked": lv["haulage"] >= STACK_HF_LEVEL, "stackSize": STACK_SIZE,
                 "maxStacks": MAX_STACKS_PER_DROP,

@@ -7,7 +7,6 @@ import '../constants.dart';
 import '../models/player_provider.dart';
 import '../services/game_api.dart';
 import '../widgets/async_view.dart';
-import '../widgets/top_banner.dart';
 import 'profile_screen.dart';
 
 import '../app_colors.dart';
@@ -72,17 +71,47 @@ class _NewsScreenState extends State<NewsScreen> {
     return '${d.inMinutes} min ago';
   }
 
+  static const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  static const _days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+  Color _catColor(String? c) => switch (c) {
+        'world' => Colors.orangeAccent,
+        'awards' => Colors.amber,
+        'casino' => Colors.pinkAccent,
+        'auctions' => Colors.lightBlueAccent,
+        'archaeology' => Colors.yellowAccent,
+        'combat' => Colors.redAccent,
+        'cargo' => Colors.tealAccent,
+        'quests' => Colors.deepOrangeAccent,
+        _ => AppColors.accent,
+      };
+
   @override
   Widget build(BuildContext context) {
+    final now = DateTime.now();
     return Column(children: [
+      // masthead: today's paper
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.fg.withValues(alpha: 0.25), width: 2))),
+        child: Column(children: [
+          Text('${Branding.appTitle.toUpperCase()} NEWS',
+              style: const TextStyle(fontFamily: 'serif', fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: 2)),
+          const SizedBox(height: 2),
+          Text('${_days[now.weekday - 1]}, ${now.day} ${_months[now.month - 1]} ${now.year} · the last 24 hours',
+              style: TextStyle(fontSize: 11, color: AppColors.t54, letterSpacing: 0.5)),
+        ]),
+      ),
       SizedBox(
-        height: 48,
+        height: 44,
         child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 8), children: [
           for (final e in _labels.entries)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 5),
               child: ChoiceChip(
-                label: Text(e.value),
+                label: Text(e.value, style: const TextStyle(fontSize: 12)),
+                visualDensity: VisualDensity.compact,
                 selected: _cat == e.key,
                 onSelected: (_) { setState(() { _cat = e.key; _loading = true; }); _load(); },
               ),
@@ -96,17 +125,18 @@ class _NewsScreenState extends State<NewsScreen> {
           onRetry: _load,
           builder: () => RefreshIndicator(
             onRefresh: _load,
-            child: ListView(padding: const EdgeInsets.all(8), children: [
+            child: ListView(padding: const EdgeInsets.fromLTRB(10, 4, 10, 10), children: [
               if (_items.isEmpty)
-                const Padding(padding: EdgeInsets.all(24),
-                    child: Text('No news yet. Big wins, discoveries and earthquakes appear here.', textAlign: TextAlign.center)),
-              for (final n in _items) _tile(n),
+                Padding(padding: const EdgeInsets.all(32),
+                    child: Text('No news in the last 24 hours.\nBig wins, discoveries and earthquakes appear here.',
+                        textAlign: TextAlign.center, style: TextStyle(color: AppColors.t54))),
+              for (var i = 0; i < _items.length; i++) _tile(_items[i], top: i == 0),
               if (_more)
                 Padding(
                   padding: const EdgeInsets.all(8),
                   child: OutlinedButton(
                     onPressed: _loadingMore ? null : () => _load(append: true),
-                    child: Text(_loadingMore ? 'Loading…' : 'Older news'),
+                    child: Text(_loadingMore ? 'Loading…' : 'More from today'),
                   ),
                 ),
             ]),
@@ -116,41 +146,54 @@ class _NewsScreenState extends State<NewsScreen> {
     ]);
   }
 
-  Widget _tile(Map<String, dynamic> n) {
+  /// One story: category kicker, headline, text, time. The newest one is the top story.
+  Widget _tile(Map<String, dynamic> n, {bool top = false}) {
     final d = (n['data'] as Map?)?.cast<String, dynamic>() ?? {};
     final players = (n['players'] as List).cast<Map<String, dynamic>>();
     final item = (d['itemID'] as num?)?.toInt();
     final quake = n['kind'] == 'earthquake';
-    return Card(
-      child: InkWell(
-        onTap: quake
-            ? () => _showQuake(n)
-            : players.isNotEmpty && players.first['pid'] != null
-                ? () => ProfileScreen.open(context, players.first['pid'] as String)
-                : null,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            item != null
-                ? ItemIcon(item, size: 36)
-                : Icon(_icons[n['category']] ?? Icons.newspaper, size: 32,
-                    color: quake ? Colors.orangeAccent : AppColors.t70),
-            const SizedBox(width: 12),
+    final cat = n['category'] as String?;
+    final color = quake ? Colors.orangeAccent : _catColor(cat);
+    final body = n['body'] as String? ?? '';
+    final picture = item != null
+        ? ItemIcon(item, size: top ? 56 : 40)
+        : Icon(_icons[cat] ?? Icons.newspaper, size: top ? 48 : 34, color: color);
+    return InkWell(
+      onTap: quake
+          ? () => _showQuake(n)
+          : players.isNotEmpty && players.first['pid'] != null
+              ? () => ProfileScreen.open(context, players.first['pid'] as String)
+              : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.fg.withValues(alpha: 0.10)))),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(width: 3, height: 11, color: color),
+            const SizedBox(width: 6),
+            Text((top ? 'TOP STORY · ' : '') + (_labels[cat] ?? 'News').toUpperCase(),
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2, color: color)),
+            const Spacer(),
+            Text(_ago(n['ts'] as String), style: TextStyle(color: AppColors.t38, fontSize: 10)),
+          ]),
+          const SizedBox(height: 6),
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(n['title'] as String, style: const TextStyle(fontWeight: FontWeight.bold)),
-                if ((n['body'] as String).isNotEmpty)
-                  Padding(padding: const EdgeInsets.only(top: 4), child: Text(n['body'] as String,
-                      style: TextStyle(color: AppColors.t70, fontSize: 13))),
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text('${_ago(n['ts'] as String)}${item != null && kItemNames[item] != null ? ' · ${kItemNames[item]}' : ''}',
-                      style: TextStyle(color: AppColors.t38, fontSize: 11)),
-                ),
+                Text(n['title'] as String,
+                    style: TextStyle(fontFamily: 'serif', fontSize: top ? 20 : 15, fontWeight: FontWeight.bold, height: 1.2)),
+                if (body.isNotEmpty)
+                  Padding(padding: const EdgeInsets.only(top: 4), child: Text(body,
+                      style: TextStyle(color: AppColors.t70, fontSize: top ? 14 : 13, height: 1.3))),
+                if (quake)
+                  Padding(padding: const EdgeInsets.only(top: 4),
+                      child: Text('Tap for the map of the area', style: TextStyle(color: color, fontSize: 11))),
               ]),
             ),
+            const SizedBox(width: 10),
+            picture,
           ]),
-        ),
+        ]),
       ),
     );
   }

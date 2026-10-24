@@ -19,6 +19,7 @@ import '../constants.dart' show kNumDecimals, kInvertAskBid;
 import 'game_screen.dart' show tabMeta;
 
 import '../widgets/popups.dart';
+import '../ring_looks.dart';
 // ── Notification settings ──────────────────────────────────────────────────────
 bool kNotifEnabled       = true;
 bool kNotifMineWarning   = true;
@@ -98,25 +99,7 @@ class SettingsScreen extends StatefulWidget {
 
 double kCloudOpacity = 0.55;
 
-const List<Color> kRingPresets = [
-  Colors.teal, Colors.blueAccent, Colors.deepPurple,
-  Colors.greenAccent, Colors.orange, Colors.redAccent,
-];
-Color  kDroneRingColor   = Colors.orange;
-double kDroneRingOpacity = 0.50;
-Color  kScanRingColor    = Colors.teal;
-double kScanRingOpacity  = 0.50;
-Color  kLocalRingColor   = Colors.blueAccent;
-double kLocalRingOpacity = 0.70;
-bool   kShowRingLabels   = true;
-// optional range rings (Settings > Scan Rings): Museum pick-up, artifact reveal, Mafia attack
-// building rings: always shown when you have the building (owner 2026-10-24), only their look is set
-Color  kMuseumRingColor   = Colors.amberAccent;
-double kMuseumRingOpacity = 0.80;
-Color  kRevealRingColor   = Colors.yellowAccent;
-double kRevealRingOpacity = 0.70;
-Color  kMafiaRingColor    = Colors.redAccent;
-double kMafiaRingOpacity  = 0.80;
+bool   kShowRingLabels   = true;   // ring looks live in ring_looks.dart
 
 const List<String> kHeatmapSchemes      = ['classic', 'cold', 'contrast'];
 const List<String> kHeatmapSchemeLabels = ['Classic', 'Cold', 'Contrast'];
@@ -416,50 +399,17 @@ class _ScanRingsPage extends StatefulWidget {
 }
 
 class _ScanRingsPageState extends State<_ScanRingsPage> {
-  late Color  _droneColor;
-  late double _droneOpacity;
-  late Color  _scanColor;
-  late double _scanOpacity;
-  late Color  _localColor;
-  late double _localOpacity;
-  late bool   _showRingLabels;
+  late bool _showRingLabels;
 
   @override
   void initState() {
     super.initState();
-    _droneColor    = kDroneRingColor;
-    _droneOpacity  = kDroneRingOpacity;
-    _scanColor     = kScanRingColor;
-    _scanOpacity   = kScanRingOpacity;
-    _localColor    = kLocalRingColor;
-    _localOpacity  = kLocalRingOpacity;
     _showRingLabels = kShowRingLabels;
   }
 
-  Future<void> _setRing(String key, {Color? color, double? opacity}) async {
-    final prefs = await SharedPreferences.getInstance();
-    if (color != null) {
-      setState(() {
-        if (key == 'drone') { _droneColor = color; kDroneRingColor = color; }
-        else if (key == 'scan') { _scanColor = color; kScanRingColor = color; }
-        else if (key == 'museum') { kMuseumRingColor = color; }
-        else if (key == 'reveal') { kRevealRingColor = color; }
-        else if (key == 'mafia') { kMafiaRingColor = color; }
-        else { _localColor = color; kLocalRingColor = color; }
-      });
-      await prefs.setInt('${key}_ring_color', color.toARGB32());
-    }
-    if (opacity != null) {
-      setState(() {
-        if (key == 'drone') { _droneOpacity = opacity; kDroneRingOpacity = opacity; }
-        else if (key == 'scan') { _scanOpacity = opacity; kScanRingOpacity = opacity; }
-        else if (key == 'museum') { kMuseumRingOpacity = opacity; }
-        else if (key == 'reveal') { kRevealRingOpacity = opacity; }
-        else if (key == 'mafia') { kMafiaRingOpacity = opacity; }
-        else { _localOpacity = opacity; kLocalRingOpacity = opacity; }
-      });
-      await prefs.setDouble('${key}_ring_opacity', opacity);
-    }
+  void _edit(String key, void Function(RingLook l) change) {
+    setState(() => change(kRingLooks[key]!));
+    saveRingLook(key);
   }
 
   @override
@@ -479,42 +429,63 @@ class _ScanRingsPageState extends State<_ScanRingsPage> {
             await prefs.setBool('show_ring_labels', v);
           },
         ),
-        _settingsSectionHeader('Ring Colors & Opacity'),
-        _ringSection('Drone range', 'drone', _droneColor, _droneOpacity),
-        _ringSection('TC scan radius', 'scan', _scanColor, _scanOpacity),
-        _ringSection('Local Range', 'local', _localColor, _localOpacity),
-        _ringSection('Museum pick-up range (with a Museum)', 'museum', kMuseumRingColor, kMuseumRingOpacity),
-        _ringSection('Artifact reveal range (with an Archaeological Center)', 'reveal', kRevealRingColor, kRevealRingOpacity),
-        _ringSection('Mafia attack range (with a Mafia HQ)', 'mafia', kMafiaRingColor, kMafiaRingOpacity),
+        _settingsSectionHeader('Ring color, opacity and style'),
+        for (final e in kRingDefaults.entries) _ringSection(e.value.$1, e.key),
       ]),
     );
   }
 
-  Widget _ringSection(String label, String key, Color color, double opacity) {
+  Widget _ringSection(String label, String key) {
+    final l = kRingLooks[key]!;
+    final d = kRingDefaults[key]!.$2;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label, style: TextStyle(fontSize: 12, color: AppColors.t70)),
-        const SizedBox(height: 6),
+        Row(children: [
+          Expanded(child: Text(label, style: TextStyle(fontSize: 12, color: AppColors.t70))),
+          TextButton(
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+            onPressed: () => _edit(key, (x) { x.color = d.color; x.opacity = d.opacity; x.fill = d.fill; x.pattern = d.pattern; }),
+            child: const Text('Default', style: TextStyle(fontSize: 11)),
+          ),
+        ]),
+        const SizedBox(height: 4),
         _ColorPickerWidget(
-          selected: color,
-          presets: kRingPresets,
+          selected: l.color,
+          presets: kRingColorPresets,
           swatchSize: 24,
-          onChanged: (c) => _setRing(key, color: c),
+          onChanged: (c) => _edit(key, (x) => x.color = c),
         ),
         const SizedBox(height: 4),
         Row(children: [
-          Text('Opacity: ${(opacity * 100).round()}%',
-              style: TextStyle(fontSize: 11, color: color)),
+          Text('Opacity: ${(l.opacity * 100).round()}%', style: TextStyle(fontSize: 11, color: l.color)),
           Expanded(
             child: Slider(
-              value: opacity,
-              min: 0.0, max: 1.0, divisions: 20,
-              activeColor: color,
-              onChanged: (v) => _setRing(key, opacity: v),
+              value: l.opacity, min: 0.0, max: 1.0, divisions: 20,
+              activeColor: l.color,
+              onChanged: (v) => _edit(key, (x) => x.opacity = v),
             ),
           ),
         ]),
+        Row(children: [
+          Text('Fill', style: TextStyle(fontSize: 12, color: AppColors.t70)),
+          Switch(value: l.fill, activeColor: l.color, onChanged: (v) => _edit(key, (x) => x.fill = v)),
+          const SizedBox(width: 12),
+          Text('Line', style: TextStyle(fontSize: 12, color: AppColors.t70)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: DropdownButton<String>(
+              isExpanded: true,
+              value: l.pattern,
+              items: [
+                for (final p in kRingPatterns)
+                  DropdownMenuItem(value: p, child: Text(kRingPatternNames[p]!, style: const TextStyle(fontSize: 12))),
+              ],
+              onChanged: (v) { if (v != null) _edit(key, (x) => x.pattern = v); },
+            ),
+          ),
+        ]),
+        const Divider(height: 12),
       ]),
     );
   }
@@ -1109,26 +1080,8 @@ Future<void> loadNumDecimalsPrefs() async {
   kNumDecimals = prefs.getInt('numDecimals') ?? 1;
   kInvertAskBid = prefs.getBool('invert_ask_bid') ?? false;
   kCloudOpacity = (prefs.getDouble('res_cloud_opacity') ?? 0.35).clamp(0.10, 0.90);
-  final droneC = prefs.getInt('drone_ring_color');
-  if (droneC != null) kDroneRingColor = Color(droneC);
-  kDroneRingOpacity = (prefs.getDouble('drone_ring_opacity') ?? 0.50).clamp(0.0, 1.0);
-  final scanC = prefs.getInt('scan_ring_color');
-  if (scanC != null) kScanRingColor = Color(scanC);
-  kScanRingOpacity = (prefs.getDouble('scan_ring_opacity') ?? 0.50).clamp(0.0, 1.0);
-  final localC = prefs.getInt('local_ring_color');
-  if (localC != null) kLocalRingColor = Color(localC);
-  kLocalRingOpacity = (prefs.getDouble('local_ring_opacity') ?? 0.70).clamp(0.0, 1.0);
   kShowRingLabels = prefs.getBool('show_ring_labels') ?? true;
-  for (final (key, setC, setO) in [
-    ('museum', (Color c) => kMuseumRingColor = c, (double o) => kMuseumRingOpacity = o),
-    ('reveal', (Color c) => kRevealRingColor = c, (double o) => kRevealRingOpacity = o),
-    ('mafia', (Color c) => kMafiaRingColor = c, (double o) => kMafiaRingOpacity = o),
-  ]) {
-    final c = prefs.getInt('${key}_ring_color');
-    if (c != null) setC(Color(c));
-    final o = prefs.getDouble('${key}_ring_opacity');
-    if (o != null) setO(o.clamp(0.0, 1.0));
-  }
+  await loadRingLooks();
   final raw = prefs.getString('heatmap_scheme') ?? 'classic';
   kHeatmapScheme = kHeatmapSchemes.contains(raw) ? raw : 'classic';
   heatmapSchemeNotifier.value = kHeatmapScheme;

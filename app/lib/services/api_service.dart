@@ -186,6 +186,16 @@ class ApiService {
     } catch (_) { return null; }
   }
 
+  /// Free repair in the boss range (server checks your position against the mine).
+  static Future<Map<String, dynamic>?> repairMineFree(
+      String sid, String mineId, double lat, double lng) async {
+    try {
+      final r = await http.post(Uri.parse('$kBaseUrl/flut23/mineMaintAFree.php'),
+          body: {'sid': sid, 'mID': mineId, 'lat': '$lat', 'lng': '$lng'}).timeout(const Duration(seconds: 10));
+      return _zlibJson(r.bodyBytes);
+    } catch (_) { return null; }
+  }
+
   static Future<Map<String, dynamic>?> repairMineKit(
       String sid, String mineId) async {
     try {

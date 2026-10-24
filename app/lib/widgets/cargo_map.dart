@@ -76,6 +76,8 @@ class CargoController extends ChangeNotifier {
 
   int get stock => (info['crates'] as num? ?? 0).toInt();
   double get collectRange => (info['collectRange'] as num? ?? 50).toDouble();
+  /// Trucks work in the boss range (Haulage Firm), not the hand pick-up range.
+  double get truckRange => (info['truckRange'] as num? ?? 100).toDouble();
 
   Future<void> refreshInfo(String sid) async {
     final r = await GameApi.call('/api/v1/cargo/stock', sid);
@@ -141,7 +143,7 @@ class CargoController extends ChangeNotifier {
           ListTile(
             leading: const ItemIcon(124),
             title: Text('Truck (you have ${fmtQty(info['trucks'] as num? ?? 0)})'),
-            subtitle: Text('Within ${collectRange.round()} m · ${((crate['count'] as num? ?? 100) / 100).ceil()} trucks needed, kept'),
+            subtitle: Text('Within ${truckRange.round()} m (boss range) · ${((crate['count'] as num? ?? 100) / 100).ceil()} trucks needed, kept'),
             onTap: () => popIfCurrent(sheet, 'truck'),
           ),
           ListTile(

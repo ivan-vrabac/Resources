@@ -558,7 +558,7 @@ Future<void> showBuildingInfo(BuildContext context, int itemId) async {
                 Wrap(spacing: 10, runSpacing: 6, children: [
                   if (credits > 0)
                     Row(mainAxisSize: MainAxisSize.min, children: [
-                      const Icon(Icons.monetization_on_outlined, size: 18, color: Colors.amber),
+                      Icon(Icons.monetization_on_outlined, size: 18, color: AppColors.accent),
                       const SizedBox(width: 4),
                       Text('ꞓ${fmtNum(credits)}', style: const TextStyle(fontSize: 12)),
                     ]),

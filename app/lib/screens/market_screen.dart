@@ -22,11 +22,14 @@ class MarketScreen extends StatefulWidget {
 
 class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderStateMixin {
   late final TabController _tabs = TabController(length: 3, vsync: this);
-  List<Map<String, dynamic>> _items = [];
-  List<Map<String, dynamic>> _orders = [];
-  List<Map<String, dynamic>> _trades = [];
-  double _taxRate = 0.15;
-  bool _loading = true;
+  // the last data is kept for the session (like the flag): the list and its icons show at once
+  static List<Map<String, dynamic>> _cItems = [], _cOrders = [], _cTrades = [];
+  static double _cTax = 0.15;
+  List<Map<String, dynamic>> _items = _cItems;
+  List<Map<String, dynamic>> _orders = _cOrders;
+  List<Map<String, dynamic>> _trades = _cTrades;
+  double _taxRate = _cTax;
+  bool _loading = _cItems.isEmpty;
   String? _error;
   String _filter = '';
 
@@ -64,6 +67,7 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
       _taxRate = (res[0].data['taxRate'] as num? ?? 0.15).toDouble();
       _orders = res[1].list('orders');
       _trades = res[2].list('trades');
+      _cItems = _items; _cOrders = _orders; _cTrades = _trades; _cTax = _taxRate;
     });
   }
 

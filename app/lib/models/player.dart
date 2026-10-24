@@ -140,7 +140,7 @@ class Player {
   int get mineCount => mineStats.count > 0 ? mineStats.count : mines.length;
 
   // Boss maintenance range: 100m at level 0/1, +11m per level, max ~200m at level 10
-  double get bossRangeM => haulageLevel <= 0 ? 100.0 : (100.0 + (haulageLevel - 1) * 11.0).clamp(100.0, 200.0);
+  double get bossRangeM => (100.0 + 10.0 * (haulageLevel < 0 ? 0 : haulageLevel)).clamp(100.0, 200.0);   // = server helper_range
 
   double get xpProgress => levelProgress.clamp(0.0, 1.0);
 

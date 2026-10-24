@@ -33,7 +33,7 @@ class PlayerHud extends StatelessWidget {
                   overflow: TextOverflow.ellipsis),
             ),
             // a negative balance (after penalties) is shown in red
-            _stat(Icons.monetization_on_outlined, 'ꞓ${fmtNum(prov.credits)}', Colors.amber,
+            _stat(Icons.monetization_on_outlined, 'ꞓ${fmtNum(prov.credits)}', AppColors.accent,
                 textColor: prov.credits < 0 ? Colors.redAccent : null),
             const SizedBox(width: 12),
             _stat(Icons.military_tech_outlined, 'Lv ${player.level}', AppColors.accent),

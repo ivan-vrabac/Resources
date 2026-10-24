@@ -89,7 +89,7 @@ class _QuestsScreenState extends State<QuestsScreen> {
                     ? row(Image.asset('assets/mapmarkers/boxrainicon.png', width: 32, height: 32,
                           errorBuilder: (_, __, ___) => const Icon(Icons.inventory_2_outlined)),
                         'Cargo Rain crates', '${r['qty']}')
-                    : row(const Icon(Icons.monetization_on_outlined, color: Colors.amber), 'Credits',
+                    : row(Icon(Icons.monetization_on_outlined, color: AppColors.accent), 'Credits',
                         fmtCredits(r['qty'] as num)),
               if (bonus > 0)
                 Text('includes your Aeon Mechanism bonus +${(bonus * 100).round()}%',

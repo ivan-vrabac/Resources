@@ -5,6 +5,7 @@ import '../services/api_service.dart';
 
 import '../app_colors.dart';
 import '../constants.dart' show fmtNum;
+import '../widgets/radar_icon.dart';
 const _kCategories = [
   ('All', ''),
   ('Mines', 'newmine'),
@@ -66,7 +67,7 @@ class _LogScreenState extends State<LogScreen> {
   }
 
   bool _isKnownType(String t) => const {
-    'scan','newmine','demolish','repair','repairkit','lagerupgrade','hq',
+    'scan','newmine','demolish','repair','repairkit','repairfree','lagerupgrade','hq',
     'buyfactory','factcollect','marketsell','marketbuy','marketsold',
     'mineupgrade','techupgrade','accident','strikesettled',
     'loanrequested','loancancelled','loanfunded','loanlent','loanrepaid','loanforgiven','levelup',
@@ -149,7 +150,9 @@ class _LogScreenState extends State<LogScreen> {
                           final data = (e['data'] as Map?)?.cast<String, dynamic>() ?? {};
                           return ListTile(
                             dense: true,
-                            leading: Icon(_iconForType(type), size: 18, color: _colorForType(type)),
+                            leading: type == 'scan'
+                                ? RadarIcon(size: 18, color: _colorForType(type))
+                                : Icon(_iconForType(type), size: 18, color: _colorForType(type)),
                             title: Text(_labelForType(type, data)),
                             subtitle: Text(
                               ts.length > 16 ? ts.substring(0, 16).replaceAll('T', ' ') : ts,
@@ -190,7 +193,7 @@ class _LogScreenState extends State<LogScreen> {
       case 'scan': return Icons.radar;
       case 'newmine': return Icons.add_location;
       case 'demolish': return Icons.delete;
-      case 'repair': case 'repairkit': return Icons.build;
+      case 'repair': case 'repairkit': case 'repairfree': return Icons.build;
       case 'lagerupgrade': return Icons.upgrade;
       case 'hq': return Icons.apartment;
       case 'buyfactory': return Icons.factory;
@@ -215,6 +218,7 @@ class _LogScreenState extends State<LogScreen> {
       case 'newmine': return Colors.green;
       case 'demolish': return Colors.red;
       case 'repair': case 'repairkit': return Colors.orange;
+      case 'repairfree': return Colors.greenAccent;
       case 'marketsell': case 'marketbuy': case 'marketsold': return Colors.amber;
       case 'mineupgrade': case 'techupgrade': return Colors.lightBlueAccent;
       case 'accident': return Colors.redAccent;
@@ -227,17 +231,18 @@ class _LogScreenState extends State<LogScreen> {
     switch (t) {
       case 'scan': return 'Scanned at (${(data['lat'] ?? 0.0).toStringAsFixed(3)}, ${(data['lng'] ?? 0.0).toStringAsFixed(3)})';
       case 'newmine': return 'Built mine (ID: ${data['mID'] ?? ''})';
-      case 'demolish': return 'Demolished mine. Refund: ꞓ${data['refund'] ?? 0}';
-      case 'repair': return 'Repaired mine. Cost: ꞓ${data['cost'] ?? 0}';
+      case 'demolish': return 'Demolished mine. Refund: ꞓ${fmtNum(data['refund'] as num? ?? 0)}';
+      case 'repair': return 'Repaired mine. Cost: ꞓ${fmtNum(data['cost'] as num? ?? 0)}';
+      case 'repairfree': return 'Repaired mine for free (boss range)';
       case 'repairkit': return 'Repaired mine with kit';
       case 'hq': return 'Placed HQ';
       case 'lagerupgrade': return 'Warehouse upgraded to Lv ${data['newLvl'] ?? 1}';
       case 'buyfactory': return 'Built factory';
       case 'factcollect': return 'Collected ${data['qty']} from factory';
-      case 'marketsell': return 'Listed item ${data['itemID']} × ${data['qty']} @ ꞓ${data['price']}';
-      case 'marketbuy': return 'Bought ${data['qty']} × item ${data['itemID']} for ꞓ${data['cost']}';
-      case 'marketsold': return 'Sold to buyer. Earned ꞓ${data['earned']}';
-      case 'mineupgrade': return 'Upgraded mine to Lv ${data['newLvl'] ?? '?'}. Cost: ꞓ${data['cost'] ?? 0}';
+      case 'marketsell': return 'Listed item ${data['itemID']} × ${data['qty']} @ ꞓ${fmtNum(data['price'] as num? ?? 0)}';
+      case 'marketbuy': return 'Bought ${data['qty']} × item ${data['itemID']} for ꞓ${fmtNum(data['cost'] as num? ?? 0)}';
+      case 'marketsold': return 'Sold to buyer. Earned ꞓ${fmtNum(data['earned'] as num? ?? 0)}';
+      case 'mineupgrade': return 'Upgraded mine to Lv ${data['newLvl'] ?? '?'}. Cost: ꞓ${fmtNum(data['cost'] as num? ?? 0)}';
       case 'techupgrade': return 'Tech upgraded mine (Tech Lv ${data['newTech'] ?? '?'})';
       case 'accident':
         final what = const {'fire': 'Factory fire', 'strike': 'Strike', 'disease': 'Disease outbreak at a mine',

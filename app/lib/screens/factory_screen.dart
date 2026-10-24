@@ -64,6 +64,14 @@ class _FactoryScreenState extends State<FactoryScreen> {
     if (!silent) setState(() => _loading = true);
     final sid = context.read<PlayerProvider>().sid;
     final result = await ApiService.getFactories(sid);
+    // a failed refresh (network hiccup, app back from the background) keeps what is shown instead
+    // of falling back to the empty "build a factory" screen (owner 2026-10-24)
+    final failed = result == null || result['factories'] is! List;
+    if (failed && _data != null) {
+      if (mounted) setState(() => _loading = false);
+      if (!silent) Future.delayed(const Duration(seconds: 5), () { if (mounted) _load(silent: true); });
+      return;
+    }
     // the server catalog lists every factory type; keep the shared table in sync with it
     for (final c in (result?['catalog'] as List? ?? const []).cast<Map<String, dynamic>>()) {
       kFactoryTypes[(c['itemID'] as num).toInt()] = {'produces': c['produces'], 'out': c['out'], 'hrs': c['hrs']};
@@ -177,7 +185,7 @@ class _FactoryScreenState extends State<FactoryScreen> {
           const SizedBox(height: 4),
           // Cost row
           Row(children: [
-            const Icon(Icons.monetization_on, size: 14, color: Colors.amber),
+            Icon(Icons.monetization_on_outlined, size: 14, color: AppColors.accent),
             const SizedBox(width: 4),
             Text('ꞓ${fmtNum(upgCredits)}', style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)),
           ]),
@@ -450,6 +458,16 @@ class _FactoryScreenState extends State<FactoryScreen> {
       return Scaffold(
         appBar: canPop ? AppBar(toolbarHeight: 36) : null,
         body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_data == null || _data!['factories'] is! List) {
+      return Scaffold(
+        appBar: canPop ? AppBar(toolbarHeight: 36) : null,
+        body: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('Could not load your factories.', style: TextStyle(color: AppColors.t54)),
+          const SizedBox(height: 8),
+          FilledButton(onPressed: _load, child: const Text('Try again')),
+        ])),
       );
     }
     return Scaffold(
@@ -935,8 +953,8 @@ class _CatalogTile extends StatelessWidget {
               ? Image.asset(imgPath, fit: BoxFit.contain,
                   color: ok ? null : Colors.red.withValues(alpha: 0.8),
                   colorBlendMode: ok ? null : BlendMode.modulate)
-              : Icon(Icons.monetization_on, size: 14,
-                    color: ok ? Colors.amber : Colors.red),
+              : Icon(Icons.monetization_on_outlined, size: 14,
+                    color: ok ? AppColors.accent : Colors.redAccent),
         ),
         const SizedBox(width: 4),
         Text(qty,
@@ -1094,7 +1112,7 @@ class _StartProdSheetState extends State<_StartProdSheet> {
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: Row(children: [
-                const SizedBox(width: 32, height: 32, child: Icon(Icons.monetization_on_outlined, color: Colors.amber)),
+                SizedBox(width: 32, height: 32, child: Icon(Icons.monetization_on_outlined, color: AppColors.accent)),
                 const SizedBox(width: 8),
                 const Expanded(child: Text('Credits', style: TextStyle(fontSize: 12))),
                 Text('ꞓ${fmtNum(_creditsPerBatch * _batches)} / ꞓ${fmtNum(widget.player?.credits ?? 0)}',

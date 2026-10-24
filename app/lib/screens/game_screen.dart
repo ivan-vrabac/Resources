@@ -1,3 +1,4 @@
+import '../constants.dart' show precacheResImages;
 import '../widgets/update_dialog.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -111,6 +112,8 @@ class _GameScreenState extends State<GameScreen> {
     super.initState();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _pageCtrl = PageController(initialPage: 1);
+    // item pictures decoded up front (also after a fresh login): market and warehouse icons show at once
+    WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) precacheResImages(context); });
     TabConfig.load().then((cfg) {
       if (mounted) setState(() { _config = cfg; _configLoaded = true; });
     });

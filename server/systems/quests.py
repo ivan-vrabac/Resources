@@ -8,7 +8,8 @@ Lifecycle (documented assumptions):
 - A quest stays open for 48 hours. If it isn't completed and claimed in that time it expires and
   its progress is gone (the next day's quests start from zero).
 - Claiming is atomic and happens at most once per quest (conditional UPDATE + unique keys).
-  Reward: QUEST_CRATES Cargo Rain crates (eva.txt: 15 per mission) + credits = 2000 × player level.
+  Reward: QUEST_CRATES Cargo Rain crates (eva.txt: 15 per mission) + credits = 15 % of what the
+  player's current level costs in permanent spending (owner 2026-10-24: fit the economy at every level).
 - Streak: a "qualifying day" is a UTC day whose whole quest set was claimed (within the 48 h
   window). The streak is the run of consecutive qualifying days. Every qualifying day pays Tech
   Upgrades IV: 5 × the streak day, capped at 50 from day 10 (daily_tu). Milestones (relative to the
@@ -25,12 +26,19 @@ import datetime
 import hashlib
 
 import econ
+import economy
 from . import archaeology, cargo, int_arg
 
 DAILY_COUNT = 3
 QUEST_HOURS = 48
 GIANT_DIAMOND = 42
-CREDITS_PER_LEVEL = 2000
+QUEST_LEVEL_SHARE = 0.15       # of the credits one level takes (XP step / XP_PER_CREDIT)
+QUEST_MIN_CREDITS = 5000
+
+
+def quest_credits(level: int) -> int:
+    step = economy.xp_to_start(level + 1) - economy.xp_to_start(level)
+    return max(QUEST_MIN_CREDITS, int(round(step / economy.XP_PER_CREDIT * QUEST_LEVEL_SHARE, -2)))
 STREAK_MILESTONES = ((7, 5), (30, 10))     # (every N days, giant diamonds)
 # Daily streak reward (owner 2026-10-20): Tech Upgrades IV for every qualifying day of the streak:
 # 5 × the streak day (day 1 → 5, day 2 → 10, …), capped at 50 from day 10 on.
@@ -229,11 +237,11 @@ def install(api) -> None:
         bonus = 1 + archaeology.effect(conn, hid, 176) / 100
         return {"err": 0, "quests": view(conn, hid, now), "streak": streak, "nextMilestone": nxt,
                 "reward": {"crates": int(round(cargo.QUEST_CRATES * bonus)),
-                           "credits": int(round(CREDITS_PER_LEVEL * level * bonus))},
+                           "credits": int(round(quest_credits(level) * bonus))},
                 "milestones": [{"every": e, "diamonds": d} for e, d in STREAK_MILESTONES],
                 # everything the Rewards button lists
                 "rewardPlan": {
-                    "perQuest": [{"itemID": 1, "qty": int(round(CREDITS_PER_LEVEL * level * bonus))},
+                    "perQuest": [{"itemID": 1, "qty": int(round(quest_credits(level) * bonus))},
                                  {"cargo": True, "qty": int(round(cargo.QUEST_CRATES * bonus))}],
                     "daily": [{"from": d, "to": d, "itemID": TECH_UPGRADE, "qty": daily_tu(d)} for d in range(1, 10)]
                              + [{"from": 10, "to": None, "itemID": TECH_UPGRADE, "qty": DAILY_TU_CAP}],
@@ -260,7 +268,7 @@ def install(api) -> None:
                 raise econ.GameError("already_claimed", "Reward already claimed")
             level = conn.execute("SELECT level FROM players WHERE hID=?", (hid,)).fetchone()[0] or 1
             bonus = 1 + archaeology.effect(conn, hid, 176) / 100        # Aeon Mechanism: +10/20/30 %
-            credits = int(round(CREDITS_PER_LEVEL * level * bonus))
+            credits = int(round(quest_credits(level) * bonus))
             crates = int(round(cargo.QUEST_CRATES * bonus))
             econ.credit(conn, hid, credits, "quest_reward", str(qid))
             h.change_wa(conn, hid, 2.0, "quest")        # owner 2026-10-23: finished quests raise WA

@@ -166,7 +166,7 @@ class _MinesTabState extends State<MinesTab> {
       context: context,
       builder: (_) => AlertDialog(
         title: Text('Repair ${toRepair.length} mines?'),
-        content: Text('Total cost: ꞓ$cost',
+        content: Text('Total cost: ꞓ${fmtNum(cost)}',
             style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)),
         actions: [
           TextButton(onPressed: () => popIfCurrent(context, false), child: const Text('Cancel')),
@@ -284,7 +284,7 @@ class _MinesTabState extends State<MinesTab> {
     if (r == null || r['err'] != 0) {
       AppNotify.show(context, r?['msg'] ?? 'Demolish failed', isError: true);
     } else {
-      AppNotify.show(context, 'Demolished ${r['deleted']} mines. Refund: ꞓ${r['refund']}');
+      AppNotify.show(context, 'Demolished ${r['deleted']} mines. Refund: ꞓ${fmtNum(r['refund'] as num? ?? 0)}');
       context.read<PlayerProvider>()
         ..adjustCredits(-((r['refund'] as num?) ?? 0).toInt())
         ..refresh();
@@ -812,7 +812,7 @@ class _MineTileState extends State<_MineTile> {
     if (r == null || r['err'] != 0) {
       _snack(r?['msg'] ?? 'Repair failed');
     } else {
-      _snack('Repaired! Cost: ꞓ${r['cost']}');
+      _snack('Repaired! Cost: ꞓ${fmtNum(r['cost'] as num? ?? 0)}');
       context.read<PlayerProvider>()
         ..adjustCredits(((r['cost'] as num?) ?? 0).toInt())
         ..refresh();
@@ -870,7 +870,7 @@ class _MineTileState extends State<_MineTile> {
                     style: TextStyle(color: Colors.orange, fontSize: 12))),
               ]),
             ),
-          Text('Refund: ꞓ$refund',
+          Text('Refund: ꞓ${fmtNum(refund)}',
               style: const TextStyle(
                   color: Colors.amber, fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),
@@ -901,7 +901,7 @@ class _MineTileState extends State<_MineTile> {
     if (r == null || r['err'] != 0) {
       _snack('Demolish failed');
     } else {
-      _snack('Demolished. Refund: ꞓ${r['refund']}');
+      _snack('Demolished. Refund: ꞓ${fmtNum(r['refund'] as num? ?? 0)}');
       context.read<PlayerProvider>().refresh();
     }
   });
@@ -933,7 +933,7 @@ class _MineTileState extends State<_MineTile> {
             crossAxisAlignment: CrossAxisAlignment.end, children: [
           Text('Lv ${mine.level}',
               style: TextStyle(fontSize: 11, color: AppColors.t54)),
-          Text('ꞓ${_mineRefund(mine)}',
+          Text('ꞓ${fmtNum(_mineRefund(mine))}',
               style: const TextStyle(fontSize: 11, color: Colors.amber)),
         ]),
         dense: true,
@@ -992,7 +992,7 @@ class _MineTileState extends State<_MineTile> {
               Row(children: [
                 Expanded(child: _ActionBtn(
                   icon: Icons.build,
-                  label: 'Repair (ꞓ${_repairCost()})',
+                  label: 'Repair (ꞓ${fmtNum(_repairCost())})',
                   color: Colors.orange,
                   busy: _busy,
                   onTap: mine.condition <= 99 ? _repairPay : null,
@@ -1020,7 +1020,7 @@ class _MineTileState extends State<_MineTile> {
                 const SizedBox(width: 8),
                 Expanded(child: _ActionBtn(
                   icon: Icons.delete_outline,
-                  label: 'Demolish (ꞓ${_mineRefund(mine)})',
+                  label: 'Demolish (ꞓ${fmtNum(_mineRefund(mine))})',
                   color: Colors.red,
                   busy: _busy,
                   onTap: _demolish,

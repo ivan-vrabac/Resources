@@ -15,11 +15,9 @@ import '../../branding.dart';
 import '../../constants.dart';
 import '../../models/player.dart';
 import '../../models/player_provider.dart';
-import '../../screens/settings_screen.dart' show kCloudOpacity, kMafiaRingColor, kMafiaRingOpacity,
-    kMuseumRingColor, kMuseumRingOpacity, kRevealRingColor, kRevealRingOpacity,
-    kDroneRingColor, kDroneRingOpacity,
-    kScanRingColor, kScanRingOpacity,
-    kLocalRingColor, kLocalRingOpacity,
+import '../../ring_looks.dart';
+import '../../widgets/radar_icon.dart';
+import '../../screens/settings_screen.dart' show kCloudOpacity,
     kShowRingLabels,
     kGpsIntervalSeconds,
     kHeatmapScheme,
@@ -405,40 +403,6 @@ class _HexIconPainter extends CustomPainter {
   bool shouldRepaint(_HexIconPainter old) => old.color != color;
 }
 
-// ── Radar icon painter — 3 rings + radial line + X section dividers ───────────
-
-class _RadarIconPainter extends CustomPainter {
-  final Color color;
-  const _RadarIconPainter({required this.color});
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2, cy = size.height / 2;
-    final outerR = size.width * 0.46;
-    final ring = Paint()
-      ..color = color ..style = PaintingStyle.stroke ..strokeWidth = 1.2;
-    for (final frac in [0.33, 0.65, 1.0]) {
-      canvas.drawCircle(Offset(cx, cy), outerR * frac, ring);
-    }
-    // Radial sweep line
-    const angle = -math.pi / 5;
-    canvas.drawLine(
-      Offset(cx, cy),
-      Offset(cx + outerR * math.cos(angle), cy + outerR * math.sin(angle)),
-      Paint()..color = color..strokeWidth = 1.4..strokeCap = StrokeCap.round,
-    );
-    // Thin X dividers — noticeably thinner than the radial line
-    final xPaint = Paint()..color = color..strokeWidth = 0.7;
-    for (final a in [math.pi / 4, -math.pi / 4]) {
-      canvas.drawLine(
-        Offset(cx - outerR * math.cos(a), cy - outerR * math.sin(a)),
-        Offset(cx + outerR * math.cos(a), cy + outerR * math.sin(a)),
-        xPaint,
-      );
-    }
-  }
-  @override
-  bool shouldRepaint(_RadarIconPainter old) => old.color != color;
-}
 
 // ── Mine smoke painter ─────────────────────────────────────────────────────────
 // One soft smoke puff per mine at far zoom, drawn as a single GPU sprite batch
@@ -1311,6 +1275,7 @@ class _MapTabState extends State<MapTab> {
         mine: mine,
         player: player,
         inBossRange: inBossRange,
+        pos: gpsPos,
         onDone: () {
           context.read<PlayerProvider>().refresh();
           _loadMarkers();
@@ -1451,56 +1416,38 @@ class _MapTabState extends State<MapTab> {
             ),
           ),
 
-          // Scan range circles around GPS (TC radius + local 200m + drone)
+          // Rings around the player (owner 2026-10-24): look per ring in Settings › Scan Rings
+          // (colour, opacity, fill, line style); building rings only with the building.
           if (_pos != null) ...[
-            CircleLayer(circles: [
-              if (droneRange > 0)
-                CircleMarker(
-                  point: _pos!,
-                  radius: droneRange.toDouble(),
-                  useRadiusInMeter: true,
-                  color: kDroneRingColor.withValues(alpha: kDroneRingOpacity * 0.12),
-                  borderColor: kDroneRingColor,
-                  borderStrokeWidth: 1.5,
-                ),
-              // owner 2026-10-24: these rings always show when you have the building (formulas as on
-              // the server); colours and opacity in Settings › Scan Rings
-              if (mafiaLevel >= 1)        // Mafia attack range: 100 m at level 1 … 500 m at 10
-                CircleMarker(
-                  point: _pos!,
-                  radius: 100 + (mafiaLevel.clamp(1, 10) - 1) * 400 / 9,
-                  useRadiusInMeter: true,
-                  color: kMafiaRingColor.withValues(alpha: kMafiaRingOpacity * 0.12),
-                  borderColor: kMafiaRingColor.withValues(alpha: kMafiaRingOpacity),
-                  borderStrokeWidth: 1.2,
-                ),
-              if (museumLevel >= 1)       // Museum pick-up range (cargo, artifacts): 50 m + 25 m per level
-                CircleMarker(
-                  point: _pos!,
-                  radius: 50.0 + 25.0 * museumLevel.clamp(0, 10),
-                  useRadiusInMeter: true,
-                  color: kMuseumRingColor.withValues(alpha: kMuseumRingOpacity * 0.12),
-                  borderColor: kMuseumRingColor.withValues(alpha: kMuseumRingOpacity),
-                  borderStrokeWidth: 1.2,
-                ),
-              if (archLevel >= 1)         // artifact reveal range: 100 m at level 1 … 300 m at 10
-                CircleMarker(
-                  point: _pos!,
-                  radius: 100.0 + (archLevel.clamp(1, 10) - 1) * 200.0 / 9,
-                  useRadiusInMeter: true,
-                  color: kRevealRingColor.withValues(alpha: kRevealRingOpacity * 0.12),
-                  borderColor: kRevealRingColor.withValues(alpha: kRevealRingOpacity),
-                  borderStrokeWidth: 1.2,
-                ),
-              CircleMarker(
-                point: _pos!,
-                radius: 100,
-                useRadiusInMeter: true,
-                color: kLocalRingColor.withValues(alpha: kLocalRingOpacity * 0.12),
-                borderColor: kLocalRingColor,
-                borderStrokeWidth: 1.5,
-              ),
-            ]),
+            Builder(builder: (ctx) {
+              final hf = player?.haulageLevel ?? 0;
+              final rings = <(String, double, String)>[
+                if (droneRange > 0) ('drone', droneRange.toDouble(), 'Drone range'),
+                if (hf >= 1) ('boss', math.min(200.0, 100.0 + 10.0 * hf), 'Boss range'),
+                if (mafiaLevel >= 1) ('mafia', 100 + (mafiaLevel.clamp(1, 10) - 1) * 400 / 9, 'Mafia range'),
+                if (museumLevel >= 1) ('museum', 50.0 + 25.0 * museumLevel.clamp(0, 10), 'Museum pick-up'),
+                if (archLevel >= 1) ('reveal', 100.0 + (archLevel.clamp(1, 10) - 1) * 200.0 / 9, 'Reveal range'),
+                ('local', 100.0, 'Local range'),
+              ];
+              final refLat = _pos!.latitude * math.pi / 180;
+              final ppm = (256 * math.pow(2, _mapZoom)) /
+                  (40075017.0 * math.cos(refLat).abs().clamp(0.001, 1.0));
+              Marker lbl(String text, double radiusM, Color c) => Marker(
+                point: LatLng(_pos!.latitude + radiusM / 111320.0, _pos!.longitude),
+                width: 110, height: 14,
+                alignment: Alignment.topCenter,
+                child: Center(child: Text(text, style: TextStyle(color: c, fontSize: 9,
+                    shadows: const [Shadow(color: Colors.black, blurRadius: 2)]))),
+              );
+              return Stack(children: [
+                PolygonLayer(polygons: [for (final r in rings) ringPolygon(_pos!, r.$2, r.$1)]),
+                if (kShowRingLabels)
+                  MarkerLayer(markers: [
+                    for (final r in rings)
+                      if (r.$2 * ppm > 40) lbl(r.$3, r.$2, kRingLooks[r.$1]!.color),
+                  ]),
+              ]);
+            }),
             // TC scan ring around the crosshair: reads the live camera every frame (plain pans
             // don't rebuild the map tab, so a ring placed from _mapCenter would stay behind)
             Builder(builder: (ctx) {
@@ -1508,39 +1455,8 @@ class _MapTabState extends State<MapTab> {
               final c = cam.center;
               final d = _distM(_pos!, c);
               if (!(d <= 100 || (droneRange > 0 && d <= droneRange))) return const SizedBox.shrink();
-              return CircleLayer(circles: [
-                CircleMarker(
-                  point: c,
-                  radius: scanRadius,
-                  useRadiusInMeter: true,
-                  color: kScanRingColor.withValues(alpha: kScanRingOpacity * 0.12),
-                  borderColor: kScanRingColor,
-                  borderStrokeWidth: 1.5,
-                ),
-              ]);
+              return PolygonLayer(polygons: [ringPolygon(c, scanRadius, 'scan')]);
             }),
-            // Ring labels — anchored to circle top, only shown when circle ≥ 80px diameter
-            (() {
-              final refLat = _pos!.latitude * math.pi / 180;
-              final ppm = (256 * math.pow(2, _mapZoom)) /
-                  (40075017.0 * math.cos(refLat).abs().clamp(0.001, 1.0));
-              TextStyle s(Color c) => TextStyle(color: c, fontSize: 9,
-                  shadows: const [Shadow(color: Colors.black, blurRadius: 2)]);
-              Marker lblAt(String text, LatLng center, double radiusM, Color c) => Marker(
-                point: LatLng(center.latitude + radiusM / 111320.0, center.longitude),
-                width: 96, height: 14,
-                alignment: Alignment.topCenter,
-                child: Center(child: Text(text, style: s(c))),
-              );
-              return MarkerLayer(markers: [
-                if (!kShowRingLabels) ...[],
-                if (kShowRingLabels && droneRange > 0 && droneRange * ppm > 40)
-                  lblAt('Drone range', _pos!, droneRange.toDouble(), kDroneRingColor),
-
-                if (kShowRingLabels && 100 * ppm > 40)
-                  lblAt('Local Range', _pos!, 100.0, kLocalRingColor),
-              ]);
-            })(),
           ],
 
           // Accumulated scan heatmap — stable cached list, rebuilt only when scan data changes.
@@ -1793,7 +1709,7 @@ class _MapTabState extends State<MapTab> {
               // Scan/heatmap visibility toggle — no-op when no scan available
               _mapBtnW(
                 CustomPaint(
-                  painter: _RadarIconPainter(
+                  painter: RadarIconPainter(
                     color: _showClouds ? Colors.white : AppColors.accent),
                 ),
                 () {
@@ -2169,7 +2085,7 @@ class _MapTabState extends State<MapTab> {
                                           color: disabled ? AppColors.t38 : Colors.white)
                                       : SizedBox(width: 16, height: 16,
                                           child: CustomPaint(
-                                            painter: _RadarIconPainter(
+                                            painter: RadarIconPainter(
                                               color: disabled ? AppColors.t38 : Colors.white),
                                           )),
                               const SizedBox(width: 6),
@@ -2466,7 +2382,7 @@ class _MapTabState extends State<MapTab> {
           Text(name, style: TextStyle(color: AppColors.t70)),
           const SizedBox(height: 8),
           Row(children: [
-            const Icon(Icons.monetization_on_outlined, size: 14, color: Colors.amber),
+            Icon(Icons.monetization_on_outlined, size: 14, color: AppColors.accent),
             const SizedBox(width: 4),
             Text('ꞓ${fmtNum(cost)}',
                 style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)),
@@ -2670,12 +2586,6 @@ class _MapTabState extends State<MapTab> {
     return tip != null ? Tooltip(message: tip, child: w) : w;
   }
 
-  String fmtNum(int n) {
-    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
-    if (n >= 1000) return '${(n / 1000).toStringAsFixed(0)}k';
-    return '$n';
-  }
-
 }
 
 // ── Mine tap bottom sheet (map) ────────────────────────────────────────────
@@ -2684,10 +2594,11 @@ class _MapMineSheet extends StatefulWidget {
   final Mine mine;
   final Player player;
   final bool inBossRange;
+  final LatLng? pos;
   final VoidCallback onDone;
   const _MapMineSheet({
     required this.mine, required this.player,
-    required this.inBossRange, required this.onDone,
+    required this.inBossRange, required this.onDone, this.pos,
   });
   @override
   State<_MapMineSheet> createState() => _MapMineSheetState();
@@ -2729,7 +2640,9 @@ class _MapMineSheetState extends State<_MapMineSheet> {
 
   Future<void> _repairFree() => _run(() async {
     final sid = context.read<PlayerProvider>().sid;
-    final r = await ApiService.repairMineKit(sid, mine.id);
+    final p = widget.pos;
+    if (p == null) { _done('Waiting for GPS…', error: true); return; }
+    final r = await ApiService.repairMineFree(sid, mine.id, p.latitude, p.longitude);
     if (!mounted) return;
     if (r == null || r['err'] != 0) {
       _done(r?['msg'] ?? 'Repair failed', error: true);
@@ -2745,7 +2658,7 @@ class _MapMineSheetState extends State<_MapMineSheet> {
     if (r == null || r['err'] != 0) {
       _done(r?['msg'] ?? 'Repair failed', error: true);
     } else {
-      _done('Repaired! Cost: ꞓ${r['cost']}');
+      _done('Repaired! Cost: ꞓ${fmtNum(r['cost'] as num? ?? 0)}');
     }
   });
 
@@ -2766,7 +2679,7 @@ class _MapMineSheetState extends State<_MapMineSheet> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Demolish mine?'),
-        content: Text('Refund: ꞓ$refund'),
+        content: Text('Refund: ꞓ${fmtNum(refund)}'),
         actions: [
           TextButton(onPressed: () => popIfCurrent(context, false), child: const Text('Cancel')),
           FilledButton(
@@ -2785,7 +2698,7 @@ class _MapMineSheetState extends State<_MapMineSheet> {
       if (r == null || r['err'] != 0) {
         _done('Demolish failed', error: true);
       } else {
-        _done('Demolished. Refund: ꞓ${r['refund']}');
+        _done('Demolished. Refund: ꞓ${fmtNum(r['refund'] as num? ?? 0)}');
       }
     });
   }
@@ -2884,7 +2797,7 @@ class _MapMineSheetState extends State<_MapMineSheet> {
                   Row(children: [
                     Expanded(child: OutlinedButton.icon(
                       icon: const Icon(Icons.build_outlined, size: 14),
-                      label: Text('Pay ꞓ${_repairCost()}'),
+                      label: Text('Pay ꞓ${fmtNum(_repairCost())}'),
                       onPressed: _repairPay,
                     )),
                     const SizedBox(width: 8),

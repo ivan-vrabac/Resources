@@ -16,13 +16,16 @@ class WarehouseTab extends StatefulWidget {
 }
 
 class _WarehouseTabState extends State<WarehouseTab> {
-  Map<String, double>? _items;
-  int _whLevel = 1;
-  int _whCap = 5000;
+  // the last data is kept for the session (like the flag): the list and its icons show at once
+  static Map<String, double>? _cItems;
+  static int _cLevel = 1, _cCap = 5000;
+  Map<String, double>? _items = _cItems;
+  int _whLevel = _cLevel;
+  int _whCap = _cCap;
   bool _loading = false;
-  Map<int, Map<String, dynamic>> _recipes = {};   // recyclable found objects (Recycling Plant)
-  int _plantLevel = 0;
-  double _plantYield = 0, _obelisk = 0, _yield = 0;
+  static Map<int, Map<String, dynamic>> _recipes = {};   // recyclable found objects (Recycling Plant)
+  static int _plantLevel = 0;
+  static double _plantYield = 0, _obelisk = 0, _yield = 0;
 
   @override
   void initState() {
@@ -31,7 +34,7 @@ class _WarehouseTabState extends State<WarehouseTab> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() => _loading = _items == null);
     final sid = context.read<PlayerProvider>().sid;
     final result = await ApiService.getWarehouse(sid);
     final rec = await GameApi.call('/api/v1/cargo/recycling', sid);
@@ -49,6 +52,7 @@ class _WarehouseTabState extends State<WarehouseTab> {
         _whLevel = (result['whLvl'] as num).toInt();
         _whCap = (result['whCap'] as num).toInt();
         _loading = false;
+        _cItems = _items; _cLevel = _whLevel; _cCap = _whCap;
       });
     } else {
       setState(() => _loading = false);
@@ -288,7 +292,7 @@ class _ItemIcon extends StatelessWidget {
     if (path != null) {
       return SizedBox(
         width: 32, height: 32,
-        child: Image.asset(path, fit: BoxFit.contain,
+        child: Image.asset(path, fit: BoxFit.contain, gaplessPlayback: true,
             errorBuilder: (_, __, ___) => _fallback()),
       );
     }

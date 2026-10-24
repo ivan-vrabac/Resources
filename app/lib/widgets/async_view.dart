@@ -65,7 +65,7 @@ class ItemIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Image.asset(
         resAsset(itemId),
-        width: size, height: size, fit: BoxFit.contain,
+        width: size, height: size, fit: BoxFit.contain, gaplessPlayback: true,
         errorBuilder: (_, __, ___) => Icon(Icons.inventory_2_outlined, size: size * 0.8, color: AppColors.t38),
       );
 }

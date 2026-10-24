@@ -47,8 +47,8 @@ def test_progress_claim_once_and_rewards():
     qs = {q["code"]: q for q in call(Q, sid)["quests"]}
     assert qs["scan"]["progress"] == 10 and qs["scan"]["claimable"]
     r = call(Q + "/claim", sid, id=qs["scan"]["id"])
-    assert r["credits"] == 20000 and r["crates"] == 15
-    assert credits(hid) == 20000
+    assert r["credits"] == quests.quest_credits(10) and r["crates"] == 15
+    assert credits(hid) == quests.quest_credits(10)
     assert call(Q + "/claim", sid, id=qs["scan"]["id"])["code"] == "already_claimed"
     with main.get_db() as conn:
         assert cargo.stock(conn, hid) == 15
@@ -74,7 +74,7 @@ def test_concurrent_claims_pay_once():
     for t in ts:
         t.join()
     assert sum(1 for r in out if r["err"] == 0) == 1
-    assert credits(hid) == 2000
+    assert credits(hid) == quests.quest_credits(1)
 
 
 def test_expired_quest_cannot_be_claimed():
