@@ -68,7 +68,6 @@ def vehicles_for(crates: int) -> int:
 TRUCK_HF_LEVEL = 5
 LOCAL_RANGE_BASE_M = 50.0
 LOCAL_RANGE_PER_MUSEUM_M = 25.0     # 300 m at Museum level 10 (owner 2026-10-20)
-MUSEUM_QTY_BONUS = 0.05
 
 # sfo.txt found objects: item_id → (name, drop chance %, museum level)
 LOOT = {
@@ -80,14 +79,16 @@ LOOT = {
 }
 # Cargo BOXES (owner 2026-10-23, eva.txt: Giant Diamonds come in crates, not containers) can also
 # hold the sfo.txt specials; containers and stacks hold the regular LOOT only.
-BOX_EXTRA = {
-    42: ("Giant Diamond", 0.02, 10), 44: ("Tech Upgrade 1", 0.58, 10), 45: ("Tech Upgrade 2", 0.23, 10),
-    # boosters are worth billions now (owner 2026-10-24), so only a Museum level 10 finds them
-    46: ("Tech Upgrade 3", 0.12, 10), 48: ("Tech Upgrade 4", 0.02, 10), 159: ("Overtime", 0.12, 10),
-    158: ("Night Shift", 0.12, 10), 160: ("Guest Workers", 0.12, 10), 161: ("Wage Subsidy", 0.12, 10),
-}
-BOX_LOOT = {**LOOT, **BOX_EXTRA}
 BOX_SHARE = 0.2              # one crate in five is a cargo box, the rest are containers
+# Specials (Museum 10 only), as crates per 100 (owner 2026-10-24): the rarest, the Giant Diamond,
+# is 1 in 1 000 crates; Tech Upgrades 1 → 4 in order, then the production boosters.
+SPECIAL_PER_100 = {44: 2.0, 45: 1.0, 46: 0.5, 48: 0.25, 159: 0.2, 160: 0.2, 158: 0.2, 161: 0.2, 42: 0.1}
+SPECIAL_NAMES = {44: "Tech Upgrade 1", 45: "Tech Upgrade 2", 46: "Tech Upgrade 3", 48: "Tech Upgrade 4",
+                 159: "Overtime", 160: "Guest Workers", 158: "Night Shift", 161: "Wage Subsidy", 42: "Giant Diamond"}
+_W_LOOT = sum(v[1] for v in LOOT.values())
+_W_BOX = _W_LOOT / (1 - sum(SPECIAL_PER_100.values()) / (100 * BOX_SHARE))      # box weights giving those rates
+BOX_EXTRA = {i: (SPECIAL_NAMES[i], t * _W_BOX / (100 * BOX_SHARE), 10) for i, t in SPECIAL_PER_100.items()}
+BOX_LOOT = {**LOOT, **BOX_EXTRA}
 
 
 def drop_table() -> list:
@@ -100,18 +101,30 @@ def drop_table() -> list:
         per100 = 100 * ((1 - BOX_SHARE) * (w / w_loot if item in LOOT else 0) + BOX_SHARE * w / w_box)
         lo, hi = QTY[item]
         out.append({"itemID": item, "name": name, "per100": round(per100, 3), "min": lo, "max": hi,
-                    "museum": museum, "boxOnly": item not in LOOT})
-    return sorted(out, key=lambda e: -e["per100"])
+                    "boxOnly": item not in LOOT})
+    # regular objects by chance, then the specials in their fixed order (TU 1-4, boosters, diamond)
+    reg = sorted((e for e in out if not e["boxOnly"]), key=lambda e: -e["per100"])
+    return reg + [e for i in SPECIAL_PER_100 for e in out if e["itemID"] == i]
 
 
 def by_rarity(got: dict) -> list:
     """[{itemID, qty}] from common to rare (owner 2026-10-23: Tech Upgrades go 1, 2, 3, 4)."""
     return [{"itemID": k, "qty": v} for k, v in
             sorted(got.items(), key=lambda kv: (-BOX_LOOT.get(kv[0], ("", 0, 0))[1], kv[0]))]
-# Assumed quantity per crate (min, max) — not in the sources.
-QTY = {56: (1, 20), 57: (1, 20), 41: (1, 20), 55: (1, 10), 40: (1, 10), 70: (5, 50), 74: (5, 50), 43: (1, 1),
-       115: (5, 50), 78: (5, 30), 77: (5, 50), 120: (1, 3), 42: (1, 1), 44: (1, 3), 45: (1, 2),
-       46: (1, 2), 48: (1, 1), 159: (1, 1), 158: (1, 1), 160: (1, 1), 161: (1, 1)}
+# Quantity per crate (min, max) at Museum level 10 (owner 2026-10-24). Regular found objects
+# (coins, scrap, …) hold 1-50 000 there and less with a lower Museum (museum_factor); specials are
+# fixed: Giant Diamonds 1-10, Tech Upgrades 1-50, boosters 1-5. Maintenance Kits grow like the rest.
+QTY = {56: (1, 50_000), 41: (1, 50_000), 55: (1, 50_000), 40: (1, 50_000), 70: (1, 50_000), 74: (1, 50_000),
+       115: (1, 50_000), 78: (1, 50_000), 77: (1, 50_000), 120: (1, 50_000), 43: (1, 50_000),
+       42: (1, 10), 44: (1, 50), 45: (1, 50), 46: (1, 50), 48: (1, 50),
+       159: (1, 5), 158: (1, 5), 160: (1, 5), 161: (1, 5)}
+SCALED = set(LOOT)                 # quantities that grow with the collector's Museum level
+
+
+def museum_factor(museum: int) -> float:
+    """Share of the Museum-10 quantity a collector gets: 1/1000 without a Museum (1-50 a crate),
+    ×2 per level, all of it (1-50 000) at level 10."""
+    return 1000 ** (max(0, min(10, museum)) / 10) / 1000
 # Recycling sources from sfo.txt and srs.txt ("*From recycling"); the ratios are not in the
 # sources and are a documented proposal: input → [(output, units of output per input unit)].
 # The units are split evenly over the outputs, then × the Recycling Plant yield.
@@ -345,22 +358,24 @@ def install(api) -> None:
             raise econ.GameError("gone", "You already collected this crate")
         conn.execute("UPDATE cargo_crates SET collected_by=COALESCE(collected_by, ?), "
                      "collected_at=COALESCE(collected_at, ?) WHERE id=?", (hid, now, c["id"]))
-        bonus = 1 + MUSEUM_QTY_BONUS * museum
+        f = museum_factor(museum)
+
+        def amount(item, q):
+            return max(1, int(round(q * f))) if item in SCALED else int(q)
         if c["mix"]:
             got = {}
             for item, q in json.loads(c["mix"]).items():
                 item = int(item)
                 if BOX_LOOT.get(item, ("", 0, 99))[2] > museum:
                     continue                      # your Museum can't find this one
-                n = int(econ.give(conn, hid, item, int(round(q * bonus)), "cargo_collect", c["id"], strict=False))
+                n = int(econ.give(conn, hid, item, amount(item, q), "cargo_collect", c["id"], strict=False))
                 if n:
                     got[item] = n
                     if item in (42, 48):
                         econ.emit(conn, "rare_find", hid, {"itemID": item, "qty": n})
             econ.emit(conn, "cargo_collected", hid, {"crates": int(c["crates"] or 1), "items": got}, public=False)
             return got
-        amount = int(round(c["qty"] * bonus))
-        got = int(econ.give(conn, hid, c["item_id"], amount, "cargo_collect", c["id"], strict=strict))
+        got = int(econ.give(conn, hid, c["item_id"], amount(c["item_id"], c["qty"]), "cargo_collect", c["id"], strict=strict))
         econ.emit(conn, "cargo_collected", hid, {"crates": int(c["crates"] or 1),
                                                   "itemID": c["item_id"], "qty": got}, public=False)
         if c["item_id"] in (42, 48):

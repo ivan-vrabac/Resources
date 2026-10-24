@@ -1423,15 +1423,19 @@ class _MapTabState extends State<MapTab> {
               final hf = player?.haulageLevel ?? 0;
               final rings = <(String, double, String)>[
                 if (droneRange > 0) ('drone', droneRange.toDouble(), 'Drone range'),
-                if (hf >= 1) ('boss', math.min(200.0, 100.0 + 10.0 * hf), 'Boss range'),
+                // boss range: 100 m even without a Haulage Firm (free repairs, maintenance, trucks)
+                ('boss', math.min(200.0, 100.0 + 10.0 * hf), 'Boss range'),
                 if (mafiaLevel >= 1) ('mafia', 100 + (mafiaLevel.clamp(1, 10) - 1) * 400 / 9, 'Mafia range'),
-                if (museumLevel >= 1) ('museum', 50.0 + 25.0 * museumLevel.clamp(0, 10), 'Museum pick-up'),
+                // pick-up range: 50 m even without a Museum (crates by hand, artifacts)
+                ('museum', 50.0 + 25.0 * museumLevel.clamp(0, 10), 'Pick-up range'),
                 if (archLevel >= 1) ('reveal', 100.0 + (archLevel.clamp(1, 10) - 1) * 200.0 / 9, 'Reveal range'),
+                if (archLevel >= 1) ('detect', 3000.0 + 200.0 * archLevel.clamp(1, 10), 'Artifact detection'),
                 ('local', 100.0, 'Local range'),
               ];
               rings.removeWhere((r) => !kRingLooks[r.$1]!.show);
               final refLat = _pos!.latitude * math.pi / 180;
-              final ppm = (256 * math.pow(2, _mapZoom)) /
+              // the live camera zoom (the tab's own copy can lag while pinching)
+              final ppm = (256 * math.pow(2, MapCamera.of(ctx).zoom)) /
                   (40075017.0 * math.cos(refLat).abs().clamp(0.001, 1.0));
               // labels never overlap (owner 2026-10-24): each one sits on its ring at the first angle
               // (top, bottom, the diagonals, the sides) where it doesn't touch a label already placed

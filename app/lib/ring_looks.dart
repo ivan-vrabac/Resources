@@ -19,8 +19,9 @@ final Map<String, (String, RingLook)> kRingDefaults = {
   'scan':   ('Tech Center scan radius', RingLook(Colors.teal, 0.5)),
   'local':  ('Local range', RingLook(Colors.blueAccent, 0.7)),
   'boss':   ('Boss range (Haulage Firm: trucks, free repairs)', RingLook(Colors.grey, 0.8, fill: false)),
-  'museum': ('Museum pick-up range', RingLook(Colors.yellow, 0.8, fill: false)),
+  'museum': ('Pick-up range (Museum: crates by hand, artifacts)', RingLook(Colors.yellow, 0.8, fill: false)),
   'reveal': ('Artifact reveal range', RingLook(Colors.purpleAccent, 0.8, fill: false)),
+  'detect': ('Artifact detection range (Archaeological Center)', RingLook(Colors.amber, 0.6, fill: false)),
   'mafia':  ('Mafia attack range', RingLook(Colors.redAccent, 0.8, fill: false)),
 };
 

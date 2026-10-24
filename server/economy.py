@@ -247,9 +247,9 @@ _build_levels(LEVEL_TABLE_60)
 OTHER_PRICES = {
     # found objects (Cargo Rain)
     56: 40, 41: 60, 55: 120, 40: 300, 70: 30, 74: 40, 115: 20, 78: 150, 77: 25, 120: 2_000,
-    # Maintenance Kit: replaces one paid repair, and players use it on their dearest mines
-    # (a mid-game mine at 50 % condition costs a few 100 k to repair)
-    43: 250_000,
+    # Maintenance Kit: crates hold up to 50 000 of them now (owner 2026-10-24, like coins and scrap),
+    # so a kit is priced like the other plentiful found objects
+    43: 2_000,
     # Tech Upgrades (IV is not tradeable): each unit is +1 % (TU3 +1.5 %) output on one mine for
     # ever; on a mid-game mine (8 M base cost = 8 M a day) that's 80 k a day, paid back in about a week
     44: 500_000, 45: 600_000, 46: 900_000,

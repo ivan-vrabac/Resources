@@ -41,20 +41,38 @@ class CombatActions {
 
   static Widget _build(BuildContext context, Map<String, dynamic> t, LatLng? pos, VoidCallback onChanged) {
     if (t['type'] == 'hq' || t['mID'] == null) return const SizedBox.shrink();
-    final cond = (t['cond'] as num?)?.toDouble() ?? 100;
+    // shown with 2 decimals: 99.01 % to 100.00 % needs no maintenance (owner 2026-10-24)
+    final cond = (((t['cond'] as num?)?.toDouble() ?? 100) * 100).round() / 100;
+    // free maintenance works in your boss range (Haulage Firm), like your own free repairs
+    final range = context.read<PlayerProvider>().player?.bossRangeM ?? 100;
+    final d = pos == null
+        ? null
+        : const Distance().as(LengthUnit.Meter, pos, LatLng((t['lat'] as num).toDouble(), (t['lng'] as num).toDouble()));
+    final why = pos == null
+        ? 'Waiting for GPS'
+        : cond > 99.0
+            ? 'Condition ${cond.toStringAsFixed(2)}%, maintenance from 99.00% down'
+            : d! > range
+                ? 'Too far: ${d.round()} m, your boss range is ${range.round()} m'
+                : null;
     return Padding(
       padding: const EdgeInsets.only(top: 8),
-      child: Row(children: [
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(why ?? 'In your boss range (${d!.round()} of ${range.round()} m): maintain for free, the Service Center pays you',
+            style: TextStyle(fontSize: 11, color: why == null ? AppColors.accent : AppColors.t54)),
+        const SizedBox(height: 4),
+        Row(children: [
         Expanded(
           child: OutlinedButton.icon(
             icon: const Icon(Icons.build_outlined, size: 16),
             label: const Text('Maintain'),
-            onPressed: cond > 96 || pos == null ? null : () => _repair(context, t, pos, onChanged),
+            onPressed: why != null ? null : () => _repair(context, t, pos!, onChanged),
           ),
         ),
         const SizedBox(width: 8),
         Expanded(child: _AttackButton(mineId: t['mID'] as String, onPressed: pos == null ? null
             : () => _attack(context, t, pos, onChanged))),
+        ]),
       ]),
     );
   }

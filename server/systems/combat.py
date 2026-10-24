@@ -26,7 +26,7 @@ defence — 95 Watch Dogs, 97 Security Staff, 98 Elite Force.
 - Limits: attack range 100 m (Mafia HQ 1) … 500 m (level 10); a mine can be attacked once per 24 h.
 - External maintenance (Service Center 121): repair another player's mine for free when it is
   within the helper's range (100 m + 10 m × Haulage Firm level, max 200 m), at ≤ 96 % condition, and
-  its owner was active within 120 days. Helper reward: Service Center level × 1 h of the mine's
+  its owner was active within 120 days (≤ 99 % since 2026-10-24). Helper reward: Service Center level × 1 h of the mine's
   output (system-generated) + 0–4 Cargo Rain crates by SC level. Anti-farming: each mine once per
   24 h, each helper at most 20 rewarded repairs per UTC day, never your own mines.
 """
@@ -59,6 +59,7 @@ STRENGTH_FULL = 100_000.0       # attack strength for maximum damage
 SPECIAL_LOOT = ((43, 0.30, 1, 3), (44, 0.10, 1, 2), (45, 0.05, 1, 2), (46, 0.02, 1, 1), (48, 0.005, 1, 1))
 LOOT_HOURS_PER_LEVEL = 10
 REPAIR_COOLDOWN_S = 24 * 3600
+EXTERNAL_MAX_COND = 99.0        # owner 2026-10-24: like your own mines (was 96 %)
 REPAIR_DAILY_LIMIT = 20
 
 
@@ -362,8 +363,8 @@ def install(api) -> None:
                 raise econ.GameError("own_mine", "External maintenance is for other players' mines")
             econ.require_within(lat, lng, m["lat"], m["lng"],
                                 helper_range(h.building_level(conn, hid, HAULAGE_FIRM)), "mine")
-            if h.current_condition(m) > 96.0:
-                raise econ.GameError("not_needed", "This mine doesn't need maintenance (above 96%)")
+            if h.current_condition(m) > EXTERNAL_MAX_COND:
+                raise econ.GameError("not_needed", f"This mine doesn't need maintenance (above {EXTERNAL_MAX_COND:.0f}%)")
             now = econ.utcnow()
             active = conn.execute("SELECT MAX(day) FROM player_activity WHERE hid=?", (owner,)).fetchone()[0]
             if not active or active < (now - datetime.timedelta(days=120)).strftime("%Y-%m-%d"):

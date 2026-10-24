@@ -18,7 +18,6 @@ import '../constants.dart' show fmtNum;
 /// reveal range) stays on the map for [resultTtl] or until the next scan.
 class ArchaeologyController extends ChangeNotifier {
   static const resultTtl = Duration(minutes: 10);
-  bool showRing = false;
   bool scanning = false;
   double? bearing;
   String? band;
@@ -109,10 +108,6 @@ class ArchaeologyController extends ChangeNotifier {
     }
   }
 
-  void toggleRing() {
-    showRing = !showRing;
-    notifyListeners();
-  }
 
   @override
   void dispose() {

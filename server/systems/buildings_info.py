@@ -19,10 +19,16 @@ def effects(h, item_id: int, lvl: int) -> list:
         return [("Drone range", f"{rng / 1000:g} km" if rng else "—"),
                 ("Remote construction", "yes" if lvl >= 10 else "no")]
     if item_id == MUSEUM:
-        return [("Pick-up range (cargo, artifacts)", f"{archaeology.pickup_range(lvl):.0f} m"),
-                ("Crate quantity bonus", f"+{round(cargo.MUSEUM_QTY_BONUS * lvl * 100)}%"),
-                ("Objects that can be found",
-                 ", ".join(n for _, (n, _, m) in sorted(cargo.BOX_LOOT.items(), key=lambda x: x[1][2]) if m <= lvl))]
+        # owner 2026-10-24: the long list broke the text; now how many kinds and only what is new
+        kinds = [n for n, _, m in cargo.BOX_LOOT.values() if m <= lvl]
+        new = [n for n, _, m in cargo.BOX_LOOT.values() if m == lvl]
+        top = max(1, round(cargo.museum_factor(lvl) * 50_000))
+        out = [("Pick-up range (cargo, artifacts)", f"{archaeology.pickup_range(lvl):.0f} m"),
+               ("Coins, scrap and other objects", f"1-{top:,} per crate"),
+               ("Kinds of objects found", f"{len(kinds)} of {len(cargo.BOX_LOOT)}")]
+        if new:
+            out.append(("New at this level", "Tech Upgrades, boosters, Giant Diamonds" if lvl == 10 else ", ".join(new)))
+        return out
     if item_id == 71:                                               # Hospital
         cut = f"−{round((1 - protection.disease_factor(lvl)) * 100)}%"
         return [("Disease chance", cut), ("Disease penalty", cut),

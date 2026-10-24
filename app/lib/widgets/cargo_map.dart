@@ -49,7 +49,6 @@ String cargoMarkerAsset(Map<String, dynamic> c) {
 class CargoController extends ChangeNotifier {
   List<Map<String, dynamic>> crates = [];
   Map<String, dynamic> info = const {};
-  bool showRing = false;
   bool _loading = false;
 
   int get haulageLevel => (info['haulage'] as num? ?? 0).toInt();
@@ -120,10 +119,6 @@ class CargoController extends ChangeNotifier {
     }
   }
 
-  void toggleRing() {
-    showRing = !showRing;
-    notifyListeners();
-  }
 
   Future<void> collect(BuildContext context, String sid, Map<String, dynamic> crate, LatLng? pos) =>
       _once(() => _collect(context, sid, crate, pos));
@@ -491,8 +486,7 @@ class _CargoPanelState extends State<_CargoPanel> {
             IconButton(
               tooltip: 'Drop table',
               icon: Icon(Icons.info_outline, color: AppColors.accent),
-              onPressed: () => _showDropTable(context, (c.info['dropTable'] as List? ?? const []).cast<Map<String, dynamic>>(),
-                  (c.info['museum'] as num? ?? 0).toInt()),
+              onPressed: () => _showDropTable(context, (c.info['dropTable'] as List? ?? const []).cast<Map<String, dynamic>>()),
             ),
           ]),
           const SizedBox(height: 4),
@@ -601,7 +595,7 @@ Future<void> showFound(BuildContext context, String title, List<Map<String, dyna
 
 
 /// Drop table (owner 2026-10-24): what 100 crates hold on average, with the Museum level each needs.
-void _showDropTable(BuildContext context, List<Map<String, dynamic>> rows, int museum) {
+void _showDropTable(BuildContext context, List<Map<String, dynamic>> rows) {
   String per(num v) => v >= 1 ? v.toStringAsFixed(1) : v >= 0.1 ? v.toStringAsFixed(2) : v.toStringAsFixed(3);
   showAppDialog(
     context: context,
@@ -610,23 +604,23 @@ void _showDropTable(BuildContext context, List<Map<String, dynamic>> rows, int m
       content: SizedBox(
         width: double.maxFinite,
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Crates holding each object, per 100 crates (4 in 5 are containers, 1 in 5 cargo boxes; '
-              'specials only in boxes). Stacks hold the same as loose crates.',
+          Text('Chances and quantities for a level 10 Museum: crates holding each object per 100 crates '
+              '(specials only in cargo boxes, 1 in 5 crates). A lower Museum finds fewer kinds and smaller '
+              'amounts. Stacks hold the same as loose crates.',
               style: TextStyle(fontSize: 12, color: AppColors.t54)),
           const SizedBox(height: 8),
           Row(children: [
             const SizedBox(width: 30),
             Expanded(child: Text('Object', style: TextStyle(fontSize: 11, color: AppColors.t54))),
             SizedBox(width: 56, child: Text('per 100', textAlign: TextAlign.right, style: TextStyle(fontSize: 11, color: AppColors.t54))),
-            SizedBox(width: 50, child: Text('qty', textAlign: TextAlign.right, style: TextStyle(fontSize: 11, color: AppColors.t54))),
-            SizedBox(width: 44, child: Text('Museum', textAlign: TextAlign.right, style: TextStyle(fontSize: 11, color: AppColors.t54))),
+            SizedBox(width: 64, child: Text('quantity', textAlign: TextAlign.right, style: TextStyle(fontSize: 11, color: AppColors.t54))),
           ]),
           const Divider(height: 8),
           Flexible(
             child: ListView(shrinkWrap: true, children: [
               for (final r in rows)
                 Opacity(
-                  opacity: (r['museum'] as num).toInt() <= museum ? 1 : 0.45,     // dimmed: your Museum can't find it yet
+                  opacity: 1,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 3),
                     child: Row(children: [
@@ -634,9 +628,9 @@ void _showDropTable(BuildContext context, List<Map<String, dynamic>> rows, int m
                       const SizedBox(width: 8),
                       Expanded(child: Text(r['name'] as String, style: const TextStyle(fontSize: 12))),
                       SizedBox(width: 56, child: Text(per(r['per100'] as num), textAlign: TextAlign.right, style: const TextStyle(fontSize: 12))),
-                      SizedBox(width: 50, child: Text(r['min'] == r['max'] ? '${r['min']}' : '${r['min']}-${r['max']}',
-                          textAlign: TextAlign.right, style: TextStyle(fontSize: 12, color: AppColors.t70))),
-                      SizedBox(width: 44, child: Text('${r['museum']}', textAlign: TextAlign.right, style: TextStyle(fontSize: 12, color: AppColors.t70))),
+                      SizedBox(width: 64, child: Text(
+                          r['min'] == r['max'] ? fmtNum(r['min'] as num) : '${fmtNum(r['min'] as num)}-${fmtNum(r['max'] as num)}',
+                          maxLines: 1, textAlign: TextAlign.right, style: TextStyle(fontSize: 12, color: AppColors.t70))),
                     ]),
                   ),
                 ),

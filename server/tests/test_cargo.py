@@ -68,22 +68,22 @@ def test_collect_range_museum_visibility_and_bonus():
     a_hid, a_sid, _ = new_player("ca", wh_level=3)
     b_hid, b_sid, _ = new_player("cb", wh_level=3)
     hidden = _place(a_hid, item=120, q=2, museum=7)
-    far = _place(a_hid, item=41, q=10, lat=LAT + 0.001)              # ~111 m away
-    near = _place(a_hid, item=41, q=10)
+    far = _place(a_hid, item=41, q=10_000, lat=LAT + 0.001)          # ~111 m away
+    near = _place(a_hid, item=41, q=10_000)
     seen = {c["id"] for c in call(C + "nearby", b_sid, lat1=LAT - .01, lng1=LNG - .01,
                                   lat2=LAT + .01, lng2=LNG + .01)["crates"]}
     assert near in seen and far in seen and hidden not in seen
     assert call(C + "collect", b_sid, id=hidden, lat=LAT, lng=LNG)["code"] == "not_visible"
     assert call(C + "collect", b_sid, id=far, lat=LAT, lng=LNG)["code"] == "out_of_range"   # 50 m at museum 0
-    set_building(b_hid, 65, 5)                                                              # 125 m, +25%
+    set_building(b_hid, 65, 5)                                              # 125 m, 1/32 of the Museum-10 amount
     r = call(C + "collect", b_sid, id=far, lat=LAT, lng=LNG)
-    assert r["qty"] == 12 and qty(b_hid, 41) == 12                          # 12.5 → whole units
+    assert r["qty"] == round(10_000 * cargo.museum_factor(5)) == 316 and qty(b_hid, 41) == 316
     assert call(C + "collect", b_sid, id=far, lat=LAT, lng=LNG)["code"] == "gone"           # once per player
 
 
 def test_shared_crate_each_player_once_then_gone_after_15_min():
     d_hid, _, _ = new_player("cr")
-    cid = _place(d_hid, item=41, q=10)
+    cid = _place(d_hid, item=41, q=10_000)                                  # 10 at Museum 0
     players = [new_player(f"cp{i}", wh_level=3) for i in range(6)]
     out = []
     ts = [threading.Thread(target=lambda s=p[1]: out.append(call(C + "collect", s, id=cid, lat=LAT, lng=LNG)))
@@ -113,7 +113,7 @@ def test_truck_collects_everything_nearby():
     d_hid, _, _ = new_player("ctd")
     lat0, lng0 = LAT + 1.0, LNG + 1.0                                             # away from other tests' crates
     for i in range(12):                                                            # 12 crates within ~130 m
-        _place(d_hid, item=41, q=3, lat=lat0 + i * 0.0001, lng=lng0)
+        _place(d_hid, item=41, q=3000, lat=lat0 + i * 0.0001, lng=lng0)         # 3 each at Museum 0
     assert call(C + "truck", sid, lat=lat0, lng=lng0, preview=1)["code"] == "locked"
     set_building(hid, 123, 5)                                                      # range 150 m
     p = call(C + "truck", sid, lat=lat0, lng=lng0, preview=1)
