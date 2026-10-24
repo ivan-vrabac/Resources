@@ -39,6 +39,7 @@ import random
 import uuid
 
 import econ
+import economy
 from . import cargo, int_arg
 
 MAFIA_HQ = 86
@@ -60,6 +61,34 @@ LOOT_HOURS_PER_LEVEL = 10
 REPAIR_COOLDOWN_S = 24 * 3600
 EXTERNAL_MAX_COND = 99.0        # owner 2026-10-24: like your own mines (was 96 %)
 REPAIR_DAILY_LIMIT = 20
+
+# Training (owner 2026-10-24): Mafia HQ trains attack units and Army Camp defence units, paid in
+# resources only. A unit costs its market buy price × TRAIN_PRICE_L1 at level 1, falling evenly to
+# × TRAIN_PRICE_L10 at level 10 (a bit cheaper than the market), split evenly over its recipe.
+TRAIN_RECIPES = {
+    102: (30, 75), 95: (30, 75),        # dogs: steel (kennels), medical technology
+    103: (87, 66), 97: (87, 66),        # gangsters / security staff: weapons, electronics
+    104: (87, 124), 98: (87, 124),      # private army / elite force: weapons, trucks
+}
+TRAIN_PRICE_L1, TRAIN_PRICE_L10 = 1.5, 0.9
+
+
+def train_building(unit: int) -> int:
+    return MAFIA_HQ if unit in ATTACK_UNITS else TRAINING_CAMP
+
+
+def train_cost_per_unit(unit: int, level: int) -> dict:
+    """{item: qty} for one unit at this building level (fractional; a batch rounds up)."""
+    from . import market
+    prices = economy.system_prices()
+    f = TRAIN_PRICE_L1 + (TRAIN_PRICE_L10 - TRAIN_PRICE_L1) * (max(1, min(10, level)) - 1) / 9
+    value = prices[unit] * market.SYSTEM_BUY_MARKUP * f
+    items = TRAIN_RECIPES[unit]
+    return {i: value / len(items) / prices[i] for i in items}
+
+
+def train_cost(unit: int, level: int, n: int) -> dict:
+    return {i: math.ceil(q * n - 1e-9) for i, q in train_cost_per_unit(unit, level).items()}
 
 
 def attack_values(mafia_level: int):
@@ -211,6 +240,39 @@ def install(api) -> None:
                              "lootEstimate": round(h.mine_rate_hr(conn, m["owner_hid"], m) * LOOT_HOURS_PER_LEVEL * mafia
                                                    * 0.5 ** recent_wins(conn, hid, econ.utcnow()))}
         return out
+
+    @api.endpoint("/api/v1/combat/training", feature="COMBAT")
+    def training(conn, hid, form):
+        """What Mafia HQ (attack) or Army Camp (defence) can train, and the cost per unit."""
+        building = int_arg(form, "building", MAFIA_HQ)
+        if building not in (MAFIA_HQ, TRAINING_CAMP):
+            raise econ.GameError("bad_input", "Unknown building")
+        level = h.building_level(conn, hid, building)
+        units = ATTACK_UNITS if building == MAFIA_HQ else DEFENCE_UNITS
+        return {"err": 0, "level": level, "units": [
+            {"unit": u, "have": econ.qty_of(conn, hid, u),
+             "cost": {str(i): q for i, q in train_cost_per_unit(u, level).items()}} for u in units]}
+
+    @api.endpoint("/api/v1/combat/train", feature="COMBAT")
+    def train(conn, hid, form):
+        """Turn resources into units at your Mafia HQ / Army Camp."""
+        unit = int_arg(form, "unit", 0)
+        if unit not in TRAIN_RECIPES:
+            raise econ.GameError("bad_input", "Unknown unit")
+        n = int_arg(form, "qty", 0, 1, MAX_UNITS)
+        with econ.tx(conn):
+            building = train_building(unit)
+            level = h.building_level(conn, hid, building)
+            if level < 1:
+                raise econ.GameError("locked", f"Build {'a Mafia HQ' if building == MAFIA_HQ else 'an Army Camp'} first")
+            cost = train_cost(unit, level, n)
+            for item, q in cost.items():
+                try:
+                    econ.take(conn, hid, item, q, "train", str(unit))
+                except econ.GameError:
+                    raise econ.GameError("insufficient_items", "Not enough resources")
+            econ.give(conn, hid, unit, n, "train")
+        return {"err": 0, "unit": unit, "qty": n, "cost": {str(i): q for i, q in cost.items()}}
 
     @api.endpoint("/api/v1/combat/station", feature="COMBAT")
     def station(conn, hid, form):

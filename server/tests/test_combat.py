@@ -173,3 +173,28 @@ def test_external_repair_inactive_owner():
         conn.commit()
     assert call("/api/v1/service/repair", h_sid, mineID=mid, lat=LAT + 0.05, lng=LNG)["code"] == "inactive_owner"
 
+
+
+def test_training_costs_resources_and_gets_cheaper_with_level():
+    import economy
+    from systems import market
+    for u in C.TRAIN_RECIPES:
+        prices = economy.system_prices()
+        market_price = prices[u] * market.SYSTEM_BUY_MARKUP
+        value = lambda lvl: sum(q * prices[i] for i, q in C.train_cost_per_unit(u, lvl).items())
+        assert abs(value(1) - 1.5 * market_price) < 1e-6
+        assert abs(value(10) - 0.9 * market_price) < 1e-6        # a bit cheaper than the market at level 10
+
+    hid, sid, _ = new_player("train", wh_level=10)
+    assert call("/api/v1/combat/train", sid, unit=103, qty=5)["err"] != 0       # no Mafia HQ
+    set_building(hid, C.MAFIA_HQ, 10)
+    cost = C.train_cost(103, 10, 5)
+    for i, q in cost.items():
+        give(hid, i, q)
+    r = call("/api/v1/combat/train", sid, unit=103, qty=5)
+    assert r["err"] == 0 and qty(hid, 103) == 5
+    assert all(qty(hid, i) == 0 for i in cost)
+    assert call("/api/v1/combat/train", sid, unit=97, qty=1)["err"] != 0        # defence needs an Army Camp
+    set_building(hid, C.TRAINING_CAMP, 1)
+    info = call("/api/v1/combat/training", sid, building=C.TRAINING_CAMP)
+    assert info["level"] == 1 and [u["unit"] for u in info["units"]] == list(C.DEFENCE_UNITS)

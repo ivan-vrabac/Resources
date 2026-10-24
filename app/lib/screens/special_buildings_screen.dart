@@ -6,6 +6,7 @@ import '../models/player_provider.dart';
 import '../services/api_service.dart';
 import '../services/game_api.dart';
 import '../widgets/top_banner.dart';
+import '../widgets/train_troops.dart';
 import 'casino_screen.dart';
 import 'headquarters_screen.dart';
 
@@ -389,6 +390,21 @@ class _SpecialBuildingCardState extends State<_SpecialBuildingCard> {
                   MaterialPageRoute(builder: (_) => const CasinoScreen()),
                 ),
                 // high-contrast play button
+                style: FilledButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black,
+                    textStyle: const TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
+
+          // Mafia HQ / Army Camp: train troops
+          if ((widget.itemId == 86 || widget.itemId == 96) && _owned) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.military_tech, size: 18),
+                label: const Text('Train troops'),
+                onPressed: () => showTrainTroops(context, widget.itemId),
                 style: FilledButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black,
                     textStyle: const TextStyle(fontWeight: FontWeight.bold)),
               ),
