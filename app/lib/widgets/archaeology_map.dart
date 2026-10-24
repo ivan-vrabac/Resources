@@ -11,6 +11,8 @@ import 'top_banner.dart';
 
 import '../app_colors.dart';
 import 'popups.dart';
+import 'cargo_map.dart' show showFound;
+import '../constants.dart' show fmtNum;
 /// Artifact detector on the map. Every scan uses up one Artifact Detector (server rule): the
 /// result (a yellow triangle towards the nearest artifact, or the artifact itself once within the
 /// reveal range) stays on the map for [resultTtl] or until the next scan.
@@ -72,7 +74,7 @@ class ArchaeologyController extends ChangeNotifier {
     notifyListeners();
     if (context.mounted) {
       AppNotify.show(context, r.data['found'] == true
-          ? (revealed != null ? 'Artifact found: ${revealed!['name']} (${revealed!['distance']} m)'
+          ? (revealed != null ? 'Artifact site found: ${revealed!['count'] ?? ''} artifacts (${revealed!['distance']} m)'
                               : 'Artifact signal ${band ?? ''} — follow the yellow triangle')
           : 'No artifact signal in range'
           '${detectorsLeft != null ? ' · $detectorsLeft detectors left' : ''}');
@@ -95,8 +97,13 @@ class ArchaeologyController extends ChangeNotifier {
         {'id': site['id'], 'lat': pos.latitude, 'lng': pos.longitude});
     if (!context.mounted) return;
     if (r.ok) {
-      AppNotify.show(context, 'Recovered ${r.data['name']}! (${r.data['archaeologistsUsed']} archaeologists)');
       clear();
+      // like a stacked crate: the whole site at once, every kind it held
+      await showFound(context,
+          'Artifact site recovered (${fmtNum((r.data['count'] as num? ?? 0).toInt())} artifacts, '
+          '${r.data['archaeologistsUsed']} archaeologists)',
+          (r.data['items'] as List? ?? const []).cast<Map<String, dynamic>>(),
+          empty: 'Nothing recovered.');
     } else {
       AppNotify.show(context, r.message ?? 'Recovery failed', isError: true);
     }
@@ -146,13 +153,27 @@ class ArchaeologyLayers extends StatelessWidget {
                 width: _artifactPx(ctx), height: _artifactPx(ctx),
                 child: GestureDetector(
                   onTap: () => _confirmRecover(ctx),
-                  child: Container(
-                    decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.black54,
-                        border: Border.all(color: Colors.yellowAccent, width: 3)),
-                    padding: const EdgeInsets.all(8),
-                    child: Image.asset('assets/mapmarkers/artifact.png',
-                        errorBuilder: (_, __, ___) => const Icon(Icons.diamond, color: Colors.yellowAccent)),
-                  ),
+                  // like a stacked crate: the artifact icon with how many artifacts the site holds
+                  child: Stack(clipBehavior: Clip.none, alignment: Alignment.center, children: [
+                    Container(
+                      decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.black54,
+                          border: Border.all(color: Colors.yellowAccent, width: 3)),
+                      padding: const EdgeInsets.all(8),
+                      child: Image.asset('assets/mapmarkers/artifact.png',
+                          errorBuilder: (_, __, ___) => const Icon(Icons.diamond, color: Colors.yellowAccent)),
+                    ),
+                    if (c.revealed!['count'] != null)
+                      Positioned(
+                        top: -14,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: Colors.yellowAccent, width: 1)),
+                          child: Text('${c.revealed!['count']}',
+                              style: const TextStyle(color: Colors.yellowAccent, fontSize: 10, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                  ]),
                 ),
               ),
           ]),
@@ -172,9 +193,10 @@ class ArchaeologyLayers extends StatelessWidget {
     final ok = await showAppDialog<bool>(
       context: context,
       builder: (dlg) => AlertDialog(
-        title: Text('Recover ${site['name']}?'),
-        content: Text('${site['distance']} m away. Recovering uses archaeologists; '
-            'you must be within your Museum pick-up range.'),
+        title: const Text('Recover the artifact site?'),
+        content: Text('About ${site['count'] ?? 100} artifacts of mixed kinds, ${site['distance']} m away. '
+            'Recovering uses archaeologists; you must be within your Museum pick-up range. '
+            'Other players can recover the same site too.'),
         actions: [
           TextButton(onPressed: () => popIfCurrent(dlg, false), child: const Text('Cancel')),
           FilledButton(onPressed: () => popIfCurrent(dlg, true), child: const Text('Recover')),

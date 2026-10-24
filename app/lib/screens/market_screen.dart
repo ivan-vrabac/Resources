@@ -21,13 +21,12 @@ class MarketScreen extends StatefulWidget {
 }
 
 class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 3, vsync: this);
+  late final TabController _tabs = TabController(length: 2, vsync: this);
   // the last data is kept for the session (like the flag): the list and its icons show at once
-  static List<Map<String, dynamic>> _cItems = [], _cOrders = [], _cTrades = [];
+  static List<Map<String, dynamic>> _cItems = [], _cOrders = [];
   static double _cTax = 0.15;
   List<Map<String, dynamic>> _items = _cItems;
   List<Map<String, dynamic>> _orders = _cOrders;
-  List<Map<String, dynamic>> _trades = _cTrades;
   double _taxRate = _cTax;
   bool _loading = _cItems.isEmpty;
   String? _error;
@@ -57,7 +56,6 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
     final res = await Future.wait([
       GameApi.call('/api/v1/market/overview', _sid),
       GameApi.call('/api/v1/market/mine', _sid),
-      GameApi.call('/api/v1/market/history', _sid),
     ]);
     if (!mounted) return;
     setState(() {
@@ -66,8 +64,7 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
       _items = res[0].list('items');
       _taxRate = (res[0].data['taxRate'] as num? ?? 0.15).toDouble();
       _orders = res[1].list('orders');
-      _trades = res[2].list('trades');
-      _cItems = _items; _cOrders = _orders; _cTrades = _trades; _cTax = _taxRate;
+      _cItems = _items; _cOrders = _orders; _cTax = _taxRate;      // your trades are in the log
     });
   }
 
@@ -87,7 +84,6 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
       TabBar(controller: _tabs, tabs: [
         const Tab(text: 'Market'),
         Tab(text: 'My orders (${_orders.length})'),
-        const Tab(text: 'History'),
       ]),
       Expanded(
         child: AsyncView(
@@ -146,27 +142,6 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
                         ),
                     ]),
             ),
-            // ── History ──
-            RefreshIndicator(
-              onRefresh: _load,
-              child: _trades.isEmpty
-                  ? ListView(children: [SizedBox(height: 80),
-                      Center(child: Text('No trades yet', style: TextStyle(color: AppColors.t54)))])
-                  : ListView(children: [
-                      for (final t in _trades)
-                        ListTile(
-                          dense: true,
-                          leading: ItemIcon(t['itemID'] as int, size: 24),
-                          title: Text('${t['side'] == 'buy' ? 'Bought' : 'Sold'} ${fmtQty(t['qty'] as num)} '
-                              '${itemName(t['itemID'] as int)}'),
-                          subtitle: Text('${t['kind'] == 'player' ? 'player' : 'system'} · '
-                              '${fmtCredits(t['price'] as num)}/unit'
-                              '${(t['tax'] as num? ?? 0) > 0 ? ' · tax ${fmtCredits(t['tax'] as num)}' : ''}'),
-                          trailing: Text((t['ts'] as String).substring(5, 16).replaceFirst('T', ' '),
-                              style: TextStyle(fontSize: 10, color: AppColors.t38)),
-                        ),
-                    ]),
-            ),
           ]),
         ),
       ),
@@ -188,8 +163,8 @@ class _MarketScreenState extends State<MarketScreen> with SingleTickerProviderSt
       leading: ItemIcon(id),
       title: Text(itemName(id)),
       subtitle: Row(children: [
-        quote('ASK', ask, kAskColor),
-        const SizedBox(width: 12),
+        // no ASK when the system doesn't sell the item (special items: sell only)
+        if (ask != null) ...[quote('ASK', ask, kAskColor), const SizedBox(width: 12)],
         quote('BID', bid, kBidColor),
       ]),
       trailing: Text(fmtQty(e['owned'] as num? ?? 0), style: TextStyle(color: AppColors.t54)),

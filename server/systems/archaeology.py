@@ -7,10 +7,13 @@ Shadow Obelisk, Thor's Crucible, Aeon Mechanism, Dwarven Pick), Museum 65.
 Rules (owner's rules 2026-10-19 marked *, the rest a documented proposal):
 - Sites: the world is split into CELL_DEG cells; each cell holds one artifact site per 24-hour
   period* with probability SITE_CHANCE, at a deterministic random spot (hash of cell + period).
-- * Several players can recover the same artifact (each once). After the first recovery the
-  site disappears 15 minutes later (GONE_AFTER_FIRST_S); otherwise it lasts its 24 hours.
+- * Several players can recover the same site (each once), like Cargo Rain crates. After the first
+  recovery the site disappears 15 minutes later (GONE_AFTER_FIRST_S); otherwise it lasts 24 hours.
+- * A site holds about 100 artifacts (90-110), a random mix of the kinds by ARTIFACT_WEIGHTS, the
+  same for everyone who recovers it (owner 2026-10-24); Throne of Depths adds 10/20/30 %.
 - * Every detector scan uses up one Artifact Detector (166). Needs Archaeological Center ≥ 1.
-  Detection range 300 m + 20 m × level (500 m at level 10); the scan reports a bearing and a band.
+  Detection range 3 000 m + 200 m × level (5 km at level 10, owner 2026-10-24: 10× the old range);
+  the scan reports a bearing and a band.
 - * Reveal range: 100 m at Center level 1 → 300 m at level 10 (linear).
 - Recovery: within the Museum pick-up range (50 m + 25 m × Museum level, 300 m at level 10, same as
   Cargo Rain);
@@ -20,6 +23,7 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import json
 import math
 import random
 
@@ -36,13 +40,14 @@ ARTIFACTS = {172: "Astrolabium", 173: "Throne of Depths", 174: "Shadow Obelisk",
 LEVEL_AT = (100, 500, 1000)
 ARTIFACT_EFFECTS = {
     172: ("Remote (drone) construction every {} h", (12, 11, 10, 8)),        # Astrolabium: cooldown hours
-    173: ("{}% chance to recover two artifacts", (0, 10, 20, 30)),           # Throne of Depths
+    173: ("+{}% artifacts per site recovered", (0, 10, 20, 30)),             # Throne of Depths
     174: ("+{}% recycling yield", (0, 15, 20, 30)),                           # Shadow Obelisk
     175: ("Factory instant production cooldown −{}%", (0, 15, 20, 30)),       # Thor's Crucible
     176: ("+{}% quest rewards", (0, 10, 20, 30)),                             # Aeon Mechanism
     177: ("Mine repairs (credits) −{}%", (0, 25, 35, 50)),                    # Dwarven Pick
 }
 ARTIFACT_WEIGHTS = {172: 30, 173: 10, 174: 20, 175: 15, 176: 5, 177: 20}
+SITE_MIN, SITE_MAX = 90, 110          # artifacts per site ("about 100")
 CELL_DEG = 0.02
 SITE_CHANCE = 0.35
 PERIOD_S = 24 * 3600
@@ -53,8 +58,8 @@ AREA_COOLDOWN_S = 12 * 3600
 
 
 def detect_range(level: int) -> float:
-    """320 m at Center level 1 … 500 m at level 10 (owner 2026-10-20: at most 500 m)."""
-    return 0.0 if level < 1 else 300.0 + 20.0 * min(10, level)
+    """3.2 km at Center level 1 … 5 km at level 10 (owner 2026-10-24: 10× the old 320-500 m)."""
+    return 0.0 if level < 1 else 3000.0 + 200.0 * min(10, level)
 
 
 def reveal_range(level: int) -> float:
@@ -110,8 +115,20 @@ def site_in_cell(cx: int, cy: int, period: str):
         if pick < wgt:
             break
         pick -= wgt
-    return {"id": f"{cx}:{cy}:{period}", "lat": (cy + fy) * CELL_DEG, "lng": (cx + fx) * CELL_DEG,
-            "item": item}
+    sid = f"{cx}:{cy}:{period}"
+    mix = site_mix(sid)
+    return {"id": sid, "lat": (cy + fy) * CELL_DEG, "lng": (cx + fx) * CELL_DEG,
+            "item": max(mix, key=mix.get), "mix": mix, "count": sum(mix.values())}
+
+
+def site_mix(site_id: str) -> dict:
+    """What a site holds: about 100 artifacts of random kinds, the same for every player."""
+    rng = random.Random(_h("mix", site_id))
+    n = rng.randint(SITE_MIN, SITE_MAX)
+    mix: dict = {}
+    for k in rng.choices(list(ARTIFACT_WEIGHTS), weights=list(ARTIFACT_WEIGHTS.values()), k=n):
+        mix[k] = mix.get(k, 0) + 1
+    return dict(sorted(mix.items()))
 
 
 def sites_near(lat, lng, radius_m, period):
@@ -182,6 +199,11 @@ def init_schema(conn) -> None:
             INSERT INTO artifact_recoveries SELECT site_id, hid, item_id, lat, lng, ts FROM artifact_recoveries_old;
             DROP TABLE artifact_recoveries_old;
         """)
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(artifact_recoveries)")]
+    if "qty" not in cols:          # artifacts got per recovery (a site holds about 100)
+        conn.execute("ALTER TABLE artifact_recoveries ADD COLUMN qty INTEGER NOT NULL DEFAULT 1")
+    if "got" not in cols:          # JSON {item: qty} of that recovery
+        conn.execute("ALTER TABLE artifact_recoveries ADD COLUMN got TEXT")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_artrec_hid ON artifact_recoveries(hid)")
     conn.execute("""CREATE TABLE IF NOT EXISTS artifact_levels (
         hid TEXT NOT NULL, item_id INTEGER NOT NULL, invested INTEGER NOT NULL DEFAULT 0,
@@ -216,8 +238,9 @@ def install(api) -> None:
     @api.endpoint("/api/v1/archaeology/status", feature="ARCHAEOLOGY")
     def status(conn, hid, form):
         coll = {}
-        for r in conn.execute("SELECT item_id, COUNT(*) FROM artifact_recoveries WHERE hid=? GROUP BY item_id", (hid,)):
-            coll[r[0]] = r[1]
+        for item_id, qty, got in conn.execute("SELECT item_id, qty, got FROM artifact_recoveries WHERE hid=?", (hid,)):
+            for k, v in (json.loads(got).items() if got else ((item_id, qty or 1),)):
+                coll[int(k)] = coll.get(int(k), 0) + int(v)
         inv = {r[0]: int(r[1]) for r in conn.execute("SELECT item_id, invested FROM artifact_levels WHERE hid=?", (hid,))}
 
         def entry(i, n):
@@ -276,7 +299,7 @@ def install(api) -> None:
                "detectorsLeft": left}
         if s["dist"] <= lv["revealRange"]:
             out["revealed"] = {"id": s["id"], "lat": s["lat"], "lng": s["lng"], "itemID": s["item"],
-                               "name": ARTIFACTS[s["item"]], "distance": round(s["dist"])}
+                               "name": ARTIFACTS[s["item"]], "distance": round(s["dist"]), "count": s["count"]}
         return out
 
     @api.endpoint("/api/v1/archaeology/recover", feature="ARCHAEOLOGY")
@@ -306,16 +329,21 @@ def install(api) -> None:
             need = lv["archaeologistsNeeded"]
             econ.take(conn, hid, ARCHAEOLOGISTS, need, "artifact_recovery", site_id)
             h.award_sink(conn, hid, res={ARCHAEOLOGISTS: need})
-            cur = conn.execute("INSERT OR IGNORE INTO artifact_recoveries(site_id, hid, item_id, lat, lng, ts) "
-                               "VALUES(?,?,?,?,?,?)", (site_id, hid, site["item"], site["lat"], site["lng"],
-                                                       econ.utcnow_iso()))
+            bonus = 1 + effect(conn, hid, 173) / 100                        # Throne of Depths +10/20/30 %
+            got = {k: int(round(q * bonus)) for k, q in site["mix"].items()}
+            n = sum(got.values())
+            cur = conn.execute("INSERT OR IGNORE INTO artifact_recoveries(site_id, hid, item_id, lat, lng, ts, qty, got) "
+                               "VALUES(?,?,?,?,?,?,?,?)", (site_id, hid, site["item"], site["lat"], site["lng"],
+                                                           econ.utcnow_iso(), n, json.dumps(got)))
             if cur.rowcount != 1:
                 raise econ.GameError("gone", "You already recovered this artifact")
-            n = 2 if random.random() * 100 < effect(conn, hid, 173) else 1      # Throne of Depths
-            econ.give(conn, hid, site["item"], n, "artifact_recovery", site_id, ignore_capacity=True)
-            econ.emit(conn, "artifact_found", hid, {"itemID": site["item"], "name": ARTIFACTS[site["item"]]},
+            for k, q in got.items():
+                econ.give(conn, hid, k, q, "artifact_recovery", site_id, ignore_capacity=True)
+                conn.execute("INSERT OR IGNORE INTO achievements(hid, code, title, ts) VALUES(?,?,?,?)",
+                             (hid, f"artifact_{k}", f"Found {ARTIFACTS[k]}", econ.utcnow_iso()))
+            econ.emit(conn, "artifact_found", hid, {"itemID": site["item"], "name": ARTIFACTS[site["item"]], "qty": n},
                       lat=round(site["lat"], 2), lng=round(site["lng"], 2), dedup=f"artifact:{site_id}:{hid}")
-            conn.execute("INSERT OR IGNORE INTO achievements(hid, code, title, ts) VALUES(?,?,?,?)",
-                         (hid, f"artifact_{site['item']}", f"Found {ARTIFACTS[site['item']]}", econ.utcnow_iso()))
+        # like a stacked crate: everything in it, commonest first
+        items = [{"itemID": k, "qty": q} for k, q in sorted(got.items(), key=lambda kv: -ARTIFACT_WEIGHTS[kv[0]])]
         return {"err": 0, "itemID": site["item"], "name": ARTIFACTS[site["item"]], "archaeologistsUsed": need,
-                "count": n}
+                "count": n, "items": items}

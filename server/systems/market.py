@@ -28,6 +28,7 @@ import datetime
 import uuid
 
 import econ
+import economy
 from . import float_arg, int_arg
 
 HAULAGE_FIRM = 123
@@ -99,6 +100,10 @@ def install(api) -> None:
 
     # ── helpers ─────────────────────────────────────────────────────────────
 
+    def sys_buy(item_id, p):
+        """What a player pays the system (150 %), None when the system doesn't sell the item."""
+        return round(p * SYSTEM_BUY_MARKUP, 2) if p and item_id not in economy.SELL_ONLY else None
+
     def check_tradeable(item_id: int) -> None:
         if item_id in RESTRICTED:
             raise econ.GameError("restricted", f"{RESTRICTED[item_id]} can't be traded on the market")
@@ -135,6 +140,15 @@ def install(api) -> None:
                       buy_order, sell_order))
         econ.emit(conn, "market_trade", buyer or seller, {"kind": kind, "itemID": item_id, "qty": qty,
                                                           "price": price}, public=False)
+        # owner 2026-10-24: your trades are in the log (which deletes old entries), not a market history
+        value = round(qty * price)
+        to = "the system" if kind.startswith("system") else "a player"
+        if buyer:
+            h.add_proto(conn, buyer, "marketbuy", {"itemID": item_id, "qty": qty, "cost": value + (tax if tax_payer == buyer else 0),
+                                                   "from": to})
+        if seller:
+            h.add_proto(conn, seller, "marketsold", {"itemID": item_id, "qty": qty,
+                                                     "earned": value - (tax if tax_payer == seller else 0), "to": to})
 
     def fill_resting_buy(conn, o, seller_hid: str, qty: float) -> dict:
         """Seller (taker) sells qty into resting buy order o at o.price."""
@@ -199,7 +213,7 @@ def install(api) -> None:
             raise econ.GameError("price_too_high",
                                  f"Bid at most 25% above the best bid ({top['price'] * MAX_BID_OVER_TOP:.2f})")
         sp = prices.get(item_id)
-        if sp and price > sp * SYSTEM_BUY_MARKUP + 1e-9:
+        if sp and item_id not in economy.SELL_ONLY and price > sp * SYSTEM_BUY_MARKUP + 1e-9:
             raise econ.GameError("price_too_high", "Above the system ASK price.")
         if sp and price < sp - 1e-9:      # the system's buying price is the floor
             raise econ.GameError("price_too_low", "Below the system BID price.")
@@ -212,7 +226,7 @@ def install(api) -> None:
             expire(conn)
         items = {}
         for iid, p in prices.items():
-            items[iid] = {"itemID": iid, "systemSell": p, "systemBuy": round(p * SYSTEM_BUY_MARKUP, 2)}
+            items[iid] = {"itemID": iid, "systemSell": p, "systemBuy": sys_buy(iid, p)}
         for r in conn.execute("SELECT item_id, side, MAX(price), MIN(price), SUM(qty_open) FROM mkt_orders "
                               "WHERE status='open' GROUP BY item_id, side"):
             e = items.setdefault(r[0], {"itemID": r[0], "systemSell": None, "systemBuy": None})
@@ -220,8 +234,6 @@ def install(api) -> None:
                 e["bestBid"], e["bidQty"] = r[2], r[4]
             else:
                 e["bestAsk"], e["askQty"] = r[3], r[4]
-        for iid in ARTIFACTS:      # players-only items: always listed so buyers can place orders
-            items.setdefault(iid, {"itemID": iid, "systemSell": None, "systemBuy": None})
         mine = {r[0]: r[1] for r in conn.execute("SELECT item_id, qty FROM warehouse WHERE hid=? AND qty > 0", (hid,))}
         for iid, q in mine.items():
             if iid in RESTRICTED or iid in LUXURY_ITEMS or iid in h.SPECIAL_BUILDINGS \
@@ -240,7 +252,7 @@ def install(api) -> None:
         mine = conn.execute("SELECT * FROM mkt_orders WHERE hid=? AND item_id=? AND side='buy' AND status='open'",
                             (hid, item_id)).fetchone()
         return {"err": 0, "itemID": item_id, "bids": book_side(conn, hid, item_id, "buy", limit=50),
-                "systemSell": p, "systemBuy": round(p * SYSTEM_BUY_MARKUP, 2) if p else None,
+                "systemSell": p, "systemBuy": sys_buy(item_id, p),
                 "owned": econ.qty_of(conn, hid, item_id), "taxRate": my_tax(conn, hid),
                 "credits": econ.credits_of(conn, hid), "freeSpace": int(econ.free_space(conn, hid)),
                 "myOrder": None if not mine else {"id": mine["id"], "price": mine["price"], "qty": int(mine["qty_open"]),
@@ -289,7 +301,9 @@ def install(api) -> None:
         out = []
         for i in range(days):
             d = (start + datetime.timedelta(days=i)).isoformat()
-            ss, sb = snap.get(d, (p, round(p * SYSTEM_BUY_MARKUP, 2) if p else None))
+            ss, sb = snap.get(d, (p, sys_buy(item_id, p)))
+            if item_id in economy.SELL_ONLY:
+                sb = None
             a, q = avg.get(d, (None, 0))
             out.append({"day": d, "systemSell": ss, "systemBuy": sb,
                         "avg": round(a, 2) if a is not None else ss, "traded": int(q)})
@@ -307,7 +321,7 @@ def install(api) -> None:
                 raise econ.GameError("no_price", "The system doesn't buy this item")
             return {"err": 0, "value": round(qty * p), "tax": 0, "total": round(qty * p)}
         if action == "system_buy":
-            if not p:
+            if not p or item_id in economy.SELL_ONLY:
                 raise econ.GameError("no_price", "The system doesn't sell this item")
             v = round(qty * p * SYSTEM_BUY_MARKUP)
             tax = round(v * rate)
@@ -354,6 +368,8 @@ def install(api) -> None:
                 econ.credit(conn, hid, value, "system_sell")
                 record(conn, "system_sell", item_id, qty, p, None, hid)
                 return {"err": 0, "qty": qty, "credits": value}
+            if side == "buy" and item_id in economy.SELL_ONLY:
+                raise econ.GameError("sell_only", "The system buys this item but doesn't sell it")
             if side == "buy":       # 150 % of the system price + your transport tax (owner's rule)
                 value = round(qty * p * SYSTEM_BUY_MARKUP)
                 tax = round(value * my_tax(conn, hid))
@@ -459,6 +475,10 @@ def install(api) -> None:
         iso = day.isoformat()
         if conn.execute("SELECT 1 FROM price_days WHERE day=? LIMIT 1", (iso,)).fetchone():
             return
+        # once a day: trades older than the longest chart (365 days) are no longer needed
+        old = (day - datetime.timedelta(days=366)).isoformat()
+        conn.execute("DELETE FROM mkt_trades WHERE ts < ?", (old,))
+        conn.execute("DELETE FROM price_days WHERE day < ?", (old,))
         conn.executemany("INSERT OR IGNORE INTO price_days(day, item_id, sys_sell, sys_buy) VALUES(?,?,?,?)",
                          [(iso, i, v, round(v * SYSTEM_BUY_MARKUP, 2)) for i, v in prices.items()])
 

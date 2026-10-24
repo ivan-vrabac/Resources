@@ -3283,16 +3283,16 @@ async def factory_new_order(request: Request):
                     return zlib_resp({"err": 4, "msg": f"not enough credits (ꞓ{credits:,} for {batches} batches)"})
                 award_sink(conn, hid, credits=credits)
                 level_mult = float(max(1, factory["level"]))      # srx.txt: production/h = base × level
-                # a booster raises at most its 8 hours of LEVEL-1 production (owner 2026-10-24 audit:
-                # one booster can't boost an order of a thousand batches, nor scale with the factory
-                # level; its price is the extra output of those 8 hours)
+                # a booster raises the batches made while it lasts, at the factory's level (one
+                # booster can't boost an order of a thousand batches; owner 2026-10-24: its price
+                # scales instead, billions)
                 booster_mult, boosted = 1.0, 0
                 if factory["booster_until"] and factory["booster_item"]:
                     try:
                         left_h = (datetime.datetime.fromisoformat(factory["booster_until"]) - now).total_seconds() / 3600
                         if left_h > 0:
                             booster_mult = WA_BOOSTERS.get(factory["booster_item"], {}).get("boost", 1.0)
-                            boosted = min(batches, int(math.ceil(left_h / ft["hrs"] - 1e-9)))
+                            boosted = min(batches, int(math.ceil(left_h * level_mult / ft["hrs"] - 1e-9)))
                     except ValueError:
                         pass
                 output = round(ft["out"] * (batches + boosted * (booster_mult - 1)), 1)

@@ -40,8 +40,10 @@ def test_system_trade_prices_and_restrictions():
     assert credits(hid) == 1_000_000 + 5000 - 862
     for banned in (42, 48):                                         # Giant Diamonds, TU IV: not tradeable at all
         assert call(M + "system", sid, side="buy", itemID=banned, qty=1)["code"] == "restricted"
-    give(hid, 172, 1)                                               # artifacts: players only (2026-10-24)
-    assert call(M + "system", sid, side="sell", itemID=172, qty=1)["code"] == "no_price"
+    give(hid, 172, 1)                                               # special items: sell to the system only
+    assert call(M + "system", sid, side="sell", itemID=172, qty=1)["err"] == 0
+    for special in (43, 44, 45, 46, 158, 159, 160, 161, 172, 176):
+        assert call(M + "system", sid, side="buy", itemID=special, qty=1)["code"] == "sell_only"
     for restricted in (42, 48, 130):
         give(hid, restricted, 1)
         assert call(M + "system", sid, side="sell", itemID=restricted, qty=1)["code"] == "restricted"

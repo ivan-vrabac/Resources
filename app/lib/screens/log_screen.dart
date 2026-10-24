@@ -4,7 +4,7 @@ import '../models/player_provider.dart';
 import '../services/api_service.dart';
 
 import '../app_colors.dart';
-import '../constants.dart' show fmtNum;
+import '../constants.dart' show fmtNum, itemName;
 import '../widgets/radar_icon.dart';
 const _kCategories = [
   ('All', ''),
@@ -240,8 +240,8 @@ class _LogScreenState extends State<LogScreen> {
       case 'buyfactory': return 'Built factory';
       case 'factcollect': return 'Collected ${data['qty']} from factory';
       case 'marketsell': return 'Listed item ${data['itemID']} × ${data['qty']} @ ꞓ${fmtNum(data['price'] as num? ?? 0)}';
-      case 'marketbuy': return 'Bought ${data['qty']} × item ${data['itemID']} for ꞓ${fmtNum(data['cost'] as num? ?? 0)}';
-      case 'marketsold': return 'Sold to buyer. Earned ꞓ${fmtNum(data['earned'] as num? ?? 0)}';
+      case 'marketbuy': return 'Bought ${fmtNum(data['qty'] as num? ?? 0)} × ${itemName((data['itemID'] as num? ?? 0).toInt())} for ꞓ${fmtNum(data['cost'] as num? ?? 0)}${data['from'] != null ? ' from ${data['from']}' : ''}';
+      case 'marketsold': return data['itemID'] == null ? 'Sold to buyer. Earned ꞓ${fmtNum(data['earned'] as num? ?? 0)}' : 'Sold ${fmtNum(data['qty'] as num? ?? 0)} × ${itemName((data['itemID'] as num).toInt())} to ${data['to'] ?? 'a buyer'} for ꞓ${fmtNum(data['earned'] as num? ?? 0)}';
       case 'mineupgrade': return 'Upgraded mine to Lv ${data['newLvl'] ?? '?'}. Cost: ꞓ${fmtNum(data['cost'] as num? ?? 0)}';
       case 'techupgrade': return 'Tech upgraded mine (Tech Lv ${data['newTech'] ?? '?'})';
       case 'accident':

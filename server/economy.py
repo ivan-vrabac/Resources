@@ -106,11 +106,10 @@ def _derive_prices() -> dict:
         if prod in FIXED_PRICES:
             p[prod] = FIXED_PRICES[prod]
             continue
-        # the margin is on the resources only; production credits pass through at cost (owner
-        # 2026-10-24 audit: with the margin on the credits too, buying every input from the system
-        # at 150 % and selling the product back paid off for credit-heavy recipes, a money loop)
-        cost = sum(p[i] * q for i, q in inp.items())
-        p[prod] = round((cost * margin(unlock) + cr) / out, 2)
+        # owner 2026-10-24: buying inputs from the system for a small profit is allowed, as long as
+        # a player's own mined resources always pay more (they do: they cost 100 %, not 150 % + tax)
+        cost = sum(p[i] * q for i, q in inp.items()) + cr
+        p[prod] = round(cost / out * margin(unlock), 2)
     return p
 
 
@@ -253,22 +252,27 @@ OTHER_PRICES = {
     # Tech Upgrades (IV is not tradeable): each unit is +1 % (TU3 +1.5 %) output on one mine for
     # ever; on a mid-game mine (8 M base cost = 8 M a day) that's 80 k a day, paid back in about a week
     44: 500_000, 45: 600_000, 46: 900_000,
-    # production boosters (one factory, 8 h, only the batches that fit in those 8 h): priced as the
-    # extra output of a typical mid-game factory (about 1 M of products an hour): +10/20/30/50 %
-    159: 800_000, 160: 1_600_000, 158: 2_400_000, 161: 4_000_000,
+    # production boosters (one factory, 8 h, every batch made in those 8 h at the factory's level):
+    # priced by what they boost (owner 2026-10-24: billions), a late factory makes billions in 8 h
+    159: 1_000_000_000, 160: 2_000_000_000, 158: 3_000_000_000, 161: 5_000_000_000,
     # units: 1 000 credits per point of defence, 2 000 per point of attack (loot is 10 h of the
     # target mine's output per Mafia HQ level, so a big mine is worth sending an army)
     95: 5_000, 97: 50_000, 98: 100_000, 102: 10_000, 103: 100_000, 104: 200_000,
-    # archaeologists: 70-100 go into every recovery (about half a detector's worth)
-    167: 100_000,
+    # archaeologists: 70-100 go into every recovery of a ~100-artifact site (owner 2026-10-24: 10×)
+    167: 1_000_000,
 }
 
 
-# Artifacts have no system price (owner 2026-10-24): the system neither sells nor buys them, so
-# money can't replace hunting; players trade them among themselves (buy orders, no floor/ceiling).
-# What a find is worth in detector scans (about a dozen scans of ≈ 18 M, split by rarity), for reference:
-ARTIFACT_VALUE = {172: 1_000_000_000, 173: 3_000_000_000, 174: 1_500_000_000, 175: 2_000_000_000,
-                  176: 6_000_000_000, 177: 1_500_000_000}
+# Artifacts (owner 2026-10-24): a site holds about 100 of mixed kinds and a 5 km detector finds one
+# with nearly every scan. A recovery costs one detector (≈ 21 M) and 70-100 archaeologists (1 M
+# each), so a site (≈ 100 artifacts, ≈ 360 M on average) pays about 3× that; rarer = dearer.
+ARTIFACT_VALUE = {172: 2_000_000, 173: 6_000_000, 174: 3_000_000, 175: 4_000_000, 176: 12_000_000,
+                  177: 3_000_000}
+OTHER_PRICES.update(ARTIFACT_VALUE)
+
+# Special items (owner 2026-10-24): the system BUYS them (players can sell them) but never SELLS
+# them, so money can't replace finding them. Players may still trade them among themselves.
+SELL_ONLY = {43, 44, 45, 46, 158, 159, 160, 161, *ARTIFACT_VALUE}
 
 
 def system_prices() -> dict:

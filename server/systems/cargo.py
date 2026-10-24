@@ -82,11 +82,26 @@ LOOT = {
 # hold the sfo.txt specials; containers and stacks hold the regular LOOT only.
 BOX_EXTRA = {
     42: ("Giant Diamond", 0.02, 10), 44: ("Tech Upgrade 1", 0.58, 10), 45: ("Tech Upgrade 2", 0.23, 10),
-    46: ("Tech Upgrade 3", 0.12, 10), 48: ("Tech Upgrade 4", 0.02, 10), 159: ("Overtime", 0.12, 0),
-    158: ("Night Shift", 0.12, 0), 160: ("Guest Workers", 0.12, 0), 161: ("Wage Subsidy", 0.12, 0),
+    # boosters are worth billions now (owner 2026-10-24), so only a Museum level 10 finds them
+    46: ("Tech Upgrade 3", 0.12, 10), 48: ("Tech Upgrade 4", 0.02, 10), 159: ("Overtime", 0.12, 10),
+    158: ("Night Shift", 0.12, 10), 160: ("Guest Workers", 0.12, 10), 161: ("Wage Subsidy", 0.12, 10),
 }
 BOX_LOOT = {**LOOT, **BOX_EXTRA}
 BOX_SHARE = 0.2              # one crate in five is a cargo box, the rest are containers
+
+
+def drop_table() -> list:
+    """How many of 100 crates hold each found object (owner 2026-10-24: drop table in the app):
+    4 in 5 crates are containers (LOOT), 1 in 5 cargo boxes (LOOT + specials)."""
+    w_loot = sum(v[1] for v in LOOT.values())
+    w_box = sum(v[1] for v in BOX_LOOT.values())
+    out = []
+    for item, (name, w, museum) in BOX_LOOT.items():
+        per100 = 100 * ((1 - BOX_SHARE) * (w / w_loot if item in LOOT else 0) + BOX_SHARE * w / w_box)
+        lo, hi = QTY[item]
+        out.append({"itemID": item, "name": name, "per100": round(per100, 3), "min": lo, "max": hi,
+                    "museum": museum, "boxOnly": item not in LOOT})
+    return sorted(out, key=lambda e: -e["per100"])
 
 
 def by_rarity(got: dict) -> list:
@@ -367,7 +382,8 @@ def install(api) -> None:
                 "stackUnlocked": lv["haulage"] >= STACK_HF_LEVEL, "stackSize": STACK_SIZE,
                 "maxStacks": MAX_STACKS_PER_DROP,
                 "stackHaulageLevel": STACK_HF_LEVEL, "maxDrop": MAX_DROP,
-                "trucks": econ.qty_of(conn, hid, TRUCKS), "drones": econ.qty_of(conn, hid, SCAN_DRONE)}
+                "trucks": econ.qty_of(conn, hid, TRUCKS), "drones": econ.qty_of(conn, hid, SCAN_DRONE),
+                "dropTable": drop_table()}
 
     @api.endpoint("/api/v1/cargo/drop", feature="CARGO")
     def drop(conn, hid, form):

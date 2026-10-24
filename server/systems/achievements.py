@@ -25,7 +25,7 @@ DEFS = {
     "attacker":     ("Attacker", "Attacks won", (10, 100, 1000), "wins"),
     "friend":       ("Friend in need", "Other players' mines repaired", (10, 100, 1000), "mines"),
     "special":      ("Master builder", "Special building upgrades", (10, 50, 100), "levels"),
-    "artifacts":    ("Archaeologist", "Artifacts recovered", (10, 100, 500), "artifacts"),
+    "artifacts":    ("Archaeologist", "Artifact sites recovered", (10, 100, 500), "artifacts"),
     "repairs":      ("Mechanic", "Mines repaired", (1000, 50000, 100000), "repairs"),
     "streak":       ("Quest solver", "Daily quest streak", (7, 30, 90), "days"),
     "warehouse":    ("Storekeeper", "Warehouse level", (10, 50, 100), ""),

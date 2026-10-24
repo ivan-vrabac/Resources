@@ -61,7 +61,9 @@ def test_recover_once_costs_archaeologists_and_needs_range():
     for t in ts:
         t.join()
     assert sum(1 for r in out if r["err"] == 0) == 2          # several players can recover the same artifact
-    assert qty(a_hid, site["item"]) == 1 == qty(b_hid, site["item"])
+    for k, q in site["mix"].items():                          # the same ~100 mixed artifacts for both, like crates
+        assert qty(a_hid, k) == q == qty(b_hid, k)
+    assert 90 <= site["count"] <= 110 and sum(site["mix"].values()) == site["count"]
     assert qty(a_hid, 167) == 10 == qty(b_hid, 167)
     assert call(R + "recover", a_sid, id=site["id"], lat=site["lat"], lng=site["lng"])["code"] == "gone"  # once each
     det = call(R + "detect", a_sid, lat=site["lat"], lng=site["lng"])
@@ -81,5 +83,5 @@ def test_ranges_and_archaeologists_by_level():
 
 
 def test_detect_and_pickup_ranges_capped():
-    assert A.detect_range(1) == 320 and A.detect_range(10) == 500
+    assert A.detect_range(1) == 3200 and A.detect_range(10) == 5000      # 10× (owner 2026-10-24)
     assert A.pickup_range(0) == 50 and A.pickup_range(10) == 300

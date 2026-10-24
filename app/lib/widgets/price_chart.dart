@@ -76,7 +76,8 @@ class _PriceHistoryChartState extends State<PriceHistoryChart> {
       Wrap(spacing: 12, children: [
         // colours follow Settings › Numbers (ASK/BID colours)
         _legend(kBidColor, 'System buys at (BID)'),
-        _legend(kAskColor, 'System sells at (ASK)'),
+        // no ASK line or legend when the system doesn't sell the item (sell-only special items)
+        if (_rows.any((r) => r['systemBuy'] != null)) _legend(kAskColor, 'System sells at (ASK)'),
         _legend(Colors.amberAccent, 'Players paid (daily average, dashed)'),
       ]),
     ]);

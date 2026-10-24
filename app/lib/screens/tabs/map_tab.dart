@@ -1458,7 +1458,7 @@ class _MapTabState extends State<MapTab> {
                 }
               }
               return Stack(children: [
-                PolygonLayer(polygons: [for (final r in rings) ringPolygon(_pos!, r.$2, r.$1)]),
+                CircleLayer(circles: [for (final r in rings) ringCircle(_pos!, r.$2, r.$1)]),
                 if (labels.isNotEmpty) MarkerLayer(markers: labels),
               ]);
             }),
@@ -1470,7 +1470,7 @@ class _MapTabState extends State<MapTab> {
               final d = _distM(_pos!, c);
               if (!kRingLooks['scan']!.show) return const SizedBox.shrink();
               if (!(d <= 100 || (droneRange > 0 && d <= droneRange))) return const SizedBox.shrink();
-              return PolygonLayer(polygons: [ringPolygon(c, scanRadius, 'scan')]);
+              return CircleLayer(circles: [ringCircle(c, scanRadius, 'scan')]);
             }),
           ],
 

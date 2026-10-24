@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -59,19 +58,15 @@ Future<void> saveRingLook(String key) async {
   await p.setBool('${key}_ring_show', l.show);
 }
 
-/// A ring of `radiusM` metres around `c` as a polygon (fill + plain border).
-Polygon ringPolygon(LatLng c, double radiusM, String key) {
+/// A ring of `radiusM` metres around `c`: a true circle (CircleMarker in metres, as before the
+/// line-style experiment), filled or not.
+CircleMarker ringCircle(LatLng c, double radiusM, String key) {
   final look = kRingLooks[key]!;
-  const n = 120;
-  final dLat = radiusM / 111320.0;
-  final dLng = dLat / math.max(0.01, math.cos(c.latitude * math.pi / 180));
-  final pts = [
-    for (var i = 0; i <= n; i++)
-      LatLng(c.latitude + dLat * math.cos(2 * math.pi * i / n), c.longitude + dLng * math.sin(2 * math.pi * i / n)),
-  ];
-  return Polygon(
-    points: pts,
-    color: look.fill ? look.color.withValues(alpha: look.opacity * 0.12) : null,
+  return CircleMarker(
+    point: c,
+    radius: radiusM,
+    useRadiusInMeter: true,
+    color: look.fill ? look.color.withValues(alpha: look.opacity * 0.12) : Colors.transparent,
     borderColor: look.color.withValues(alpha: look.opacity.clamp(0.15, 1.0)),
     borderStrokeWidth: 1.6,
   );

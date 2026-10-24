@@ -157,7 +157,9 @@ def public_profile(conn, h, viewer_hid: str, target_hid: str) -> dict:
         "SELECT item_id, qty FROM luxury_items WHERE hid=? AND qty>=1 ORDER BY item_id", (target_hid,))] \
         if _has_table(conn, "luxury_items") else []
     # artifacts the company has FOUND (recoveries), not bought or held (owner 2026-10-24)
-    out["artifacts"] = int(conn.execute("SELECT COUNT(*) FROM artifact_recoveries WHERE hid=?", (target_hid,)).fetchone()[0]) \
+    # artifacts found: every artifact of every site recovered (a site holds about 100)
+    out["artifacts"] = int(conn.execute("SELECT COALESCE(SUM(qty), 0) FROM artifact_recoveries WHERE hid=?",
+                                        (target_hid,)).fetchone()[0]) \
         if _has_table(conn, "artifact_recoveries") else 0
     if _has_table(conn, "attacks"):
         a = conn.execute("SELECT COALESCE(SUM(success),0), COUNT(*) FROM attacks WHERE attacker_hid=?", (target_hid,)).fetchone()
