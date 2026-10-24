@@ -1049,16 +1049,7 @@ class _NotificationsPageState extends State<_NotificationsPage> {
             ),
           ),
         const SizedBox(height: 16),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            'At most one notification per category per 24 hours. '
-            'Multiple mine events are combined into a single notification. '
-            'Notifications are scheduled locally based on mine conditions at last sync.',
-            style: TextStyle(fontSize: 11, color: AppColors.t38),
-          ),
-        ),
-        const SizedBox(height: 16),
+
       ]),
     );
   }
