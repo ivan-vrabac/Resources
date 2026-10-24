@@ -162,8 +162,9 @@ def wh_capacity(level: int) -> float:
 
 
 def wh_upgrade_cost(level: int) -> int:
-    """Upgrade from `level` to level+1: 12 500 × L² × 1.03^L (grows exponentially in the end)."""
-    return int(round(12_500 * level ** 2 * 1.03 ** level, -2))
+    """Upgrade from `level` to level+1: 8 125 × L² × 1.03^L (grows exponentially in the end;
+    owner 2026-10-24: 35 % cheaper than the old 12 500)."""
+    return int(round(8_125 * level ** 2 * 1.03 ** level, -2))
 
 
 # ── scans ────────────────────────────────────────────────────────────────────

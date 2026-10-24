@@ -59,9 +59,9 @@ class _WarehouseTabState extends State<WarehouseTab> {
     }
   }
 
-  /// Same as the server (economy.wh_upgrade_cost): 12 500 × L² × 1.03^L, rounded to 100.
+  /// Same as the server (economy.wh_upgrade_cost): 8 125 × L² × 1.03^L, rounded to 100.
   // computed as a double: at very high levels the price no longer fits a whole number (it was shown as -100)
-  static double _upgradeCost(int level) => ((12500 * level * level * pow(1.03, level)) / 100).roundToDouble() * 100;
+  static double _upgradeCost(int level) => ((8125 * level * level * pow(1.03, level)) / 100).roundToDouble() * 100;
   static const double _kMaxCredits = 9e18;
   static String _price(double c) => c >= _kMaxCredits ? 'more than any balance can hold' : 'ꞓ${fmtNum(c.round())}';
   static int _capAtLevel(int level) => 5000 * level * level;
