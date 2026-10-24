@@ -740,7 +740,12 @@ class _MapTabState extends State<MapTab> {
       _onPos(pos);
     } catch (_) {}
     _startPosStream();
-    _markerTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadMarkers());
+    var tick = 0;
+    _markerTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      // every 30 s, every 5 s while a scan result is open (a friend's new mine can be built over
+      // for 30 s only)
+      if (++tick % 6 == 0 || _prospectToken != null) _loadMarkers();
+    });
   }
 
   void _startPosStream() {
@@ -926,6 +931,11 @@ class _MapTabState extends State<MapTab> {
       final result = await ApiService.getMapMarkers(
           sid, bounds.south, bounds.west, bounds.north, bounds.east);
       if (!mounted || seq != _loadSeq || result == null) return;
+      final now = DateTime.now();
+      for (final m in result) {
+        final left = (m is Map ? m['overlapLeft'] as num? : null);
+        if (left != null) m['overlapUntil'] = now.add(Duration(milliseconds: (left * 1000).round()));
+      }
       setState(() => _markers = result);
       // Prefetch smoke so zooming out shows it immediately.
       unawaited(_ensureSmoke(sid, bounds));
@@ -993,6 +1003,11 @@ class _MapTabState extends State<MapTab> {
     return 15.0 * math.sqrt(3) / math.cos(phi);
   }
 
+  static bool _overlapOpen(dynamic m) {
+    final until = m is Map ? m['overlapUntil'] : null;
+    return until is DateTime && until.isAfter(DateTime.now());
+  }
+
   // Snap to the nearest valid hex-grid slot around existing mines.
   // Adjacent mines are exactly sqrt(3)*15 ≈ 25.98m apart (edge-to-edge tiling).
   // Enumerate all 6 neighbor slots of each mine; pick the valid slot closest to target.
@@ -1007,10 +1022,17 @@ class _MapTabState extends State<MapTab> {
       5 * math.pi / 3,  // 300° NW
     ];
 
-    final mines = _markers
-        .where((m) => m['type'] != 'hq')
-        .map((m) => LatLng((m['lat'] as num).toDouble(), (m['lng'] as num).toDouble()))
-        .toList();
+    // A friend's mine built in the last 30 s may be built over (server FRIEND_OVERLAP_S): it does
+    // not block, and a target inside its hex snaps onto it.
+    final open = <LatLng>[];
+    final mines = <LatLng>[];
+    for (final m in _markers.where((m) => m['type'] != 'hq')) {
+      final pt = LatLng((m['lat'] as num).toDouble(), (m['lng'] as num).toDouble());
+      (_overlapOpen(m) ? open : mines).add(pt);
+    }
+    for (final f in open) {
+      if (_distM(f, target) < 15) return f;
+    }
 
     if (mines.isEmpty) return target;
 
@@ -1580,6 +1602,9 @@ class _MapTabState extends State<MapTab> {
                             ),
                           ),
                         ),
+                        if (_overlapOpen(m))
+                          _OverlapCountdown(until: m['overlapUntil'] as DateTime,
+                              size: markerH * 0.7, onDone: () { if (mounted) setState(() {}); }),
                         if (showBar)
                           Positioned(
                             bottom: markerH * 0.2,
@@ -2301,7 +2326,7 @@ class _MapTabState extends State<MapTab> {
             Text('ꞓ${fmtNum(cost)}', style: const TextStyle(color: Colors.amber)),
           ]),
           const SizedBox(height: 8),
-          if (!inDroneRange) ...[
+          if (!inLocalRange && !inDroneRange) ...[
             Text(
               distToTarget < double.infinity
                   ? 'Mine hex is ${distToTarget.round()}m away — local limit is 100m.'
@@ -2883,3 +2908,52 @@ class _MapMineSheetState extends State<_MapMineSheet> {
   }
 }
 
+/// Yellow ring inside a friend's new mine that runs out with the time left to build over it.
+class _OverlapCountdown extends StatefulWidget {
+  final DateTime until;
+  final double size;
+  final VoidCallback onDone;
+  const _OverlapCountdown({required this.until, required this.size, required this.onDone});
+  @override
+  State<_OverlapCountdown> createState() => _OverlapCountdownState();
+}
+
+class _OverlapCountdownState extends State<_OverlapCountdown> {
+  Timer? _t;
+
+  @override
+  void initState() {
+    super.initState();
+    _t = Timer.periodic(const Duration(milliseconds: 250), (_) {
+      if (!mounted) return;
+      if (!widget.until.isAfter(DateTime.now())) {
+        _t?.cancel();
+        widget.onDone();
+      }
+      setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final left = widget.until.difference(DateTime.now()).inMilliseconds / 30000.0;
+    if (left <= 0) return const SizedBox.shrink();
+    return IgnorePointer(
+      child: SizedBox(
+        width: widget.size, height: widget.size,
+        child: CircularProgressIndicator(
+          value: left.clamp(0.0, 1.0),
+          strokeWidth: (widget.size * 0.1).clamp(1.5, 5.0),
+          color: Colors.yellowAccent,
+          backgroundColor: Colors.black38,
+        ),
+      ),
+    );
+  }
+}

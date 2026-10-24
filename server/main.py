@@ -2220,6 +2220,28 @@ async def player_get_data(request: Request):
 # ── Scanner ─────────────────────────────────────────────────────────────────────
 
 LOCAL_CONSTRUCTION_RANGE_M = 100   # metres from player position to hex center for local build
+# owner 2026-10-24: friends building together may overlap a friend's mine for this long after it was
+# built (both had the build popup open); after that, and always for your own mines, overlap is refused
+FRIEND_OVERLAP_S = 30
+
+
+def friend_hids(conn, hid) -> set:
+    """Players who are friends with `hid` in either direction."""
+    return {r[0] for r in conn.execute(
+        "SELECT target_hid FROM contacts WHERE owner_hid=? AND kind='friend' "
+        "UNION SELECT owner_hid FROM contacts WHERE target_hid=? AND kind='friend'", (hid, hid))}
+
+
+def friend_overlap_left(m, hid, friends, now=None) -> float:
+    """Seconds left in which `hid` may still build over mine `m` (0 = not allowed)."""
+    if m["owner_hid"] == hid or m["owner_hid"] not in friends or not m["created_at"]:
+        return 0.0
+    now = now or datetime.datetime.utcnow()
+    try:
+        age = (now - datetime.datetime.fromisoformat(m["created_at"]).replace(tzinfo=None)).total_seconds()
+    except ValueError:
+        return 0.0
+    return max(0.0, FRIEND_OVERLAP_S - age)
 GPS_TOLERANCE_M = 15               # allowance for GPS jitter between the app's check and the request
 DRONE_RANGE_M              = 5000  # maximum remote construction range
 
@@ -2402,9 +2424,16 @@ async def mine_new(request: Request):
             # Hex-aware proximity check against ALL mines (inside the write lock: no concurrent insert)
             dlat = 40 / 111320.0
             dlng = dlat / max(0.01, math.cos(math.radians(lat)))
-            for m in conn.execute("SELECT lat,lng FROM mines WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?",
+            friends = None
+            for m in conn.execute("SELECT lat,lng,owner_hid,created_at FROM mines "
+                                  "WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?",
                                   (lat - dlat, lat + dlat, lng - dlng, lng + dlng)):
                 if haversine_m(lat, lng, m["lat"], m["lng"]) < hex_min_dist(lat, lng, m["lat"], m["lng"]) - 0.1:
+                    if m["owner_hid"] != hid:
+                        if friends is None:
+                            friends = friend_hids(conn, hid)
+                        if friend_overlap_left(m, hid, friends) > 0:
+                            continue
                     raise econ.GameError("overlap", "Building failed: this spot overlaps an existing mine. "
                                                     "Move the crosshair to a free hex.")
             actual_cost = mine_scaled_cost(mt["cost"], mine_count)
@@ -2589,9 +2618,12 @@ async def mine_load_markers(request: Request):
             "LIMIT 1000",
             (lat1, lat2, lng1, lng2)).fetchall()
         refs = public_refs(conn, {m["owner_hid"] for m in mines}, hid)
+        friends = friend_hids(conn, hid) if hid else set()
     markers = []
+    now = datetime.datetime.utcnow()
     for m in mines:
         mt = MINE_TYPES.get(m["item_id"], {})
+        left = friend_overlap_left(m, hid, friends, now)
         markers.append({
             "mID":       m["mine_id"],
             "ownerHID":  refs[m["owner_hid"]],   # public id for other players (see public_refs)
@@ -2603,6 +2635,8 @@ async def mine_load_markers(request: Request):
             "cond":      current_condition(m),      # real, decayed condition (server-side)
             "lvl":       m["level"],
             "isMine":    m["owner_hid"] == hid,
+            # seconds left to build over this friend's new mine (FRIEND_OVERLAP_S)
+            **({"overlapLeft": round(left, 1)} if left > 0 else {}),
         })
     return zlib_resp(markers)
 
