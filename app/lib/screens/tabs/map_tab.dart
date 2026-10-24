@@ -1948,8 +1948,11 @@ class _MapTabState extends State<MapTab> {
                 () => _loadMarkers()),
           ),
           const SizedBox(height: 8),
-          DetectorButton(controller: _arch),
-          const SizedBox(height: 8),
+          // the artifact detector appears once an Archaeological Center is built
+          if (archLevel >= 1) ...[
+            DetectorButton(controller: _arch),
+            const SizedBox(height: 8),
+          ],
           TruckButton(
             controller: _cargo,
             onPressed: () async {
