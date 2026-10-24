@@ -93,9 +93,9 @@ class _GameScreenState extends State<GameScreen> {
         builder: (ctx) => AlertDialog(
           icon: Icon(Icons.military_tech, size: 48, color: AppColors.accent),
           title: Text('Level $level!'),
-          content: Text(level - before > 1
-              ? 'You climbed ${level - before} levels. New mines, factories and rewards may be unlocked.'
-              : 'You reached level $level. New mines, factories and rewards may be unlocked.'),
+          content: Text('${level - before > 1 ? 'You climbed ${level - before} levels.' : 'You reached level $level.'} '
+              // the last mines and factories unlock at level 60; after that only rewards
+              '${before < 60 ? 'New mines, factories and rewards may be unlocked.' : 'New rewards may be unlocked.'}'),
           actions: [FilledButton(onPressed: () => popIfCurrent(ctx), child: const Text('Great'))],
         ),
       );
