@@ -76,7 +76,8 @@ FACTORIES = {
     # follow the original) so they cost ~0.1 M / ~10 M / ~20 M; trucks and drones are equipment you keep
     125: ("Truck Plant", 124, 55, 100, {30: 100, 93: 25, 35: 50}, 250_000, 50, 2_000_000_000, {24: 500000, 66: 90000, 35: 50000}),
     118: ("Drone Shipyard", 117, 60, 1, {66: 10, 51: 20, 93: 50}, 1_000_000, 1, 2_000_000_000, {7: 80000, 57: 120000, 59: 40000}),
-    165: ("Detector Factory", 166, 60, 5, {93: 50, 66: 30, 171: 50}, 5_000_000, 1, 2_000_000_000, {7: 40000, 93: 1000, 59: 40000}),
+    # detector: cheap (owner 2026-10-24): ≈ 0.5 M, so even 50 scans for one site pay off 5-10×
+    165: ("Detector Factory", 166, 60, 5, {93: 1, 66: 5, 171: 2}, 30_000, 1, 2_000_000_000, {7: 40000, 93: 1000, 59: 40000}),
 }
 # owner 2026-10-23: drones, detectors and trucks are priced like every product (and stay on the market)
 FIXED_PRICES: dict = {}
@@ -258,14 +259,17 @@ OTHER_PRICES = {
     # units: 1 000 credits per point of defence, 2 000 per point of attack (loot is 10 h of the
     # target mine's output per Mafia HQ level, so a big mine is worth sending an army)
     95: 5_000, 97: 50_000, 98: 100_000, 102: 10_000, 103: 100_000, 104: 200_000,
-    # archaeologists: 70-100 go into every recovery of a ~100-artifact site (owner 2026-10-24: 10×)
-    167: 1_000_000,
+    # archaeologists: 70-100 go into every recovery (owner 2026-10-24: hunting must pay 5-10× even
+    # in a bad case of 50 scans and 1 000 archaeologists for one site: 50 × 0.5 M + 1 000 × 20 k = 45 M
+    # against ≈ 360 M a site)
+    167: 20_000,
 }
 
 
 # Artifacts (owner 2026-10-24): a site holds about 100 of mixed kinds and a 5 km detector finds one
-# with nearly every scan. A recovery costs one detector (≈ 21 M) and 70-100 archaeologists (1 M
-# each), so a site (≈ 100 artifacts, ≈ 360 M on average) pays about 3× that; rarer = dearer.
+# with nearly every scan. A find costs a detector (≈ 0.5 M) and 70-100 archaeologists (20 k each),
+# so a site (≈ 100 artifacts, ≈ 360 M on average) pays 5-10× even when it took 50 scans and
+# 1 000 archaeologists, and far more usually; rarer = dearer.
 ARTIFACT_VALUE = {172: 2_000_000, 173: 6_000_000, 174: 3_000_000, 175: 4_000_000, 176: 12_000_000,
                   177: 3_000_000}
 OTHER_PRICES.update(ARTIFACT_VALUE)

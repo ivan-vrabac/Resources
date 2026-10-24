@@ -141,3 +141,14 @@ def test_drop_table_per_100_crates():
     t = cargo.drop_table()
     assert abs(sum(e["per100"] for e in t) - 100) < 0.01
     assert {e["itemID"] for e in t} == set(cargo.BOX_LOOT)
+
+
+def test_artifact_hunting_pays_5_to_10_times_even_in_a_bad_case():
+    from systems import archaeology as A
+    p = economy.system_prices()
+    w = A.ARTIFACT_WEIGHTS
+    site = 100 * sum(economy.ARTIFACT_VALUE[k] * q for k, q in w.items()) / sum(w.values())
+    bad = 50 * p[166] + 1000 * p[167]           # 50 scans and 1 000 archaeologists for one site
+    assert site / bad >= 5
+    usual = 2 * p[166] + A.archaeologists_needed(1) * p[167]
+    assert site / usual > 10
