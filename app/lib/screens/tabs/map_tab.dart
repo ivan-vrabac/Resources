@@ -1667,8 +1667,8 @@ class _MapTabState extends State<MapTab> {
                           ),
                         ),
                         if ((m['stack'] as num? ?? 1) > 1 && markerPx >= 18)
-                          Positioned(
-                            top: 0, right: markerPx * 0.08,
+                          Positioned(            // inside the hex, top centre (neighbours cover the edges)
+                            top: markerH * 0.16,
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 3),
                               decoration: BoxDecoration(color: Colors.black87,
